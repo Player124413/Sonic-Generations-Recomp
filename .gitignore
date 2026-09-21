@@ -1,0 +1,28 @@
+# Build artefacts
+build/
+build-*/
+out/
+dist/
+cmake-build-*/
+
+# User game data (never commit)
+default.xex
+default.xexp
+default_patched.xex
+*.iso
+*.xiso
+game/
+update/
+dlc/
+save/
+private/
+
+# Generated shader cache (produced by XenosRecomp)
+SonicGenerationsRecompLib/shader/shader_cache.cpp
+
+# Misc
+*.log
+.vs/
+.vscode/
+.idea/
+compile_commands.json

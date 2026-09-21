@@ -1,0 +1,72 @@
+# Third-party components
+
+This project (Sonic Generations Recompiled) is licensed under the GNU General
+Public License v3.0 — see `COPYING`. It contains code derived from the
+following projects:
+
+## Unleashed Recompiled (hedge-dev/UnleashedRecomp)
+
+License: GNU GPL v3.0
+Copyright (c) hedge-dev and contributors
+
+Portions of the runtime layer are derived from Unleashed Recompiled,
+including (with adaptation):
+
+- `SonicGenerationsRecomp/kernel/` — Xbox 360 kernel object model, heap,
+  memory, XAM content/user/notification services, guest/host call marshalling
+  (`function.h`), import hook infrastructure.
+- `SonicGenerationsRecomp/cpu/` — guest thread model, guest stack variables,
+  PPC context threading.
+- `SonicGenerationsRecomp/apu/` — XAudio render driver bridge (SDL backend).
+- `SonicGenerationsRecomp/hid/` — SDL input translation to XAMINPUT.
+- `SonicGenerationsRecomp/install/iso_file_system.*` — XISO reader (itself
+  derived from Xenia, BSD-2-Clause, see below).
+- `SonicGenerationsRecomp/os/`, `user/paths.*`, `mutex.h`, `framework.h`,
+  `xxHashMap.h` — platform helpers.
+- `tools/o1heap/` — from Unleashed Recompiled's thirdparty (MIT, see below).
+- `tools/x_decompress/`, `tools/file_to_c/`, `tools/fshasher/` — helper tools.
+
+## XenonRecomp (hedge-dev/XenonRecomp) — submodule `tools/XenonRecomp`
+
+License: MIT
+Copyright (c) 2025 hedge-dev and contributors
+
+Xbox 360 → C++ recompiler, XenonAnalyse, XenonUtils (XEX parsing, patching,
+`xbox.h` guest type definitions). Export name tables in
+`XenonUtils/xbox/*.inc` are derived from the Xenia project (BSD-2-Clause).
+
+## XenosRecomp (hedge-dev/XenosRecomp) — submodule `tools/XenosRecomp`
+
+License: MIT
+Copyright (c) 2025 hedge-dev and contributors
+
+Xbox 360 shader binary → HLSL recompiler (future shader pipeline).
+
+## Xenia: Xbox 360 Emulator Research Project
+
+License: BSD-2-Clause
+Copyright 2021 Ben Vanik. All rights reserved.
+
+Portions of XISO handling and Xbox 360 export tables.
+
+## o1heap
+
+License: MIT
+Copyright (c) 2020-2022 Dmitry (Konstantin) Stepanov
+
+Bundled in `tools/o1heap/`; used as the guest heap allocator.
+
+## SDL2, fmt, toml++, xxHash, simde
+
+Provided via submodules/system packages:
+
+- SDL2 — zlib license (libsdl-org/SDL)
+- fmt — MIT (fmtlib/fmt) — via XenonRecomp's thirdparty
+- toml++ — MIT (marzer/tomlplusplus) — via XenonRecomp's thirdparty
+- xxHash — BSD-2-Clause (Cyan4973/xxHash) — via XenonRecomp's thirdparty
+- simde — MIT — via XenonRecomp's thirdparty
+
+## Game data
+
+Sonic Generations (Xbox 360) game data is NOT included and NOT distributed
+with this project. You must own the game and provide your own dump.
