@@ -1,0 +1,42 @@
+# Sonic Generations (Xbox 360) — XenonRecomp configuration.
+#
+# HOW TO USE:
+#   1. Place your legally dumped, DECRYPTED "default.xex" into this folder.
+#   2. Run run_unix.sh (Linux/macOS) or run_windows.bat (Windows).
+#      The scripts build the tools if needed, detect jump tables with
+#      XenonAnalyse and then recompile the game to C++ into ./ppc/
+#
+# The addresses of the CRT register save/restore helpers (__restgprlr_14,
+# __savevmx_64, etc.) do NOT need to be specified: XenonRecomp now detects
+# them automatically and prints what it found. You can still pin them
+# manually (restgprlr_14_address = 0x...) to override the detection.
+#
+# If your dump has a title update, put the .xexp next to default.xex and
+# uncomment the two patch properties below; XenonRecomp will produce
+# default_patched.xex automatically and recompile that instead.
+
+[main]
+file_path = "default.xex"
+out_directory_path = "ppc/"
+switch_table_file_path = "switch_tables.toml"
+
+# patch_file_path = "default.xexp"
+# patched_file_path = "default_patched.xex"
+
+# Non-code blob at the very end of .text (begins with the big-endian word
+# 0x00485645, 44 bytes total). Without this entry the scanner reports
+# "Unable to decode instruction" for every word of the blob.
+invalid_instructions = [
+    { data = 0x00485645, size = 44 },
+]
+
+# Optimizations: keep these off until you have a successfully running
+# recompilation, then enable them one by one (see the main README).
+skip_lr = false
+skip_msr = false
+ctr_as_local = false
+xer_as_local = false
+reserved_as_local = false
+cr_as_local = false
+non_argument_as_local = false
+non_volatile_as_local = false
