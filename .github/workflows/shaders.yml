@@ -3,6 +3,10 @@ name: Experimental Xbox 360 shaders
 on:
   workflow_dispatch:
     inputs:
+      zip_url:
+        description: 'Direct HTTPS link to ZIP (NOT secret). Empty = use SHADERS_ZIP_URL secret'
+        required: false
+        type: string
       sha256:
         description: 'Optional expected SHA-256; leave empty to calculate automatically'
         required: false
@@ -46,6 +50,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Download, validate and convert shader ZIP
         env:
+          ZIP_URL_INPUT: ${{ inputs.zip_url }}
           SHADERS_ZIP_URL: ${{ secrets.SHADERS_ZIP_URL }}
           ZIP_SHA256: ${{ inputs.sha256 }}
         run: |

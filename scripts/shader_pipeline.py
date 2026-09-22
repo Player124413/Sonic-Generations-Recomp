@@ -13,9 +13,15 @@ from prepare_shader_link import HTTPSRedirects, MAX_BYTES, validate_url
 import urllib.request
 
 
+def source_url():
+    # Keep user input out of shell interpolation and diagnostics.
+    explicit = os.environ.get('ZIP_URL_INPUT', '').strip()
+    return validate_url(explicit or os.environ.get('SHADERS_ZIP_URL', '').strip())
+
+
 def download(destination):
     try:
-        url = validate_url(os.environ.get('SHADERS_ZIP_URL', ''))
+        url = source_url()
         opener = urllib.request.build_opener(HTTPSRedirects())
         with opener.open(url, timeout=60) as response, destination.open('wb') as out:
             total = 0
@@ -25,7 +31,7 @@ def download(destination):
                     raise ValueError('Size limit')
                 out.write(chunk)
     except Exception:
-        raise ValueError('ZIP download failed. Check SHADERS_ZIP_URL, expiry and 256 MiB limit.') from None
+        raise ValueError('ZIP download failed. Check zip_url or SHADERS_ZIP_URL secret, expiry and 256 MiB limit.') from None
 
 
 def archives(path):
@@ -86,7 +92,7 @@ def validate_cache(text, expected):
 def normalize_sha256(value):
     expected = value.strip().lower()
     if expected and not re.fullmatch('[0-9a-f]{64}', expected):
-        raise ValueError('SHA-256 must be 64 hex characters, or leave it empty for automatic hashing. Do not enter a URL or filename here.')
+        raise ValueError('SHA-256 must be 64 hex characters, or leave it empty for automatic hashing. Put the download link in zip_url, not sha256.')
     return expected
 
 

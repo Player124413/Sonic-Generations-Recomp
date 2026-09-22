@@ -19,6 +19,15 @@ class ShaderPipelineTests(unittest.TestCase):
                     z.writestr(name, data)
             return list(pipeline.archives(path))
 
+    def test_url_input_and_secret_fallback(self):
+        with patch.dict('os.environ', {'ZIP_URL_INPUT': ' https://example.com/input.zip ', 'SHADERS_ZIP_URL': 'https://example.com/secret.zip'}, clear=True):
+            self.assertEqual(pipeline.source_url(), 'https://example.com/input.zip')
+        with patch.dict('os.environ', {'ZIP_URL_INPUT': ' ', 'SHADERS_ZIP_URL': 'https://example.com/secret.zip'}, clear=True):
+            self.assertEqual(pipeline.source_url(), 'https://example.com/secret.zip')
+        with patch.dict('os.environ', {'ZIP_URL_INPUT': 'http://example.com/file.zip'}, clear=True):
+            with self.assertRaises(ValueError):
+                pipeline.source_url()
+
     def test_optional_checksum(self):
         self.assertEqual(pipeline.normalize_sha256('  '), '')
         self.assertEqual(pipeline.normalize_sha256(' A' + 'B' * 63 + '\n'), 'a' + 'b' * 63)
