@@ -2,14 +2,16 @@ name: FFmpeg XMA decoder tests
 on:
   push:
     paths:
-      - 'SonicGenerationsRecomp/apu/xma*'
-      - 'cmake/XmaDecoder.cmake'
+      - 'SonicGenerationsRecomp/apu/**'
+      - 'cmake/Xma*.cmake'
+      - 'tools/ffmpeg-xma'
       - 'tests/audio/**'
       - '.github/workflows/audio-tests.yml'
   pull_request:
     paths:
-      - 'SonicGenerationsRecomp/apu/xma*'
-      - 'cmake/XmaDecoder.cmake'
+      - 'SonicGenerationsRecomp/apu/**'
+      - 'cmake/Xma*.cmake'
+      - 'tools/ffmpeg-xma'
       - 'tests/audio/**'
       - '.github/workflows/audio-tests.yml'
   workflow_dispatch:
@@ -17,16 +19,35 @@ permissions:
   contents: read
 jobs:
   decoder:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Install FFmpeg development libraries
-        run: sudo apt-get update && sudo apt-get install -y libavcodec-dev libavutil-dev pkg-config
-      - name: Build standalone decoder tests
-        run: |
-          cmake -S tests/audio -B build-audio -DCMAKE_BUILD_TYPE=Debug
-          cmake --build build-audio --parallel 2
+      - name: Fetch pinned frame decoder
+        run: git submodule update --init tools/ffmpeg-xma
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S tests/audio -B build-audio -DCMAKE_BUILD_TYPE=Debug
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        run: cmake -S tests/audio -B build-audio -G 'Visual Studio 17 2022' -A x64 -T ClangCL
+      - name: Build
+        run: cmake --build build-audio --config Debug --parallel 2
       - name: Test
-        run: ctest --test-dir build-audio --output-on-failure
+        run: ctest --test-dir build-audio -C Debug --output-on-failure
+      - name: Decode public FFmpeg regression sample (no artifacts)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p private/audio-test
+          curl --fail --location --retry 3 --max-time 60 'https://samples.ffmpeg.org/game-formats/xma/M02_bvo01_14.xma' -o private/audio-test/sample.xma
+          echo 'b6226491dd6e07606e52b7b0c853d0c6  private/audio-test/sample.xma' | md5sum --check
+          ./build-audio/xma_sample_test private/audio-test/sample.xma
+      - name: Remove sample
+        if: always() && runner.os == 'Linux'
+        run: rm -rf private/audio-test

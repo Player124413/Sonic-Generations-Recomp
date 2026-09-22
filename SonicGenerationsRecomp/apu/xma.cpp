@@ -4,6 +4,7 @@
 #include <kernel/heap.h>
 #include <kernel/memory.h>
 #include <mutex>
+#include <os/logger.h>
 
 namespace {
 std::mutex mutex;
@@ -21,6 +22,13 @@ void xma::Init()
     if (!contexts) throw std::bad_alloc();
     // MmGetPhysicalAddress currently preserves this runtime's guest addresses.
     device.Init(g_memory.MapVirtual(contexts), {contexts, Device::ContextBytes});
+    device.SetMemory([](uint32_t address, size_t size) -> std::span<uint8_t> {
+        // This runtime uses identity physical addresses (MmGetPhysicalAddress).
+        // Exclude null/protected first page and all 32-bit wraparound.
+        if (address < 0x1000 || uint64_t(address) + size > PPC_MEMORY_SIZE)
+            throw std::out_of_range("XMA guest buffer address out of range");
+        return {static_cast<uint8_t*>(g_memory.Translate(address)), size};
+    });
 }
 
 uint32_t xma::CreateContext(uint32_t sizeLog2)
@@ -37,6 +45,12 @@ void xma::OnMmioWrite(uint32_t offset, uint32_t value)
 {
     std::lock_guard guard(mutex);
     device.Write(offset, value);
+    if (offset >= 0x1940 && offset < 0x1968) {
+        uint32_t first = (offset - 0x1940) / 4 * 32;
+        for (uint32_t bit = 0; bit < 32; ++bit)
+            if ((value & (1u << bit)) && !device.LastError(first + bit).empty())
+                LOGFN_ERROR("XMA context {}: {}", first + bit, device.LastError(first + bit));
+    }
 }
 uint32_t xma::OnMmioRead(uint32_t offset)
 {

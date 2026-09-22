@@ -37,10 +37,13 @@ int main() {
     Check(memory[0] == 7 && memory[1] == 0xCF && memory[2] == 0xFF);
     Check(memory[4] == 0x7F && memory[5] == 0xFF);
     Check(memory[39] == 0xE0 && memory[20] == 0xFF);
-    bool failed = false;
-    try { PPC_STORE_U32(0x7FEA1940, __builtin_bswap32(1u)); }
-    catch (const std::runtime_error&) { failed = true; }
-    Check(failed); // No fabricated decode completion.
+    // Invalid ring/memory is reported as guest error status, never a host abort.
+    memory[4] |= 0x80;
+    PPC_STORE_U32(0x7FEA1940, __builtin_bswap32(1u));
+    Check(!device.LastError(0).empty());
+    Check((memory[8] & 4) != 0);
+    PPC_STORE_U32(0x7FEA1A80, __builtin_bswap32(1u));
+    Check(device.LastError(0).empty());
     alignas(4) std::array<uint8_t, 16> ram{};
     base = ram.data();
     PPC_STORE_U32(4, 0x12345678);

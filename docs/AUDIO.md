@@ -1,72 +1,79 @@
-# FFmpeg XMA backend — текущий статус
+# Игровой XMA audio path
 
-Добавлен host-side `xma::Decoder` (`apu/xma_decoder.*`) на libavcodec/libavutil
-FFmpeg 5+. Поддерживает XMA1/XMA2, отдельное состояние для каждого потока,
-передачу пакетов, drain/flush, reset и interleaved float PCM. Это библиотечный
-API, не запуск внешнего ffmpeg.exe. Память packet/extradata имеет padding,
-ошибки декодера возвращаются исключениями, ресурсы освобождаются через RAII.
+Теперь runtime использует **XMAFRAMES** из закреплённого форка Xenia/FFmpeg,
+а не обычный пакетный декодер системной FFmpeg. Submodule `tools/ffmpeg-xma`:
+`15ece0882e8d5875051ff5b73c5a8326f7cee9f5`.
 
-Сборка runtime с backend: `-DSONIC_GENERATIONS_FFMPEG_XMA=ON`, нужны pkg-config
-и development-библиотеки libavcodec>=59, libavutil>=57 (на Windows также нужен
-совместимый с выбранным CRT/toolchain пакет FFmpeg с .pc-файлами).
-По умолчанию опция OFF; отсутствующая зависимость при ON — ошибка CMake.
-
-Отдельная проверка без сборки PPC:
+## Путь данных
 
 ```
+guest XMACreateContext -> 64-byte BE context in physical heap
+PPC U32 MMIO write -> Device::Write(kick mask)
+ -> Stream::Work(context, guest-memory translator)
+ -> assembly of one frame across packets/input buffers
+ -> FrameDecoder / FFmpeg XMAFRAMES (persistent overlap state)
+ -> interleaved signed-16 BE PCM in guest output ring
+ -> original guest XAudio mixer / resampler / categories
+ -> XAudioSubmitRenderDriverFrame (planar BE float, 6 channels)
+ -> SDL output / MasterVolume
+```
+
+PCM не отправляется из декодера прямо в SDL. Игровой микшер остаётся на своём
+месте, включая ресемплинг и позиционирование. Context pointers, counts, valid
+bits и ring offsets обновляются в гостевой памяти. MMIO — little-endian;
+контексты и PCM — big-endian.
+
+Реализованы:
+- 320 контекстов, выделение, release/reuse и clear/reset;
+- маски kick/lock/clear; kicks исполняются синхронно под runtime mutex;
+- packet skip (перемежающиеся потоки), 15-bit frame length, продолжение фрейма
+  через границу пакета и не смежные input buffers, включая разрыв length prefix;
+- output ring wrap/backpressure; PCM, не поместившийся в кольцо, сохраняется;
+- quota 128-sample subframes, начальный skip, конечные/бесконечные loops,
+  subframe loop bounds; overlap-состояние декодера сохраняется между фреймами;
+- насыщение float PCM до signed-16, interleave и byte swap;
+- проверки границ, ошибки в status контекста + runtime log вместо host abort.
+
+## Сборка
+
+```
+git submodule update --init tools/ffmpeg-xma
 cmake -S tests/audio -B build-audio
-cmake --build build-audio
-ctest --test-dir build-audio --output-on-failure
+cmake --build build-audio --config Debug
+ctest --test-dir build-audio -C Debug --output-on-failure
 ```
 
-**Это ещё не звук в игре.** Backend пока не вызывается из `xma::OnMmioWrite`.
-Добавлены реальные guest-контексты и MMIO-маршрутизация (ниже), но нужны
-packet/bit offsets, loop/skip semantics, запись **interleaved signed-16 BE PCM**
-обратно в guest ring buffer, уведомления завершения и синхронизация.
-Это не тот же формат, что final planar float buffer в XAudioSubmitFrame. Нельзя отправлять декодированный PCM напрямую в SDL вместо
-игрового микшера — это обойдёт эффекты, категории и позиционирование.
-Для Decode нужны реальные FFmpeg extradata и пакеты, не целый WAV/RIFF.
-Не реализованы demuxer, ресемплинг и автоматическое определение заголовка.
+Полная сборка runtime подключает backend **по умолчанию**. Старый необязательный
+`SONIC_GENERATIONS_FFMPEG_XMA` / системный пакетный wrapper удалён: смешивать
+две версии libavcodec в одном executable нельзя. Нужен C и C++20 compiler;
+Windows — ClangCL, Linux — GCC/Clang. Закреплённые конфигурации FFmpeg пока
+поддерживают Windows/Linux x86-64, не macOS/ARM64.
 
-`XAudioGetVoiceCategoryVolume` больше не void-заглушка: двухаргументный ABI
-(как в Xenia xboxkrnl_audio.cc), запись BE float 1.0, код статуса.
-Это нейтральный уровень, а **не точная реализация системных категорий**.
-MasterVolume уже применяется один раз в SDL. Маршрутизация категорий остаётся
-следующим этапом; ложные изменения маски громкости не генерируются.
+## Проверки и границы подтверждённого
 
-Тесты проверяют наличие кодеков и отбраковку некорректных параметров, но не
-качество звука: легальный XMA fixture пока не предоставлен. FFmpeg не vendored;
-при распространении соблюдайте лицензию конкретной сборки (LGPL/GPL).
+- xma_decoder_tests: реальный XMAFRAMES открывается при всех hardware rates,
+  malformed frames отвергаются.
+- xma_device_tests: allocator, registers, BE/LE, clear, guest error status.
+- xma_stream_tests: реальный транспорт с управляемым PCM decoder для ring wrap,
+  split prefix, delayed input, finite/infinite loop, skip и MMIO-to-PCM пути.
+- xma_sample_test: дополнительное декодирование настоящего RIFF XMA файла
+  (1 stream, 1/2 channels); проверяет завершение и наличие ненулевого PCM.
+  CI использует публичный regression sample FFmpeg, проверяет его MD5,
+  не коммитит и не загружает файл/PCM как artifact.
 
-## Гостевые контексты и MMIO: реализован транспорт, не декодирование
+Эти проверки **не равны проверке всех звуков Sonic Generations**. Нужен тест
+на легальном дампе игры: музыка, речь, эффекты, смена уровней, пауза, длительные
+loops, конец потока. Подфреймовые loop semantics и точные аппаратные тайминги
+требуют проверки на потоках игры; синхронный backend не эмулирует отдельный
+DSP interrupt scheduler. Физические адреса используют текущую identity mapping
+рантайма, а не полную систему физических alias Xbox 360.
 
-- 320 контекстов по 64 байта, общий массив с выравниванием 256 байт в guest
-  physical heap. XMACreateContext возвращает адрес, а не прежний номер 1..N.
-- Контроль диапазона/выравнивания при release; очистка памяти при освобождении;
-  повторный Init не сбрасывает активные контексты; null out pointer отвергается.
-- Register 0x1800 возвращает адрес массива; 0x1818 — вращающийся индекс.
-- Kick/lock/clear register groups распознаются; clear сбрасывает valid bits и
-  кольцевые offsets без уничтожения параметров потока.
-- Перехват U32 load/store через ppc_compat.h (включая обычный PPC_LOAD_U32,
-  которым игра выполняет lwbrx для MMIO). Генерированный ppc/ не изменён.
-  MMIO LE, структуры BE; остальные адреса обслуживаются прежним способом.
-- **Kick выделенного контекста бросает явную ошибку неподдерживаемого
-  frame-декодирования**, вместо тихого успеха и бесконечного ожидания PCM.
-  Это намеренно незавершённый путь, не готовый аудиодвижок.
+`XAudioGetVoiceCategoryVolume` возвращает BE float 1.0, MasterVolume применяется
+в SDL один раз. Системные overrides категорий/ducking отдельно не эмулируются;
+игровые уровни громкости обрабатывает гостевой микшер.
 
-Почему нельзя просто вызвать Decoder::Decode: игра хранит битовые смещения,
-частичные фреймы через границы двух input buffers, loop/skip параметры.
-Xenia использует не стандартный AV_CODEC_ID_XMA2, а собственный
-AV_CODEC_ID_XMAFRAMES в модифицированной FFmpeg. Полная интеграция требует
-такого frame-decoder API либо эквивалентной корректной реализации поверх
-пакетного кодека; подмена адресов/пакетов и обнуление PCM не подходят.
-
-Проверенные исходники:
-- https://github.com/xenia-project/xenia/blob/master/src/xenia/apu/xma_context.h
-- https://github.com/xenia-project/xenia/blob/master/src/xenia/apu/xma_context.cc
-- https://github.com/xenia-project/xenia/blob/master/src/xenia/apu/xma_decoder.cc
-- https://github.com/xenia-project/xenia/blob/master/src/xenia/apu/xma_register_table.inc
-
-Standalone xma_device_tests проверяет allocator, exhaustion/reuse, LE/BE,
-clear/status registers, отказ неподдерживаемого kick и обычную память.
-Полная runtime-сборка и воспроизведение игры этими тестами не проверяются.
+Источники формата: Xenia `src/xenia/apu/xma_context.h`, `xma_context.cc`,
+`xma_register_table.inc`; Microsoft XMA format definitions (`xma2defs.h`).
+FFmpeg fork лицензирован LGPL-2.1-or-later (данная конфигурация без GPL/nonfree).
+При распространении статической сборки приложите лицензии и соответствующие
+исходники/материалы для выполнения лицензионных требований. См. THIRD_PARTY.md.

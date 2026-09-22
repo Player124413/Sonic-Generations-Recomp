@@ -4,3 +4,6 @@
 [submodule "tools/XenosRecomp"]
 	path = tools/XenosRecomp
 	url = https://github.com/hedge-dev/XenosRecomp.git
+[submodule "tools/ffmpeg-xma"]
+	path = tools/ffmpeg-xma
+	url = https://github.com/xenia-project/FFmpeg.git

@@ -36,11 +36,12 @@
 
 ## 3. Аудио
 
-Host-side FFmpeg backend добавлен, но MMIO-мост ещё не подключён.
+XMAFRAMES подключён к MMIO, гостевым input/output buffers и исходному игровому
+микшеру. Требуется проверка всего аудио на реальном дампе Generations.
 Сборка и ограничения: [AUDIO.md](AUDIO.md).
 
-- XMA-декодер (шов `apu/xma.h`, MMIO `0x7FEA0000`): XMA — вариант WMA Pro;
-  можно взять decoder из Xenia или ffmpeg.
+- Проверить XMAFRAMES loop/subframe semantics, тайминги и физические alias
+  на игровых потоках; текущий kick обрабатывается синхронно.
 - Точная маршрутизация категорий/громкости (`XAudioGetVoiceCategoryVolume`).
 
 ## 4. Патчи игры

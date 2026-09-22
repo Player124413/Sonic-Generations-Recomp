@@ -70,3 +70,18 @@ Provided via submodules/system packages:
 
 Sonic Generations (Xbox 360) game data is NOT included and NOT distributed
 with this project. You must own the game and provide your own dump.
+
+## Xenia FFmpeg XMAFRAMES fork
+
+- Source: https://github.com/xenia-project/FFmpeg
+- Pinned commit: `15ece0882e8d5875051ff5b73c5a8326f7cee9f5`
+- Location: `tools/ffmpeg-xma` (submodule)
+- License: LGPL-2.1-or-later for the enabled configuration (`CONFIG_GPL=0`,
+  `CONFIG_NONFREE=0`); see `COPYING.LGPLv2.1`, `LICENSE.md` in the submodule.
+- Used for raw XMA frame decoding; statically linked, not the system FFmpeg.
+- Distributors must comply with the applicable source/relinking requirements.
+  Source lists in `cmake/XmaFFmpegSources.cmake` follow its premake manifests.
+
+The guest register/context layout was researched using Xenia's BSD-licensed
+`src/xenia/apu/xma_context.h`, `xma_context.cc` and `xma_register_table.inc`.
+No copyrighted game audio is included in this repository.
