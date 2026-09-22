@@ -80,6 +80,17 @@ def containers(data):
             offset += 4
 
 
+def missing_boolean_registers(text):
+    # Upstream CondJmp fallback emits bN without declaring it. Ignore comments.
+    code = re.sub(r'/\*.*?\*/|//[^\n]*', '', text, flags=re.S)
+    declared = set(re.findall(r'\b(?:bool|int|uint|float)\s+(b[0-9]+)\b', code))
+    declared.update(re.findall(r'#\s*define\s+(b[0-9]+)\b', code))
+    # cbuffer register(b0, ...) denotes a binding, not a boolean variable.
+    uses_without_bindings = re.sub(r'\bregister\s*\([^)]*\)', '', code)
+    used = set(re.findall(r'\bb[0-9]+\b', uses_without_bindings))
+    return sorted(used - declared, key=lambda name: int(name[1:]))
+
+
 def validate_cache(text, expected):
     count = re.search(r'g_shaderCacheEntryCount\s*=\s*(\d+)', text)
     if not count or int(count[1]) != expected or expected == 0:
@@ -136,11 +147,27 @@ def run(args):
         (inputs / (digest + '.bin')).write_bytes(blob + b'\0' * 4)
     hlsl = output / 'hlsl'
     hlsl.mkdir()
+    print(f'Found {len(unique)} unique shaders. Generating HLSL and checking boolean references.', flush=True)
     for binary in sorted(inputs.iterdir()):
         target = hlsl / (binary.stem + '.hlsl')
         subprocess.run([str(exe), str(binary), str(target), str(header)], check=True, timeout=120)
         if not target.is_file() or target.stat().st_size == 0:
             raise ValueError('Missing HLSL output')
+        text = target.read_text()
+        missing = missing_boolean_registers(text)
+        if missing:
+            diagnostics = work / 'diagnostics'
+            diagnostics.mkdir(exist_ok=True)
+            (diagnostics / target.name).write_text(text)
+            (diagnostics / 'report.json').write_text(json.dumps({
+                'container_sha256': binary.stem,
+                'missing_boolean_registers': missing,
+                'reason': 'XenosRecomp generated undeclared boolean references',
+                'runtime_ready': False,
+            }, indent=2))
+            raise ValueError(f'Unsupported boolean references {", ".join(missing)} in {target.name}. '
+                             'Stopped before batch DXC compilation. Diagnostic HLSL saved in private/shader-build/diagnostics '
+                             '(or the diagnostics subfolder of --work). Do not replace these values with zero.')
     cache = output / 'shader_cache.experimental.cpp'
     subprocess.run([str(exe), str(inputs), str(cache), str(header)], check=True, timeout=1800)
     validate_cache(cache.read_text(), len(unique))

@@ -64,6 +64,14 @@ jobs:
           path: private/shader-build/result/
           retention-days: 1
           if-no-files-found: error
+      - name: Upload failed shader diagnostics (explicit opt-in)
+        if: ${{ failure() && inputs.upload_result }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: shader-diagnostics-${{ github.run_id }}
+          path: private/shader-build/diagnostics/
+          retention-days: 1
+          if-no-files-found: ignore
       - name: Remove private data
         if: always()
         run: |

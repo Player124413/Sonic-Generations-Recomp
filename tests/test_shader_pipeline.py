@@ -28,6 +28,13 @@ class ShaderPipelineTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pipeline.source_url()
 
+    def test_missing_boolean_registers(self):
+        text = 'cbuffer Constants : register(b0, space4) { uint g_Booleans; }; if (b129 == 0) {} if (b128 != 0) {}'
+        self.assertEqual(pipeline.missing_boolean_registers(text), ['b128', 'b129'])
+        self.assertEqual(pipeline.missing_boolean_registers('bool b128 = true; if (b128) {} // b129'), [])
+        self.assertEqual(pipeline.missing_boolean_registers('#define b130 1\nif (b130) {} /* b129 */'), [])
+        self.assertEqual(pipeline.missing_boolean_registers('cbuffer X : register(b0) {}; if (b0) {}'), ['b0'])
+
     def test_optional_checksum(self):
         self.assertEqual(pipeline.normalize_sha256('  '), '')
         self.assertEqual(pipeline.normalize_sha256(' A' + 'B' * 63 + '\n'), 'a' + 'b' * 63)
