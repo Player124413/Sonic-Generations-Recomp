@@ -1,77 +1,67 @@
 #include <stdafx.h>
 #include <apu/xma.h>
-#include <os/logger.h>
+#include <apu/xma_device.h>
+#include <kernel/heap.h>
+#include <kernel/memory.h>
 #include <mutex>
-#include <vector>
 
-static std::mutex g_xmaMutex;
-static std::vector<XmaContext> g_xmaContexts;
+namespace {
+std::mutex mutex;
+xma::Device device;
+uint8_t* contexts = nullptr;
+}
 
 void xma::Init()
 {
-    std::lock_guard guard(g_xmaMutex);
-    g_xmaContexts.clear();
+    std::lock_guard guard(mutex);
+    // Init is called by both MmMapIoSpace and main. Do not reset active
+    // contexts or leak a second allocation on the latter call.
+    if (contexts) return;
+    contexts = static_cast<uint8_t*>(g_userHeap.AllocPhysical(Device::ContextBytes, 256));
+    if (!contexts) throw std::bad_alloc();
+    // MmGetPhysicalAddress currently preserves this runtime's guest addresses.
+    device.Init(g_memory.MapVirtual(contexts), {contexts, Device::ContextBytes});
 }
 
 uint32_t xma::CreateContext(uint32_t sizeLog2)
 {
-    std::lock_guard guard(g_xmaMutex);
-
-    for (size_t i = 0; i < g_xmaContexts.size(); i++)
-    {
-        if (!g_xmaContexts[i].inUse)
-        {
-            g_xmaContexts[i].inUse = true;
-            LOGFN_UTILITY("reuse context {}", g_xmaContexts[i].handle);
-            return g_xmaContexts[i].handle;
-        }
-    }
-
-    XmaContext context{};
-    context.handle = uint32_t(g_xmaContexts.size()) + 1;
-    context.inUse = true;
-    g_xmaContexts.push_back(context);
-
-    LOGFN_UTILITY("create context {} (sizeLog2 {})", context.handle, sizeLog2);
-    return context.handle;
+    std::lock_guard guard(mutex);
+    return device.Allocate(); // Hardware contexts are always 64 bytes.
 }
-
 bool xma::ReleaseContext(uint32_t context)
 {
-    std::lock_guard guard(g_xmaMutex);
-
-    for (auto& entry : g_xmaContexts)
-    {
-        if (entry.handle == context && entry.inUse)
-        {
-            entry.inUse = false;
-            LOGFN_UTILITY("release context {}", context);
-            return true;
-        }
-    }
-
-    return false;
+    std::lock_guard guard(mutex);
+    return device.Release(context);
 }
-
 void xma::OnMmioWrite(uint32_t offset, uint32_t value)
 {
-    // TODO(ROADMAP): drive the XMA decoder from these registers.
-    LOGF_UTILITY("XMA MMIO write @ 0x{:04X} = 0x{:08X}", offset, value);
+    std::lock_guard guard(mutex);
+    device.Write(offset, value);
+}
+uint32_t xma::OnMmioRead(uint32_t offset)
+{
+    std::lock_guard guard(mutex);
+    return device.Read(offset);
 }
 
-// ---------------------------------------------------------------------------
-// kernel import entry points
-// ---------------------------------------------------------------------------
+// PPC_LOAD/STORE_U32 use BE values, while XMA register words are LE. Generated
+// lwbrx/stwbrx apply the opposite swap at the call site. Do not double-swap.
+uint32_t SonicXmaLoadRegister(uint32_t address)
+{
+    return __builtin_bswap32(xma::OnMmioRead(address & 0xFFFF));
+}
+void SonicXmaStoreRegister(uint32_t address, uint32_t beValue)
+{
+    xma::OnMmioWrite(address & 0xFFFF, __builtin_bswap32(beValue));
+}
 
 uint32_t XMACreateContext(be<uint32_t>* contextPtr)
 {
-    uint32_t handle = xma::CreateContext(0);
-    if (contextPtr)
-        *contextPtr = handle;
-    return handle ? 0 : 0xC000009A; // STATUS_INSUFFICIENT_RESOURCES
+    if (!contextPtr) return 0xC000000D;
+    *contextPtr = xma::CreateContext(0);
+    return *contextPtr ? 0 : 0xC000009A;
 }
-
 uint32_t XMAReleaseContext(uint32_t contextPtr)
 {
-    return xma::ReleaseContext(contextPtr) ? 0 : 0xC0000008; // STATUS_INVALID_HANDLE
+    return xma::ReleaseContext(contextPtr) ? 0 : 0xC0000008;
 }

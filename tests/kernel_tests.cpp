@@ -119,6 +119,14 @@ static void TestXma()
     xma::Init();
     uint32_t context = xma::CreateContext(12);
     CHECK(context != 0);
+    CHECK((context & 63) == 0);
+    CHECK(context == xma::OnMmioRead(0x1800));
+    xma::Init(); // MmMapIoSpace must not reset previously allocated contexts.
+    uint32_t second = xma::CreateContext(0);
+    CHECK(second == context + 64);
+    CHECK(xma::ReleaseContext(second));
+    CHECK(!xma::ReleaseContext(context + 1));
+    CHECK(XMACreateContext(nullptr) == 0xC000000D);
     CHECK(xma::ReleaseContext(context));
     CHECK(!xma::ReleaseContext(context));
 }

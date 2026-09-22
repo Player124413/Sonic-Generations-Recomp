@@ -20,9 +20,10 @@ ctest --test-dir build-audio --output-on-failure
 ```
 
 **Это ещё не звук в игре.** Backend пока не вызывается из `xma::OnMmioWrite`.
-Нужны точные guest context layout, packet/bit offsets, loop/skip semantics,
-запись planar BE PCM обратно в guest ring buffer, уведомления завершения и
-синхронизация. Нельзя отправлять декодированный PCM напрямую в SDL вместо
+Добавлены реальные guest-контексты и MMIO-маршрутизация (ниже), но нужны
+packet/bit offsets, loop/skip semantics, запись **interleaved signed-16 BE PCM**
+обратно в guest ring buffer, уведомления завершения и синхронизация.
+Это не тот же формат, что final planar float buffer в XAudioSubmitFrame. Нельзя отправлять декодированный PCM напрямую в SDL вместо
 игрового микшера — это обойдёт эффекты, категории и позиционирование.
 Для Decode нужны реальные FFmpeg extradata и пакеты, не целый WAV/RIFF.
 Не реализованы demuxer, ресемплинг и автоматическое определение заголовка.
@@ -36,3 +37,36 @@ MasterVolume уже применяется один раз в SDL. Маршру�
 Тесты проверяют наличие кодеков и отбраковку некорректных параметров, но не
 качество звука: легальный XMA fixture пока не предоставлен. FFmpeg не vendored;
 при распространении соблюдайте лицензию конкретной сборки (LGPL/GPL).
+
+## Гостевые контексты и MMIO: реализован транспорт, не декодирование
+
+- 320 контекстов по 64 байта, общий массив с выравниванием 256 байт в guest
+  physical heap. XMACreateContext возвращает адрес, а не прежний номер 1..N.
+- Контроль диапазона/выравнивания при release; очистка памяти при освобождении;
+  повторный Init не сбрасывает активные контексты; null out pointer отвергается.
+- Register 0x1800 возвращает адрес массива; 0x1818 — вращающийся индекс.
+- Kick/lock/clear register groups распознаются; clear сбрасывает valid bits и
+  кольцевые offsets без уничтожения параметров потока.
+- Перехват U32 load/store через ppc_compat.h (включая обычный PPC_LOAD_U32,
+  которым игра выполняет lwbrx для MMIO). Генерированный ppc/ не изменён.
+  MMIO LE, структуры BE; остальные адреса обслуживаются прежним способом.
+- **Kick выделенного контекста бросает явную ошибку неподдерживаемого
+  frame-декодирования**, вместо тихого успеха и бесконечного ожидания PCM.
+  Это намеренно незавершённый путь, не готовый аудиодвижок.
+
+Почему нельзя просто вызвать Decoder::Decode: игра хранит битовые смещения,
+частичные фреймы через границы двух input buffers, loop/skip параметры.
+Xenia использует не стандартный AV_CODEC_ID_XMA2, а собственный
+AV_CODEC_ID_XMAFRAMES в модифицированной FFmpeg. Полная интеграция требует
+такого frame-decoder API либо эквивалентной корректной реализации поверх
+пакетного кодека; подмена адресов/пакетов и обнуление PCM не подходят.
+
+Проверенные исходники:
+- https://github.com/xenia-project/xenia/blob/master/src/xenia/apu/xma_context.h
+- https://github.com/xenia-project/xenia/blob/master/src/xenia/apu/xma_context.cc
+- https://github.com/xenia-project/xenia/blob/master/src/xenia/apu/xma_decoder.cc
+- https://github.com/xenia-project/xenia/blob/master/src/xenia/apu/xma_register_table.inc
+
+Standalone xma_device_tests проверяет allocator, exhaustion/reuse, LE/BE,
+clear/status registers, отказ неподдерживаемого kick и обычную память.
+Полная runtime-сборка и воспроизведение игры этими тестами не проверяются.

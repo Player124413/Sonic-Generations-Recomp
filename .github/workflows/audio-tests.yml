@@ -2,13 +2,13 @@ name: FFmpeg XMA decoder tests
 on:
   push:
     paths:
-      - 'SonicGenerationsRecomp/apu/xma_decoder.*'
+      - 'SonicGenerationsRecomp/apu/xma*'
       - 'cmake/XmaDecoder.cmake'
       - 'tests/audio/**'
       - '.github/workflows/audio-tests.yml'
   pull_request:
     paths:
-      - 'SonicGenerationsRecomp/apu/xma_decoder.*'
+      - 'SonicGenerationsRecomp/apu/xma*'
       - 'cmake/XmaDecoder.cmake'
       - 'tests/audio/**'
       - '.github/workflows/audio-tests.yml'

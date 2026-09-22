@@ -18,3 +18,6 @@
 #endif
 
 #endif
+
+// Must precede ppc_context.h in runtime and generated-code precompiled headers.
+#include "apu/xma_memory.h"
