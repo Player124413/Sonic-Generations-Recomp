@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.20)
+project(XmaDecoderTests LANGUAGES CXX)
+include(../../cmake/XmaDecoder.cmake)
+enable_testing()
+add_executable(xma_decoder_tests xma_decoder_tests.cpp)
+target_link_libraries(xma_decoder_tests PRIVATE SonicXmaDecoder PkgConfig::FFMPEG_XMA)
+add_test(NAME xma_decoder_tests COMMAND xma_decoder_tests)

@@ -36,6 +36,9 @@
 
 ## 3. Аудио
 
+Host-side FFmpeg backend добавлен, но MMIO-мост ещё не подключён.
+Сборка и ограничения: [AUDIO.md](AUDIO.md).
+
 - XMA-декодер (шов `apu/xma.h`, MMIO `0x7FEA0000`): XMA — вариант WMA Pro;
   можно взять decoder из Xenia или ffmpeg.
 - Точная маршрутизация категорий/громкости (`XAudioGetVoiceCategoryVolume`).

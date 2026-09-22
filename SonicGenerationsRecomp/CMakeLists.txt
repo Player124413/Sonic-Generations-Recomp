@@ -92,3 +92,9 @@ add_executable(SonicGenerationsRecomp "main.cpp")
 target_link_libraries(SonicGenerationsRecomp PRIVATE SonicGenerationsRecompCore)
 target_precompile_headers(SonicGenerationsRecomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/ppc_compat.h")
+
+option(SONIC_GENERATIONS_FFMPEG_XMA "Build host-side FFmpeg XMA decoder (guest MMIO bridge pending)" OFF)
+if (SONIC_GENERATIONS_FFMPEG_XMA)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/XmaDecoder.cmake")
+    target_link_libraries(SonicGenerationsRecompCore PUBLIC SonicXmaDecoder)
+endif()

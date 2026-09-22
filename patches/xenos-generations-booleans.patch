@@ -1,0 +1,36 @@
+diff --git a/XenosRecomp/shader_common.h b/XenosRecomp/shader_common.h
+index 1c74034..b39c531 100644
+--- a/XenosRecomp/shader_common.h
++++ b/XenosRecomp/shader_common.h
+@@ -12,6 +12,18 @@
+ 
+ #if !defined(__cplusplus) || defined(__INTELLISENSE__)
+ 
++// Full hardware boolean register bank for constants absent from reflection.
++// Host must upload 256 bits (32 bytes), with the hardware register numbering.
++// This is an additional binding, NOT the legacy packed g_Booleans word.
++cbuffer GenerationsBoolConstants : register(b3, space4)
++{
++    uint4 g_GenerationsBoolWords[2];
++};
++uint GenerationsReadBool(uint index)
++{
++    return (g_GenerationsBoolWords[index / 128][(index / 32) % 4] >> (index % 32)) & 1u;
++}
++
+ #define FLT_MIN asfloat(0xff7fffff)
+ #define FLT_MAX asfloat(0x7f7fffff)
+ 
+diff --git a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
+index 698a418..d936b55 100644
+--- a/XenosRecomp/shader_recompiler.cpp
++++ b/XenosRecomp/shader_recompiler.cpp
+@@ -1698,7 +1698,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+                         if (findResult != boolConstants.end())
+                             println("if ((g_Booleans & {}) {}= 0)", findResult->second, cfInstr.condJmp.condition ^ simpleControlFlow ? "!" : "=");
+                         else
+-                            println("if (b{} {}= 0)", uint32_t(cfInstr.condJmp.boolAddress), cfInstr.condJmp.condition ^ simpleControlFlow ? "!" : "=");
++                            println("if (GenerationsReadBool({}) {}= 0)", uint32_t(cfInstr.condJmp.boolAddress), cfInstr.condJmp.condition ^ simpleControlFlow ? "!" : "=");
+                     }
+ 
+                     if (simpleControlFlow)

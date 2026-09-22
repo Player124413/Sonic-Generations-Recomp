@@ -1,0 +1,32 @@
+name: FFmpeg XMA decoder tests
+on:
+  push:
+    paths:
+      - 'SonicGenerationsRecomp/apu/xma_decoder.*'
+      - 'cmake/XmaDecoder.cmake'
+      - 'tests/audio/**'
+      - '.github/workflows/audio-tests.yml'
+  pull_request:
+    paths:
+      - 'SonicGenerationsRecomp/apu/xma_decoder.*'
+      - 'cmake/XmaDecoder.cmake'
+      - 'tests/audio/**'
+      - '.github/workflows/audio-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  decoder:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install FFmpeg development libraries
+        run: sudo apt-get update && sudo apt-get install -y libavcodec-dev libavutil-dev pkg-config
+      - name: Build standalone decoder tests
+        run: |
+          cmake -S tests/audio -B build-audio -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-audio --parallel 2
+      - name: Test
+        run: ctest --test-dir build-audio --output-on-failure

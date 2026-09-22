@@ -1362,9 +1362,13 @@ uint32_t KeReleaseSemaphore(XKSEMAPHORE* semaphore, uint32_t increment, uint32_t
     return STATUS_SUCCESS;
 }
 
-void XAudioGetVoiceCategoryVolume()
+uint32_t XAudioGetVoiceCategoryVolume(uint32_t category, be<float>* volume)
 {
-    LOG_UTILITY("!!! STUB !!!");
+    // Same two-argument ABI as Xenia. No system category overrides yet;
+    // MasterVolume is applied once, at the SDL output, not again here.
+    if (!volume) return 0xC000000D; // STATUS_INVALID_PARAMETER
+    *volume = 1.0f;
+    return 0;
 }
 
 uint32_t XAudioGetVoiceCategoryVolumeChangeMask(uint32_t Driver, be<uint32_t>* Mask)

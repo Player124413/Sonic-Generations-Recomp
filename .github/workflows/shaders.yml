@@ -39,6 +39,12 @@ jobs:
         run: |
           git submodule update --init --recursive tools/XenosRecomp
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Apply Generations boolean-register support
+        run: |
+          git -C tools/XenosRecomp apply --check ../../patches/xenos-generations-booleans.patch
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C tools/XenosRecomp apply ../../patches/xenos-generations-booleans.patch
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build XenosRecomp with DXIL and SPIR-V support
         run: |
           cmake -S tools/XenosRecomp -B build-shaders -G 'Visual Studio 17 2022' -A x64 -T ClangCL -DXENOS_RECOMP_DXIL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DZSTD_BUILD_SHARED=OFF -DZSTD_BUILD_STATIC=ON -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_TESTS=OFF -DXXHASH_BUILD_XXHSUM=OFF
