@@ -48,37 +48,38 @@ bool xma::Stream::Packet(ContextView& c, const Memory& memory, std::span<uint8_t
 }
 bool xma::Stream::MovePacket(ContextView& c, const Memory& memory, bool isContinuation) {
     std::span<uint8_t> packet;
-    if (!moving) {
-        if (!Packet(c, memory, packet)) return false;
-        skipPackets = uint32_t(packet[3]) + 1;
-        moving = true;
-        continuation = isContinuation;
-    }
-    while (skipPackets) {
-        auto current = c.Get(4, 31, 1);
-        if (!c.Get(0, 20 + current, 1)) return false;
-        auto count = c.Get(current, 0, 12);
-        Require(count > 0, "XMA valid input buffer has no packets");
-        auto nextPacket = c.Get(2, 0, 26) / PacketBits + 1;
-        --skipPackets;
-        if (nextPacket >= count) {
-            c.Set(0, 20 + current, 1, 0);
-            c.Set(4, 31, 1, current ^ 1);
-            c.Set(2, 0, 26, 0);
-        } else {
-            c.Set(2, 0, 26, nextPacket * PacketBits);
+    // At most two input buffers (4095 packets each). Do not recurse over
+    // packets without starting frames: Windows has a small default stack.
+    for (unsigned traversal = 0; traversal < 8192; ++traversal) {
+        if (!moving) {
+            if (!Packet(c, memory, packet)) return false;
+            skipPackets = uint32_t(packet[3]) + 1;
+            moving = true;
+            continuation = isContinuation;
         }
-    }
-    if (!Packet(c, memory, packet)) return false;
-    uint32_t start = continuation ? 32 : FirstBit(packet);
-    // No frame starts in this packet. Keep walking, bounded by input buffers.
-    if (start >= PacketBits) {
+        while (skipPackets) {
+            auto current = c.Get(4, 31, 1);
+            if (!c.Get(0, 20 + current, 1)) return false;
+            auto count = c.Get(current, 0, 12);
+            Require(count > 0, "XMA valid input buffer has no packets");
+            auto nextPacket = c.Get(2, 0, 26) / PacketBits + 1;
+            --skipPackets;
+            if (nextPacket >= count) {
+                c.Set(0, 20 + current, 1, 0);
+                c.Set(4, 31, 1, current ^ 1);
+                c.Set(2, 0, 26, 0);
+            } else {
+                c.Set(2, 0, 26, nextPacket * PacketBits);
+            }
+        }
+        if (!Packet(c, memory, packet)) return false;
+        uint32_t start = continuation ? 32 : FirstBit(packet);
         moving = false;
-        return MovePacket(c, memory, isContinuation);
+        if (start >= PacketBits) continue;
+        c.Set(2, 0, 26, (c.Get(2, 0, 26) / PacketBits) * PacketBits + start);
+        return true;
     }
-    c.Set(2, 0, 26, (c.Get(2, 0, 26) / PacketBits) * PacketBits + start);
-    moving = false;
-    return true;
+    throw std::runtime_error("XMA packet traversal limit exceeded");
 }
 bool xma::Stream::ReadFrame(ContextView& c, const Memory& memory) {
     if (afterFrame) {

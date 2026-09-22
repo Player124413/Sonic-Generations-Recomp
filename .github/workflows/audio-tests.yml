@@ -4,6 +4,7 @@ on:
     paths:
       - 'SonicGenerationsRecomp/apu/**'
       - 'cmake/Xma*.cmake'
+      - 'cmake/xma_ffmpeg_config.h'
       - 'tools/ffmpeg-xma'
       - 'tests/audio/**'
       - '.github/workflows/audio-tests.yml'
@@ -11,6 +12,7 @@ on:
     paths:
       - 'SonicGenerationsRecomp/apu/**'
       - 'cmake/Xma*.cmake'
+      - 'cmake/xma_ffmpeg_config.h'
       - 'tools/ffmpeg-xma'
       - 'tests/audio/**'
       - '.github/workflows/audio-tests.yml'
