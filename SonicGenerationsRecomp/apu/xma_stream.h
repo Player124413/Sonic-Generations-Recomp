@@ -23,6 +23,7 @@ public:
     explicit Stream(DecodeFrame testDecoder = {});
     void Work(std::span<uint8_t> context, const Memory& memory);
     void Reset();
+    bool HasIncompleteFrame() const { return frameBits != 0; }
 private:
     bool Packet(ContextView& c, const Memory& memory, std::span<uint8_t>& packet);
     bool MovePacket(ContextView& c, const Memory& memory, bool continuation);

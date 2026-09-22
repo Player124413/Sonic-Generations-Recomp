@@ -5,6 +5,7 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <string>
 #include <cstring>
 uint32_t LE(std::span<const uint8_t> data, size_t p, unsigned n) {
     if (p + n > data.size()) throw std::runtime_error("Truncated RIFF");
@@ -27,6 +28,11 @@ int main(int argc, char** argv) {
             if (!std::memcmp(bytes.data()+offset,"XMA2",4)) oldXma2=chunk;
             offset += 8 + length + (length & 1);
         }
+        // Early XMA2 encoders stored the versioned XMA2 structure in fmt,
+        // not in a separate XMA2 chunk (version 4 + one stream reads as 0x104).
+        if (oldXma2.empty() && fmt.size() >= 36 && (fmt[0] == 3 || fmt[0] == 4) &&
+            fmt.size() == (fmt[0] == 3 ? 32u : 40u) + size_t(fmt[1]) * 4)
+            oldXma2 = fmt;
         int rate, channels;
         uint32_t tag=fmt.empty() ? 0 : LE(fmt,0,2);
         std::cout << "::notice::RIFF fmt tag=" << tag << " fmt bytes=" << fmt.size() << " XMA2 chunk=" << oldXma2.size() << '\n';
@@ -70,7 +76,10 @@ int main(int argc, char** argv) {
             uint32_t written=(c.Get(0,27,5)+31-before)%31;
             for(size_t i=0;i<written*256;++i) nonzero+=ram[output+(before*256+i)%(31*256)]!=0;
             total+=written*256;
-            if(!written && !c.Get(0,20,2)) break;
+            if(!written && !c.Get(0,20,2)) {
+                if (stream.HasIncompleteFrame()) throw std::runtime_error("Fixture ended in a truncated XMA frame");
+                break;
+            }
             if(kick==9999) throw std::runtime_error("Fixture failed to complete");
         }
         if(!total || !nonzero) throw std::runtime_error("Fixture produced no nonzero PCM");
