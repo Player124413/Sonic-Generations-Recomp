@@ -17,23 +17,30 @@ int main(int argc, char** argv) {
         std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(file), {}};
         if (bytes.size() < 12 || std::memcmp(bytes.data(), "RIFF", 4) || std::memcmp(bytes.data()+8,"WAVE",4))
             throw std::runtime_error("Expected RIFF/WAVE XMA");
-        std::span<const uint8_t> fmt, data;
+        std::span<const uint8_t> fmt, data, oldXma2;
         for (size_t offset = 12; offset + 8 <= bytes.size();) {
             uint32_t length = LE(bytes, offset+4,4);
             if (uint64_t(offset) + 8 + length > bytes.size()) throw std::runtime_error("Truncated chunk");
             auto chunk = std::span<const uint8_t>(bytes).subspan(offset+8,length);
             if (!std::memcmp(bytes.data()+offset,"fmt ",4)) fmt=chunk;
             if (!std::memcmp(bytes.data()+offset,"data",4)) data=chunk;
+            if (!std::memcmp(bytes.data()+offset,"XMA2",4)) oldXma2=chunk;
             offset += 8 + length + (length & 1);
         }
         int rate, channels;
-        uint32_t tag=LE(fmt,0,2);
-        if (tag==0x165) {
+        uint32_t tag=fmt.empty() ? 0 : LE(fmt,0,2);
+        std::cout << "::notice::RIFF fmt tag=" << tag << " fmt bytes=" << fmt.size() << " XMA2 chunk=" << oldXma2.size() << '\n';
+        if (!oldXma2.empty()) {
+            if (oldXma2.size() < 36 || oldXma2[1] != 1 || (oldXma2[0] != 3 && oldXma2[0] != 4))
+                throw std::runtime_error("Unsupported legacy XMA2 chunk");
+            rate=(uint32_t(oldXma2[12])<<24)|(uint32_t(oldXma2[13])<<16)|(uint32_t(oldXma2[14])<<8)|oldXma2[15];
+            channels=LE(oldXma2, oldXma2[0] == 3 ? 32 : 40, 1);
+        } else if (tag==0x165) {
             if (LE(fmt,8,2)!=1) throw std::runtime_error("Sample checker needs a single-stream fixture");
             rate=LE(fmt,16,4); channels=LE(fmt,29,1);
         } else if (tag==0x166) {
             channels=LE(fmt,2,2); rate=LE(fmt,4,4);
-        } else throw std::runtime_error("Fixture is not XMA");
+        } else throw std::runtime_error("Unsupported fixture fmt tag=" + std::to_string(tag));
         std::cout << "Fixture tag=" << tag << " rate=" << rate << " channels=" << channels << " data=" << data.size() << '\n';
         if ((channels!=1 && channels!=2) || data.empty() || data.size()%2048 || data.size()>4095*2048)
             throw std::runtime_error("Unsupported fixture layout");
@@ -68,5 +75,5 @@ int main(int argc, char** argv) {
         }
         if(!total || !nonzero) throw std::runtime_error("Fixture produced no nonzero PCM");
         std::cout << "Decoded " << total/(2*channels) << " samples/channel; nonzero PCM bytes=" << nonzero << '\n';
-    } catch(const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
+    } catch(const std::exception& error) { std::cerr << "::error::XMA sample: " << error.what() << '\n'; return 1; }
 }

@@ -78,9 +78,28 @@ int main() {
         Check(f.decoded == 1 && f.c.Get(0,27,5) == 0);
     }
     {
+        Fixture f; f.c.Set(0,0,12,3); f.c.Set(0,22,5,31); f.c.Set(1,20,4,15);
+        f.ram[2051] = 1; // next packet belongs to another interleaved stream
+        std::copy_n(f.ram.begin()+2048, 2048, f.ram.begin()+6144);
+        f.ram[6147] = 0;
+        f.Work(); Check(f.decoded == 2 && f.c.Get(0,27,5) == 16);
+    }
+    {
+        Fixture f; f.c.Set(1,24,3,7); // skip across a frame boundary
+        f.ram[2048] = 8; f.ram[2054] = 1; // two frames, first has successor
+        f.ram[2055] = 0; f.ram[2056] = 48; f.ram[2057] = 0;
+        f.Work(); Check(f.decoded == 2 && f.c.Get(0,27,5) == 2 && f.c.Get(1,24,3) == 0);
+    }
+    {
+        Fixture f; f.c.Set(1,29,1,0); f.c.Set(1,20,4,1); // mono, one-subframe quota
+        f.Work(); Check(f.decoded == 1 && f.c.Get(0,27,5) == 1);
+    }
+    {
         Fixture f; f.c.Set(1,31,1,0); f.Work(); Check(f.decoded == 0);
         f.c.Set(1,31,1,1); f.c.Set(0,22,5,0);
-        try { f.Work(); Check(false); } catch (const std::runtime_error&) {}
+        bool rejected = false;
+        try { f.Work(); } catch (const std::runtime_error&) { rejected = true; }
+        Check(rejected);
     }
     {
         // Full MMIO kick -> decoder callback -> guest output, same transport

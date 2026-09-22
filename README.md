@@ -22,7 +22,7 @@
 | Гостевые потоки/CRT (TLS, стеки, `\_\_restgprlr` и т.д.) | ✅ |
 | printf-семейство CRT (sprintf/swprintf/…) | ✅ собственная реализация над гостевой памятью |
 | Аудио (XAudio render driver → SDL) | ✅ базовый вывод звука |
-| XMA-декодер | 🚧 контексты + MMIO-шов (декод — см. ROADMAP) |
+| XMA-декодер | XMAFRAMES → guest PCM ring подключён; проверки и ограничения — [AUDIO.md](docs/AUDIO.md) |
 | Ввод (геймпад/клавиатура → XAMINPUT) | ✅ SDL |
 | Инсталлятор (папка / ISO-XISO + `.xexp` апдейт) | ✅ CLI |
 | GPU (`Vd\*`, present, backend-интерфейс) | 🚧 NullBackend; трансляция Xenos и шейдеры — см. ROADMAP |

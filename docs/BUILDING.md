@@ -60,3 +60,16 @@ cmake --build build --target recomp
 - Сборка ppc/ (~606 файлов) занимает время: на 8 потоков ≈ 10–25 минут.
 - Для максимальной производительности используйте Clang + LTO (см. CMakePresets).
 - Код игры (default.xex и производные) **нельзя** публиковать/коммитить.
+
+## XMA audio dependency
+
+Полная сборка теперь использует закреплённый submodule `tools/ffmpeg-xma`
+(Xenia/FFmpeg XMAFRAMES), а не системный libavcodec. Не забудьте:
+
+```sh
+git submodule update --init tools/ffmpeg-xma
+```
+
+Он собирается C-компилятором вместе с runtime на Windows/Linux x86-64.
+Старый флаг `SONIC_GENERATIONS_FFMPEG_XMA` больше не нужен. Подробности и
+standalone-тесты без полной PPC-сборки: [AUDIO.md](AUDIO.md).
