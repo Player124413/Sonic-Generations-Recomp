@@ -26,3 +26,7 @@ SonicGenerationsRecompLib/shader/shader_cache.cpp
 .vscode/
 .idea/
 compile_commands.json
+
+# Python tooling
+__pycache__/
+*.pyc

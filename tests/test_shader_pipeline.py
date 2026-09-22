@@ -1,0 +1,85 @@
+from pathlib import Path
+import struct
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+import shader_pipeline as pipeline
+
+
+class ShaderPipelineTests(unittest.TestCase):
+    def archives(self, entries):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'shaders.zip'
+            with zipfile.ZipFile(path, 'w') as z:
+                for name, data in entries:
+                    z.writestr(name, data)
+            return list(pipeline.archives(path))
+
+    def test_split_order_and_index(self):
+        self.assertEqual(self.archives([('shader.ar.01', b'b'), ('shader.arl', b'index'), ('shader.ar.00', b'a')]), [b'ab'])
+
+    def test_unsplit(self):
+        self.assertEqual(self.archives([('shader.ar', b'a')]), [b'a'])
+
+    def test_missing_part(self):
+        with self.assertRaises(ValueError):
+            self.archives([('shader.ar.01', b'b')])
+
+    def test_mixed_parts(self):
+        with self.assertRaises(ValueError):
+            self.archives([('shader.ar', b'a'), ('shader.ar.00', b'b')])
+
+    def test_unsafe_paths(self):
+        for name in ('../shader.ar', '/shader.ar', 'C:\\shader.ar'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.archives([(name, b'x')])
+
+    def test_duplicates(self):
+        with self.assertRaises(ValueError):
+            self.archives([('shader.ar', b'a'), ('SHADER.ar', b'b')])
+
+    def test_no_archives(self):
+        with self.assertRaises(ValueError):
+            self.archives([('shader.arl', b'x')])
+
+    def test_size_limit(self):
+        with patch.object(pipeline, 'MAX_BYTES', 2), self.assertRaises(ValueError):
+            self.archives([('shader.ar', b'123')])
+
+    def test_container_scan(self):
+        blob = struct.pack('>9I', 0x102A1100, 36, 4, 0, 0, 0, 0, 0, 0) + b'code'
+        self.assertEqual(list(pipeline.containers(b'head' + blob)), [blob])
+
+    def test_truncated_container(self):
+        blob = struct.pack('>9I', 0x102A1100, 36, 100, 0, 0, 0, 0, 0, 0)
+        with self.assertRaises(ValueError):
+            list(pipeline.containers(blob))
+
+    def test_bad_metadata(self):
+        blob = struct.pack('>9I', 0x102A1100, 36, 0, 0, 500, 0, 0, 0, 0)
+        with self.assertRaises(ValueError):
+            list(pipeline.containers(blob))
+
+    def test_empty_scan(self):
+        self.assertEqual(list(pipeline.containers(b'unknown' * 12)), [])
+
+    def test_cache_validation(self):
+        good = 'g_shaderCacheEntryCount = 2; g_dxilCacheDecompressedSize = 42; g_spirvCacheDecompressedSize = 43;'
+        pipeline.validate_cache(good, 2)
+        for text, count in [(good, 3), ('g_shaderCacheEntryCount = 0;', 0), (good.replace('42', '0'), 2)]:
+            with self.assertRaises(ValueError):
+                pipeline.validate_cache(text, count)
+
+    def test_download_error_does_not_leak_url(self):
+        with patch.dict('os.environ', {'SHADERS_ZIP_URL': 'https://example.com/SECRET'}), patch('urllib.request.build_opener', side_effect=ValueError('SECRET')):
+            with self.assertRaises(ValueError) as error:
+                pipeline.download(Path('unused'))
+            self.assertNotIn('SECRET', str(error.exception))
+
+
+if __name__ == '__main__':
+    unittest.main()

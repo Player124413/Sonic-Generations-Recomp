@@ -1,0 +1,63 @@
+name: Experimental Xbox 360 shaders
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha256:
+        description: 'SHA-256 of shaders.zip (from prepare_shader_link.py)'
+        required: true
+        type: string
+      upload_result:
+        description: 'Upload derived shaders (accessible to repository readers!)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  convert:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test pipeline
+        run: python -m unittest discover -s tests -p test_shader_pipeline.py -v
+      - name: Fetch pinned XenosRecomp dependencies
+        run: |
+          git submodule update --init --recursive tools/XenosRecomp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build XenosRecomp with DXIL and SPIR-V support
+        run: |
+          cmake -S tools/XenosRecomp -B build-shaders -G 'Visual Studio 17 2022' -A x64 -T ClangCL -DXENOS_RECOMP_DXIL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Assertions detect upstream conversion/compiler failures.
+          cmake --build build-shaders --config Debug --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Download, validate and convert shader ZIP
+        env:
+          SHADERS_ZIP_URL: ${{ secrets.SHADERS_ZIP_URL }}
+          ZIP_SHA256: ${{ inputs.sha256 }}
+        run: |
+          python scripts/shader_pipeline.py --sha256 "$env:ZIP_SHA256" --xenos build-shaders/XenosRecomp/Debug/XenosRecomp.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload experimental result (explicit opt-in)
+        if: ${{ success() && inputs.upload_result }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: experimental-shaders-${{ github.run_id }}
+          path: private/shader-build/result/
+          retention-days: 1
+          if-no-files-found: error
+      - name: Remove private data
+        if: always()
+        run: |
+          if (Test-Path private/shader-build) { Remove-Item private/shader-build -Recurse -Force }

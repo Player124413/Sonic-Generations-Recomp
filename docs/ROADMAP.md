@@ -4,6 +4,9 @@
 
 ## 1. Шейдеры (ваш приоритет)
 
+Экспериментальный workflow: [SHADER_WORKFLOW.md](SHADER_WORKFLOW.md).
+Кэш upstream требует адаптации ABI и не является готовой заменой runtime-кэша.
+
 1. Из дампа достать архив шейдеров игры (у Unleashed это `shader.ar` в
    `shader/`; у Generations аналогичный контейнер в составе данных игры —
    ищите .ar/.pkt в `game/work/`).
