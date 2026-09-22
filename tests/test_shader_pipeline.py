@@ -19,6 +19,17 @@ class ShaderPipelineTests(unittest.TestCase):
                     z.writestr(name, data)
             return list(pipeline.archives(path))
 
+    def test_optional_checksum(self):
+        self.assertEqual(pipeline.normalize_sha256('  '), '')
+        self.assertEqual(pipeline.normalize_sha256(' A' + 'B' * 63 + '\n'), 'a' + 'b' * 63)
+        pipeline.verify_digest('a' * 64, '')
+        pipeline.verify_digest('a' * 64, 'a' * 64)
+        with self.assertRaises(ValueError):
+            pipeline.verify_digest('a' * 64, 'b' * 64)
+        for value in ('https://example.com/file.zip', 'abc', 'g' * 64):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                pipeline.normalize_sha256(value)
+
     def test_split_order_and_index(self):
         self.assertEqual(self.archives([('shader.ar.01', b'b'), ('shader.arl', b'index'), ('shader.ar.00', b'a')]), [b'ab'])
 

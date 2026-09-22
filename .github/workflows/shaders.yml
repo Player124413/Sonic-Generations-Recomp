@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       sha256:
-        description: 'SHA-256 of shaders.zip (from prepare_shader_link.py)'
-        required: true
+        description: 'Optional expected SHA-256; leave empty to calculate automatically'
+        required: false
         type: string
       upload_result:
         description: 'Upload derived shaders (accessible to repository readers!)'
@@ -49,7 +49,7 @@ jobs:
           SHADERS_ZIP_URL: ${{ secrets.SHADERS_ZIP_URL }}
           ZIP_SHA256: ${{ inputs.sha256 }}
         run: |
-          python scripts/shader_pipeline.py --sha256 "$env:ZIP_SHA256" --xenos build-shaders/XenosRecomp/Debug/XenosRecomp.exe
+          python scripts/shader_pipeline.py --xenos build-shaders/XenosRecomp/Debug/XenosRecomp.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload experimental result (explicit opt-in)
         if: ${{ success() && inputs.upload_result }}

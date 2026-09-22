@@ -83,10 +83,20 @@ def validate_cache(text, expected):
             raise ValueError('Missing compiled payload: ' + kind)
 
 
+def normalize_sha256(value):
+    expected = value.strip().lower()
+    if expected and not re.fullmatch('[0-9a-f]{64}', expected):
+        raise ValueError('SHA-256 must be 64 hex characters, or leave it empty for automatic hashing. Do not enter a URL or filename here.')
+    return expected
+
+
+def verify_digest(actual, expected):
+    if expected and actual != expected:
+        raise ValueError('ZIP SHA-256 mismatch')
+
+
 def run(args):
-    expected = args.sha256.lower()
-    if not re.fullmatch('[0-9a-f]{64}', expected):
-        raise ValueError('Expected SHA-256: 64 hex characters')
+    expected = normalize_sha256(args.sha256)
     work = args.work.resolve()
     # Refuse stale output rather than accidentally publishing a previous run.
     work.mkdir(parents=True, exist_ok=False)
@@ -97,8 +107,10 @@ def run(args):
     if source.stat().st_size > MAX_BYTES:
         raise ValueError('ZIP exceeds 256 MiB')
     actual = hashlib.sha256(source.read_bytes()).hexdigest()
-    if actual != expected:
-        raise ValueError('ZIP SHA-256 mismatch')
+    verify_digest(actual, expected)
+    print(f'ZIP SHA-256: {actual}')
+    if not expected:
+        print('No expected checksum supplied: digest recorded, but source integrity was not independently verified.')
     exe, header = args.xenos.resolve(), args.header.resolve()
     if not exe.is_file() or not header.is_file():
         raise ValueError('XenosRecomp or common header missing')
@@ -127,7 +139,7 @@ def run(args):
     subprocess.run([str(exe), str(inputs), str(cache), str(header)], check=True, timeout=1800)
     validate_cache(cache.read_text(), len(unique))
     (output / 'report.json').write_text(json.dumps({
-        'zip_sha256': actual, 'containers_per_archive': counts,
+        'zip_sha256': actual, 'checksum_verified': bool(expected), 'containers_per_archive': counts,
         'unique_shaders': len(unique), 'runtime_ready': False,
     }, indent=2))
     (output / 'README.txt').write_text(
@@ -141,7 +153,8 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--zip', type=Path)
-    parser.add_argument('--sha256', required=True)
+    parser.add_argument('--sha256', default=os.environ.get('ZIP_SHA256', ''),
+                        help='Optional expected SHA-256; defaults to ZIP_SHA256 environment variable')
     parser.add_argument('--work', type=Path, default=Path('private/shader-build'))
     parser.add_argument('--xenos', type=Path, required=True)
     parser.add_argument('--header', type=Path, default=Path('tools/XenosRecomp/XenosRecomp/shader_common.h'))
