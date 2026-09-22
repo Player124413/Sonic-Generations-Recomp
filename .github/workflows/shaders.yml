@@ -37,10 +37,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build XenosRecomp with DXIL and SPIR-V support
         run: |
-          cmake -S tools/XenosRecomp -B build-shaders -G 'Visual Studio 17 2022' -A x64 -T ClangCL -DXENOS_RECOMP_DXIL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake -S tools/XenosRecomp -B build-shaders -G 'Visual Studio 17 2022' -A x64 -T ClangCL -DXENOS_RECOMP_DXIL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DZSTD_BUILD_SHARED=OFF -DZSTD_BUILD_STATIC=ON -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_TESTS=OFF -DXXHASH_BUILD_XXHSUM=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Build only the converter and its dependencies, not ALL_BUILD.
+          # The unused Zstd DLL resource fails with Windows RC + Clang headers.
           # Assertions detect upstream conversion/compiler failures.
-          cmake --build build-shaders --config Debug --parallel 2
+          cmake --build build-shaders --config Debug --target XenosRecomp --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Download, validate and convert shader ZIP
         env:
