@@ -111,3 +111,6 @@ endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GpuResources.cmake")
 target_link_libraries(SonicGenerationsRecompCore PUBLIC SonicGpuResources)
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/RuntimeXex.cmake")
+target_link_libraries(SonicGenerationsRecompCore PUBLIC SonicRuntimeXex)

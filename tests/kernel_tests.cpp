@@ -164,6 +164,78 @@ static void TestXexRegistry()
     CHECK(!xex_module::ValidateHeader(std::span(bytes).first(16)));
 }
 
+extern uint32_t XexGetModuleHandle(const char*, be<uint32_t>*);
+
+static void TestXexImportBinding()
+{
+    std::vector<uint8_t> bytes(0x400);
+    const auto store=[&](size_t off,uint32_t value) {
+        for(size_t i=0;i<4;++i) bytes[off+i]=uint8_t(value>>(24-i*8));
+    };
+    store(0,0x58455832); store(8,uint32_t(bytes.size())); store(16,0x100); store(20,2);
+    store(24,XEX_HEADER_ENTRY_POINT); store(28,uint32_t(PPC_CODE_BASE));
+    store(32,XEX_HEADER_IMPORT_LIBRARIES); store(36,0x40);
+    store(0x40,80); store(0x44,16); store(0x48,1);
+    std::memcpy(bytes.data()+0x4C,"xboxkrnl.exe",13);
+    store(0x5C,52); bytes[0x83]=3;
+    constexpr uint32_t slot=uint32_t(PPC_IMAGE_BASE)+0x1000;
+    for(size_t i=0;i<3;++i) store(0x84+i*4,slot+uint32_t(i)*4);
+    Image image; image.base=PPC_IMAGE_BASE; image.size=PPC_IMAGE_SIZE;
+    image.entry_point=PPC_CODE_BASE;
+    image.data=std::make_unique<uint8_t[]>(image.size);
+    auto* raw=reinterpret_cast<be<uint32_t>*>(image.data.get()+0x1000);
+    raw[0]=0x193; raw[1]=0x266; raw[2]=0xAD;
+    auto* guest=static_cast<be<uint32_t>*>(g_memory.Translate(slot));
+    guest[0]=guest[1]=guest[2]=0xDEADBEEF;
+    CHECK(xex_module::RegisterImage(bytes,image));
+    std::string error;
+    CHECK(xex_module::BindImports(bytes,image,error) && error.empty());
+    CHECK(guest[0]==xex_module::VariableAddress(0x193));
+    auto* exported=static_cast<be<uint32_t>*>(g_memory.Translate(guest[0]));
+    CHECK(*exported==xex_module::ModuleHandle());
+    auto* loader=static_cast<be<uint32_t>*>(g_memory.Translate(*exported));
+    CHECK(loader[0x1C/4]==PPC_IMAGE_BASE && loader[0x3C/4]==PPC_CODE_BASE);
+    CHECK(RtlImageXexHeaderField(loader[0x58/4],XEX_HEADER_ENTRY_POINT)!=0);
+    CHECK(guest[1]==xex_module::VariableAddress(0x266));
+    CHECK(*static_cast<be<uint32_t>*>(g_memory.Translate(guest[1]))==0);
+    CHECK(guest[2]==xex_module::VariableAddress(0xAD));
+    be<uint32_t> handle;
+    CHECK(XexGetModuleHandle(nullptr,&handle)==0 && handle==*exported);
+    CHECK(XexGetModuleHandle("DEFAULT.XEX",&handle)==0 && handle==*exported);
+    CHECK(XexGetModuleHandle("not-the-title.xex",&handle)!=0 && handle==0);
+    CHECK(XexGetModuleHandle(nullptr,nullptr)!=0);
+
+    // Failed plans must not partially patch the first, otherwise valid record.
+    guest[0]=guest[1]=guest[2]=0xDEADBEEF;
+    raw[2]=0xFFFF;
+    CHECK(!xex_module::BindImports(bytes,image,error) && !error.empty());
+    CHECK(guest[0]==0xDEADBEEF && guest[1]==0xDEADBEEF && guest[2]==0xDEADBEEF);
+    raw[2]=0x1B; // known variable, but no implemented object-type ABI
+    CHECK(!xex_module::BindImports(bytes,image,error));
+    raw[2]=0xAD;
+    store(0x8C,slot); // duplicate destination
+    CHECK(!xex_module::BindImports(bytes,image,error));
+    store(0x8C,uint32_t(PPC_IMAGE_BASE+PPC_IMAGE_SIZE-2));
+    CHECK(!xex_module::BindImports(bytes,image,error));
+    store(0x8C,slot+8);
+    bytes[0x59]='!'; bytes[0x5A]='!'; bytes[0x5B]='!'; bytes[0x58]='!';
+    CHECK(!xex_module::BindImports(bytes,image,error)); // unterminated name
+    std::memcpy(bytes.data()+0x4C,"xboxkrnl.exe",13);
+    bytes[0x59]=bytes[0x5A]=bytes[0x5B]=0;
+    store(0x5C,UINT32_MAX);
+    CHECK(!xex_module::BindImports(bytes,image,error));
+    store(0x5C,52);
+
+    // Use a known generated function mapping without executing guest code.
+    raw[1]=1; raw[2]=0x01000001;
+    store(0x8C,uint32_t(PPC_CODE_BASE));
+    *reinterpret_cast<be<uint32_t>*>(image.data.get()+PPC_CODE_BASE-PPC_IMAGE_BASE)=0x01000001;
+    CHECK(xex_module::BindImports(bytes,image,error));
+    CHECK(guest[1]==PPC_CODE_BASE);
+    *reinterpret_cast<be<uint32_t>*>(image.data.get()+PPC_CODE_BASE-PPC_IMAGE_BASE)=0x01000002;
+    CHECK(!xex_module::BindImports(bytes,image,error));
+}
+
 int main()
 {
     printf("== SonicGenerationsRecomp kernel smoke tests ==\n");
@@ -171,6 +243,7 @@ int main()
     g_userHeap.Init();
 
     TestXexRegistry();
+    TestXexImportBinding();
     TestHeap();
     TestMemoryTranslation();
     TestKernelObjects();

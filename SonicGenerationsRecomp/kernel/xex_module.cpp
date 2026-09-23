@@ -6,9 +6,192 @@
 #include <xex.h>
 #include <image.h>
 #include <kernel/heap.h>
+#include <atomic>
+#include <thread>
+#include <chrono>
 
 static uint8_t* g_imageHeader = nullptr;
 static std::vector<std::tuple<std::string, uint32_t, uint32_t>> g_sections;
+
+namespace
+{
+struct ImportLibrary
+{
+    std::string name;
+    std::vector<uint32_t> records;
+};
+uint32_t ReadBE(const uint8_t* p)
+{
+    return (uint32_t(p[0])<<24)|(uint32_t(p[1])<<16)|(uint32_t(p[2])<<8)|p[3];
+}
+bool ReadImports(std::span<const uint8_t> bytes, uint64_t base, uint64_t imageSize,
+                 std::vector<ImportLibrary>& libraries, std::string& error)
+{
+    auto fail = [&](const char* message) { error=message; return false; };
+    if(!xex_module::ValidateHeader(bytes)) return fail("invalid XEX header");
+    auto* raw=static_cast<const uint8_t*>(getOptHeaderPtr(bytes.data(),XEX_HEADER_IMPORT_LIBRARIES));
+    if(!raw) return true;
+    const size_t total=ReadBE(raw);
+    if(total<12) return fail("truncated import header");
+    const size_t stringSize=ReadBE(raw+4), stringCount=ReadBE(raw+8);
+    if(stringSize>total-12 || stringCount>stringSize/4) return fail("invalid import string table");
+    std::vector<std::string> names;
+    for(size_t pos=0;names.size()<stringCount;)
+    {
+        if(pos>=stringSize) return fail("missing import library name");
+        auto* begin=raw+12+pos;
+        auto* end=static_cast<const uint8_t*>(std::memchr(begin,0,stringSize-pos));
+        if(!end || end==begin) return fail("unterminated or empty import library name");
+        names.emplace_back(reinterpret_cast<const char*>(begin),size_t(end-begin));
+        pos=(pos+size_t(end-begin)+4)&~size_t(3);
+        if(pos>stringSize) return fail("truncated import name padding");
+    }
+    std::set<uint32_t> addresses;
+    for(size_t offset=12+stringSize;offset<total;)
+    {
+        if(total-offset<40) return fail("truncated import library");
+        const auto* lib=raw+offset;
+        const size_t size=ReadBE(lib), name=lib[37], count=(size_t(lib[38])<<8)|lib[39];
+        if(size!=40+count*4 || size>total-offset || name>=names.size())
+            return fail("invalid import library size or name index");
+        ImportLibrary library{names[name],{}};
+        for(size_t i=0;i<count;++i)
+        {
+            const auto address=ReadBE(lib+40+i*4);
+            if((address&3) || address<base || uint64_t(address)-base>=imageSize ||
+               imageSize-(uint64_t(address)-base)<4 || !addresses.insert(address).second)
+                return fail("unaligned, duplicate or out-of-image import record");
+            library.records.push_back(address);
+        }
+        libraries.push_back(std::move(library));
+        offset+=size;
+    }
+    return true;
+}
+struct ExportType { uint32_t ordinal; bool variable; const char* name; };
+#define kVariable true
+#define kFunction false
+#define XE_EXPORT(module, ordinal, name, type) {ordinal,type,#name}
+const ExportType kernelExports[]={
+#include <xbox/xboxkrnl_table.inc>
+};
+const ExportType xamExports[]={
+#include <xbox/xam_table.inc>
+};
+#undef XE_EXPORT
+#undef kVariable
+#undef kFunction
+
+// LDR_DATA_TABLE_ENTRY layout follows Xenia's xmodule.h (BSD attribution in
+// licenses/Xenia-BSD.txt). This is guest storage, never a host pointer/handle.
+struct TitleExports
+{
+    std::array<be<uint32_t>,25> loader{}; // header pointer at 0x58
+    be<uint32_t> moduleHandle{}, certMonitor{}, debugMonitor{};
+    alignas(8) std::array<be<uint32_t>,6> timestamp{};
+    std::array<be<uint16_t>,12> name{}; // default.xex + terminator
+};
+static_assert(offsetof(TitleExports,moduleHandle)==0x64);
+TitleExports* g_exports=nullptr;
+// Constructed after the heap. Stop/join before process-lifetime guest storage
+// is destroyed. Guest reloads do not allocate another timer or invalidate it.
+void StartTimestampClock()
+{
+    static std::jthread clock([](std::stop_token stop) {
+        const auto start=std::chrono::steady_clock::now();
+        while(!stop.stop_requested())
+        {
+            auto ms=uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now()-start).count());
+            std::atomic_ref<uint32_t>(g_exports->timestamp[4].value).store(
+                __builtin_bswap32(ms),std::memory_order_relaxed);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+}
+}
+
+Image RuntimeXex2LoadImage(const uint8_t*,size_t);
+Image xex_module::DecodeImage(std::span<const uint8_t> bytes)
+{
+    if(!ValidateHeader(bytes)) return {};
+    const auto* header=reinterpret_cast<const Xex2Header*>(bytes.data());
+    const auto* security=reinterpret_cast<const Xex2SecurityInfo*>(bytes.data()+header->securityOffset);
+    std::vector<ImportLibrary> libraries;
+    std::string error;
+    if(!ReadImports(bytes,security->loadAddress,security->imageSize,libraries,error))
+    { LOGFN_ERROR("XEX imports: {}",error); return {}; }
+    return RuntimeXex2LoadImage(bytes.data(),bytes.size());
+}
+
+uint32_t xex_module::ModuleHandle()
+{
+    return g_exports ? g_memory.MapVirtual(g_exports->loader.data()) : 0;
+}
+uint32_t xex_module::VariableAddress(uint32_t ordinal)
+{
+    if(!g_exports) return 0;
+    switch(ordinal)
+    {
+    case 0x193: return g_memory.MapVirtual(&g_exports->moduleHandle);
+    case 0x266: return g_memory.MapVirtual(&g_exports->certMonitor); // disabled, null pointee
+    case 0x59: return g_memory.MapVirtual(&g_exports->debugMonitor); // disabled, null pointee
+    case 0xAD: return g_memory.MapVirtual(g_exports->timestamp.data());
+    default: return 0; // never fabricate an unknown export
+    }
+}
+
+bool xex_module::BindImports(std::span<const uint8_t> bytes,const Image& image,std::string& error)
+{
+    error.clear();
+    std::vector<ImportLibrary> libraries;
+    if(!image.data || !g_exports || image.base>UINT32_MAX || image.size>UINT32_MAX-image.base)
+    { error="image or module is not initialized"; return false; }
+    if(!ReadImports(bytes,image.base,image.size,libraries,error)) return false;
+    std::vector<std::pair<uint32_t,uint32_t>> patches;
+    for(const auto& library:libraries)
+    {
+        std::span<const ExportType> exports;
+        if(library.name=="xboxkrnl.exe") exports=kernelExports;
+        else if(library.name=="xam.xex") exports=xamExports;
+        else { error="unsupported import library: "+library.name; return false; }
+        for(size_t i=0;i<library.records.size();++i)
+        {
+            const auto address=library.records[i];
+            const auto record=ReadBE(image.data.get()+address-image.base);
+            const auto ordinal=record&0xFFFF;
+            const auto found=std::find_if(exports.begin(),exports.end(),
+                [&](const auto& entry){return entry.ordinal==ordinal;});
+            auto fail=[&](const char* reason) {
+                error=fmt::format("{} ordinal 0x{:X} at 0x{:X}: {}",library.name,ordinal,address,reason);
+                return false;
+            };
+            if(record>>24) return fail("expected type-0 IAT record");
+            if(found==exports.end()) return fail("unknown export ordinal");
+            uint32_t target=0;
+            if(found->variable)
+            {
+                target=library.name=="xboxkrnl.exe" ? VariableAddress(ordinal) : 0;
+                if(!target) return fail("variable export is not implemented");
+            }
+            else
+            {
+                if(++i>=library.records.size()) return fail("missing function thunk");
+                target=library.records[i];
+                if(image.size-(target-image.base)<16) return fail("truncated function thunk");
+                const auto thunk=ReadBE(image.data.get()+target-image.base);
+                if((thunk>>24)!=1 || (thunk&0xFFFF)!=ordinal)
+                    return fail("function thunk type or ordinal mismatch");
+                if(target<PPC_CODE_BASE || uint64_t(target)>=uint64_t(PPC_CODE_BASE)+PPC_CODE_SIZE ||
+                   !g_memory.FindFunction(target)) return fail("function thunk has no compiled mapping");
+            }
+            patches.emplace_back(address,target);
+        }
+    }
+    for(auto [slot,target]:patches)
+        *static_cast<be<uint32_t>*>(g_memory.Translate(slot))=target;
+    return true;
+}
 
 bool xex_module::ValidateHeader(std::span<const uint8_t> bytes)
 {
@@ -49,6 +232,31 @@ bool xex_module::RegisterImage(std::span<const uint8_t> bytes, const Image& imag
     auto* copy=static_cast<uint8_t*>(g_userHeap.Alloc(headerSize));
     if(!copy) return false;
     std::memcpy(copy,bytes.data(),headerSize);
+    if(!g_exports)
+    {
+        auto* storage=g_userHeap.Alloc(sizeof(TitleExports));
+        if(!storage) { g_userHeap.Free(copy); return false; }
+        g_exports=new(storage) TitleExports{};
+        StartTimestampClock();
+    }
+    const uint32_t handle=ModuleHandle();
+    // Singleton loader lists, title image metadata and two UNICODE_STRINGs.
+    for(size_t offset: {size_t(0),size_t(8),size_t(16)})
+        g_exports->loader[offset/4]=g_exports->loader[offset/4+1]=handle+uint32_t(offset);
+    g_exports->loader[0x1C/4]=uint32_t(image.base);
+    g_exports->loader[0x20/4]=image.size;
+    g_exports->loader[0x38/4]=image.size;
+    g_exports->loader[0x3C/4]=uint32_t(image.entry_point);
+    g_exports->loader[0x40/4]=0x00010000; // BE16 load count 1, module index 0
+    constexpr char name[]="default.xex";
+    for(size_t i=0;i<sizeof(name);++i) g_exports->name[i]=uint16_t(name[i]);
+    for(size_t offset: {size_t(0x24),size_t(0x2C)})
+    {
+        g_exports->loader[offset/4]=(22u<<16)|24u;
+        g_exports->loader[offset/4+1]=g_memory.MapVirtual(g_exports->name.data());
+    }
+    g_exports->loader[0x58/4]=g_memory.MapVirtual(copy);
+    g_exports->moduleHandle=handle;
     if(g_imageHeader) g_userHeap.Free(g_imageHeader);
     g_imageHeader=copy; g_sections=std::move(sections);
     return true;
@@ -97,14 +305,21 @@ uint32_t RtlImageXexHeaderField(uint32_t imageHeader, uint32_t headerId)
 
 uint32_t XexGetModuleHandle(const char* name, be<uint32_t>* handle)
 {
-    if (handle)
-        *handle = 0x1000; // pseudo handle for the title module
+    if(!handle) return 0xC000000D;
+    *handle=0;
+    std::string requested=name ? name : "";
+    std::transform(requested.begin(),requested.end(),requested.begin(),
+        [](unsigned char c){ return char(c>='A' && c<='Z' ? c+32 : c); });
+    if(!xex_module::ModuleHandle() || (!requested.empty() && requested!="default.xex"))
+        return 0xC0000135;
+    *handle=xex_module::ModuleHandle();
     return 0;
 }
 
 uint32_t XexGetModuleSection(uint32_t moduleHandle, const char* sectionName,
     be<uint32_t>* address, be<uint32_t>* size)
 {
+    if(moduleHandle && moduleHandle!=xex_module::ModuleHandle()) return 0xC0000008;
     uint32_t sectionAddress = 0;
     uint32_t sectionSize = 0;
 

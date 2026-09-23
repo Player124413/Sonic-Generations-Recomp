@@ -180,32 +180,12 @@ uint32_t GuestTimeoutToMilliseconds(be<int64_t>* timeout)
 }
 
 
-void KeCertMonitorData()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
-void XexExecutableModuleHandle()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
 void ExLoadedCommandLine()
 {
     LOG_UTILITY("!!! STUB !!!");
 }
 
-void KeDebugMonitorData()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
 void ExThreadObjectType()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
-void KeTimeStampBundle()
 {
     LOG_UTILITY("!!! STUB !!!");
 }

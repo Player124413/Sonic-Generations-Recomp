@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string>
 
 struct Image;
 
@@ -9,6 +10,12 @@ struct Image;
 // RtlImageXexHeaderField/XexGetModuleSection/XexGetProcedureAddress.
 namespace xex_module
 {
+    Image DecodeImage(std::span<const uint8_t> bytes);
+    // Input image contains original BE import records (not tool-patched thunks).
+    // Builds a complete patch plan before changing any guest IAT slots.
+    bool BindImports(std::span<const uint8_t> bytes, const Image& image, std::string& error);
+    uint32_t ModuleHandle();
+    uint32_t VariableAddress(uint32_t ordinal);
     bool ValidateHeader(std::span<const uint8_t> bytes);
     // Call after heap initialization, before starting guest threads.
     bool RegisterImage(std::span<const uint8_t> bytes, const Image& image);

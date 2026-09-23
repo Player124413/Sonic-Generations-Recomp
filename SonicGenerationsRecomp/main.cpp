@@ -121,7 +121,7 @@ try
     const auto* security=reinterpret_cast<const Xex2SecurityInfo*>(bytes.data()+header->securityOffset);
     if(security->loadAddress!=PPC_IMAGE_BASE || security->imageSize!=PPC_IMAGE_SIZE)
     { LOGN_ERROR("XEX image layout does not match the compiled PPC image. Check game/TU version."); return 0; }
-    const auto image=Xex2LoadImage(bytes.data(),bytes.size());
+    const auto image=xex_module::DecodeImage(bytes);
     if(!image.data || image.base!=PPC_IMAGE_BASE || image.size!=PPC_IMAGE_SIZE ||
         image.entry_point<PPC_CODE_BASE || image.entry_point>=PPC_CODE_BASE+PPC_CODE_SIZE ||
         (image.entry_point&3) || !g_memory.FindFunction(uint32_t(image.entry_point)))
@@ -132,6 +132,9 @@ try
     std::memcpy(g_memory.Translate(image.base),image.data.get(),image.size);
     if(!xex_module::RegisterImage(bytes,image))
     { LOGN_ERROR("Failed to register guest XEX headers/sections."); return 0; }
+    std::string importError;
+    if(!xex_module::BindImports(bytes,image,importError))
+    { LOGFN_ERROR("XEX import binding failed: {}",importError); return 0; }
     if(resource) g_xdbfWrapper=XDBFWrapper(static_cast<uint8_t*>(g_memory.Translate(resource->offset.get())),resource->sizeOfData);
     return uint32_t(image.entry_point);
 }

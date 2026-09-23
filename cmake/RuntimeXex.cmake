@@ -1,0 +1,20 @@
+# Keep the recompiler's destructive import rewriting out of the runtime loader.
+# Build a separate entry point from the pinned decoder; do not modify the tool
+# or its submodule. Runtime import records must remain big-endian and intact.
+set(_xex_source "${SONIC_GENERATIONS_TOOLS_ROOT}/XenonRecomp/XenonUtils/xex.cpp")
+file(READ "${_xex_source}" _xex)
+string(REGEX MATCHALL "if \\(imports != nullptr\\)" _import_guards "${_xex}")
+list(LENGTH _import_guards _guard_count)
+if(NOT _guard_count EQUAL 1)
+    message(FATAL_ERROR "Pinned XEX decoder changed: review runtime import preservation")
+endif()
+string(REPLACE "if (imports != nullptr)" "if (false && imports != nullptr)" _xex "${_xex}")
+foreach(_symbol Xex2LoadImage XamExports XboxKernelExports)
+    string(REPLACE "${_symbol}" "Runtime${_symbol}" _xex "${_xex}")
+endforeach()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/runtime_xex.cpp" "${_xex}")
+add_library(SonicRuntimeXex STATIC "${CMAKE_CURRENT_BINARY_DIR}/runtime_xex.cpp")
+get_target_property(_xex_includes XenonUtils INCLUDE_DIRECTORIES)
+target_include_directories(SonicRuntimeXex PRIVATE ${_xex_includes})
+target_compile_definitions(SonicRuntimeXex PRIVATE NOMINMAX)
+target_link_libraries(SonicRuntimeXex PUBLIC XenonUtils)
