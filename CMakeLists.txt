@@ -8,6 +8,9 @@ set(SONIC_GENERATIONS_RECOMP_CXX_STANDARD 20)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "The full runtime requires Clang/clang-cl (anonymous Xbox ABI aggregates are not supported by GCC/MSVC).")
+endif()
 set(BUILD_SHARED_LIBS OFF)
 
 if (POLICY CMP0141)
@@ -38,7 +41,7 @@ if (NOT MSVC)
 endif()
 
 # Vendored tools (XenonRecomp/XenosRecomp and their dependencies).
-add_subdirectory(${SONIC_GENERATIONS_TOOLS_ROOT}/XenonRecomp)
+add_subdirectory(${SONIC_GENERATIONS_TOOLS_ROOT}/XenonRecomp EXCLUDE_FROM_ALL)
 
 # Some fmt versions rely on transitive includes for malloc/free which newer
 # toolchains no longer provide.

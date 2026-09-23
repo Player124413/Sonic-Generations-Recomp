@@ -1,0 +1,55 @@
+name: Full runtime diagnostic build
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/runtime-build.yml'
+      - 'CMakeLists.txt'
+      - 'SonicGenerationsRecomp/CMakeLists.txt'
+      - 'SonicGenerationsRecompLib/CMakeLists.txt'
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch pinned runtime dependencies
+        run: |
+          git submodule update --init tools/XenonRecomp tools/XenosRecomp tools/ffmpeg-xma
+          git -C tools/XenonRecomp submodule update --init --recursive
+          git -C tools/XenosRecomp submodule update --init thirdparty/smol-v thirdparty/zstd thirdparty/xxHash
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld ninja-build libsdl2-dev libvulkan-dev
+      - name: Configure full runtime with Vulkan and XMA
+        run: >-
+          cmake -S . -B build-runtime -G Ninja
+          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS_DEBUG='-O0 -g0'
+          -DCMAKE_C_FLAGS_DEBUG='-O0 -g0'
+          -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
+          -DSONIC_GENERATIONS_ENABLE_VULKAN=ON
+      - name: Build generated PPC, runtime, executable and kernel tests
+        run: cmake --build build-runtime --parallel 2
+      - name: Host kernel and import tests (no game assets)
+        run: ctest --test-dir build-runtime --output-on-failure --timeout 120
+      - name: Executable CLI smoke test (not a game boot)
+        run: ./build-runtime/SonicGenerationsRecomp/SonicGenerationsRecomp --help
+      - name: Package diagnostic executable
+        run: |
+          mkdir -p package
+          cp build-runtime/SonicGenerationsRecomp/SonicGenerationsRecomp package/
+          cp COPYING THIRD_PARTY.md docs/TESTING_RUNTIME.md package/
+          cp scripts/test_runtime.py package/
+          git rev-parse HEAD > package/revision.txt
+          ldd package/SonicGenerationsRecomp > package/shared-libraries.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64-diagnostic-runtime
+          path: package/
+          if-no-files-found: error

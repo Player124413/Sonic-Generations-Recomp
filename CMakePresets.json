@@ -33,6 +33,15 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
             }
+        },
+        {
+            "name": "linux-vulkan",
+            "displayName": "Linux Clang Vulkan runtime",
+            "inherits": "linux-clang",
+            "binaryDir": "${sourceDir}/build/linux-vulkan",
+            "cacheVariables": {
+                "SONIC_GENERATIONS_ENABLE_VULKAN": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -47,12 +56,23 @@
         {
             "name": "msvc",
             "configurePreset": "msvc"
+        },
+        {
+            "name": "linux-vulkan",
+            "configurePreset": "linux-vulkan"
         }
     ],
     "testPresets": [
         {
             "name": "default",
             "configurePreset": "default",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "linux-vulkan",
+            "configurePreset": "linux-vulkan",
             "output": {
                 "outputOnFailure": true
             }
