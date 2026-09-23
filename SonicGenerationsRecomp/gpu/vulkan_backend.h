@@ -8,14 +8,14 @@
 
 struct SDL_Window;
 
-// Real Vulkan resource/transfer/WSI backend. Game graphics pipelines are not yet
-// wired: uploads are reported separately from draws, and Present clears only.
+// Vulkan resource/WSI backend with opt-in bounded direct-frame native draws.
+// Native EDRAM/resolve association and complete command coverage remain open.
 class VulkanBackend final : public IRenderBackend
 {
 public:
     explicit VulkanBackend(SDL_Window* window = nullptr, bool validation = false, bool enableGameDraws = false);
     ~VulkanBackend() override;
-    const char* GetName() const override { return "vulkan-transfer"; }
+    const char* GetName() const override { return drawEnabled ? "vulkan-direct-draw" : "vulkan-transfer"; }
     bool Init(const VideoMode& mode) override;
     void Shutdown() override;
     GuestGpu::SubmissionResult SubmitGuestBatch(const GuestGpu::NativeBatch& batch) override;

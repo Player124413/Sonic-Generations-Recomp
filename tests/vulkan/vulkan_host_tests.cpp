@@ -195,7 +195,7 @@ static void NativeGameShaderDrawTest()
     draw.resources.vertices.push_back(std::move(vertices));
     draw.indices.count=3; draw.indices.stride=2; draw.indices.bytes={0,0,1,0,2,0};
     draw.resources.payloadBytes=draw.resources.vertices[0].bytes.size(); batch.payloadBytes=draw.resources.payloadBytes+6;
-    VulkanBackend backend(nullptr,true,true); backend.Init(64,64);
+    VulkanBackend backend(nullptr,true,true); CHECK(backend.Init(VideoMode{64,64}));
     CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Submitted);
     CHECK(backend.GetHostStats().indexedDraws==1 && backend.GetHostStats().pipelinesCreated==1);
     draw.resources.declaration.clear();
