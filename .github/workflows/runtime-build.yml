@@ -5,8 +5,15 @@ on:
     paths:
       - '.github/workflows/runtime-build.yml'
       - 'CMakeLists.txt'
-      - 'SonicGenerationsRecomp/CMakeLists.txt'
+      - 'SonicGenerationsRecomp/**'
+      - 'tests/*.cpp'
+      - 'tests/CMakeLists.txt'
+      - 'scripts/test_runtime.py'
+      - 'cmake/**'
       - 'SonicGenerationsRecompLib/CMakeLists.txt'
+concurrency:
+  group: full-runtime-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
