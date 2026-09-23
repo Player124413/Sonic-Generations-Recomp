@@ -2,7 +2,11 @@ cmake_minimum_required(VERSION 3.20)
 project(VulkanHostTests LANGUAGES CXX)
 enable_testing()
 include(../../cmake/VulkanHost.cmake)
-add_executable(vulkan_host_tests vulkan_host_tests.cpp)
+find_package(Threads REQUIRED)
+add_executable(vulkan_host_tests vulkan_host_tests.cpp
+    ../../SonicGenerationsRecomp/gpu/native_commands.cpp
+    ../../SonicGenerationsRecomp/gpu/native_resources.cpp)
+target_link_libraries(vulkan_host_tests PRIVATE Threads::Threads)
 target_link_libraries(vulkan_host_tests PRIVATE SonicVulkanHost)
 add_test(NAME vulkan_host_tests COMMAND vulkan_host_tests)
 set_tests_properties(vulkan_host_tests PROPERTIES TIMEOUT 120)

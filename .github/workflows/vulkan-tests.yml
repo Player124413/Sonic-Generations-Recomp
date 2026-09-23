@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - 'SonicGenerationsRecomp/gpu/**'
+      - 'cmake/GpuResources.cmake'
       - 'SonicGenerationsRecomp/ui/game_window.cpp'
       - 'SonicGenerationsRecomp/CMakeLists.txt'
       - 'cmake/VulkanHost.cmake'
@@ -11,6 +12,7 @@ on:
   pull_request:
     paths:
       - 'SonicGenerationsRecomp/gpu/**'
+      - 'cmake/GpuResources.cmake'
       - 'SonicGenerationsRecomp/ui/game_window.cpp'
       - 'SonicGenerationsRecomp/CMakeLists.txt'
       - 'cmake/VulkanHost.cmake'

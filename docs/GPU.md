@@ -69,12 +69,13 @@ This is **command preparation, not Vulkan/D3D12 rendering**. It does not replace
 render/sampler dispatch tables. It observes state changes made through setters
 or directly in device memory, but pre-draw snapshots precede SDK lazy fixups.
 Only two draw paths are covered (`NativeBatch::CompleteCoverage == false`).
-UP draws, command-list replay, resolves/clears and vertex data are not captured.
-Render-target/texture binding addresses are not retained host resources or
-stable resource identities. Their data, resource lifetimes/formats/tiling and
-shader bindings still require implementation. Backend consumers must not render
-such a batch as if it were complete. The optional Vulkan backend now consumes these snapshots for resource uploads;
-this does not make the partial batches ready for graphics draws. D3D12 is not added.
+UP draws, command-list replay and resolves/clears are not captured. Vulkan now
+opts into owned vertex and base-level 2D texture capture/conversion, then uploads
+supported resources. Plain trace/capture remains state/index-only. See
+[VULKAN.md](VULKAN.md) for exact formats, limits and unsupported mip/dimension
+profiles. Render-target identities, shader descriptors/declarations and complete
+resource semantics are still missing: do not render these batches as if they
+were complete. `ResourcesUploaded` is not `Submitted`. D3D12 is not added.
 
 Memory reads check page-zero protection, alignment, 32-bit overflow and view
 bounds. They assume guest pages are accessible as in the original PPC runtime;

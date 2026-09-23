@@ -20,6 +20,7 @@ set(SONIC_GENERATIONS_CORE_SOURCES
     "gpu/video.cpp"
     "gpu/guest_hooks.cpp"
     "gpu/native_commands.cpp"
+    "gpu/native_resources.cpp"
     "gpu/state_dispatch.cpp"
     "gpu/state_tables.cpp"
     "gpu/state_table_hook.cpp"
@@ -109,3 +110,6 @@ if (SONIC_GENERATIONS_ENABLE_VULKAN)
     target_link_libraries(SonicGenerationsRecompCore PUBLIC SonicVulkanHost)
     target_compile_definitions(SonicGenerationsRecompCore PUBLIC SONIC_GENERATIONS_ENABLE_VULKAN=1)
 endif()
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/GpuResources.cmake")
+target_link_libraries(SonicGenerationsRecompCore PUBLIC SonicGpuResources)

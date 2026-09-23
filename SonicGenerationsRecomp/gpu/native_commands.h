@@ -1,5 +1,6 @@
 #pragma once
 
+#include <gpu/native_resources.h>
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -64,6 +65,7 @@ namespace GuestGpu
         DrawKind kind{};
         std::array<uint32_t, 4> arguments{}; // unmodified entry r4..r7
         NativeState state;
+        DrawResources resources; // owned, opt-in native resource capture
         IndexSnapshot indices; // owned only for indexed draws
     };
 
@@ -81,7 +83,7 @@ namespace GuestGpu
         CaptureErrors errors;
         size_t payloadBytes = 0;
         // Only two SDK draw paths are covered. Binding addresses are identifiers,
-        // NOT retained resources; texture/vertex bytes and shaders are not owned.
+        // NOT necessarily retained resources; see DrawResources::captured.
         // Never treat this partial batch as a ready-to-render command list.
         static constexpr bool CompleteCoverage = false;
     };
@@ -96,7 +98,7 @@ namespace GuestGpu
         explicit CommandStream(size_t capacity = MaxDraws) noexcept;
         // Clears pending draws/errors; sequence remains process-lifetime monotonic.
         // Lifecycle changes must be made while guest producer threads are stopped.
-        void Enable(bool enable);
+        void Enable(bool enable, bool captureResources = false);
         bool IsEnabled() const noexcept { return enabled.load(std::memory_order_relaxed); }
         CaptureResult Capture(MemoryView memory, uint32_t device, DrawKind kind,
                               std::array<uint32_t, 4> arguments) noexcept;
@@ -105,6 +107,7 @@ namespace GuestGpu
         std::mutex mutex;
         const size_t capacity;
         std::atomic<bool> enabled{false};
+        bool resourceCapture = false;
         uint64_t sequence = 0;
         NativeBatch pending;
     };

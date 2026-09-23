@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - 'SonicGenerationsRecomp/gpu/**'
+      - 'cmake/GpuResources.cmake'
       - 'SonicGenerationsRecomp/CMakeLists.txt'
       - 'ppc/**'
       - 'tests/gpu/**'
@@ -10,6 +11,7 @@ on:
   pull_request:
     paths:
       - 'SonicGenerationsRecomp/gpu/**'
+      - 'cmake/GpuResources.cmake'
       - 'SonicGenerationsRecomp/CMakeLists.txt'
       - 'ppc/**'
       - 'tests/gpu/**'

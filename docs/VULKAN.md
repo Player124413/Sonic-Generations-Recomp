@@ -18,17 +18,73 @@ rendering. It owns a Vulkan instance/device/graphics queue and implements:
   the game's graphics pipeline ABI or a fallback shader for the game.
 - SDL Vulkan surface, swapchain acquire, transfer clear, presentation semaphores,
   `vkQueuePresentKHR`, out-of-date/suboptimal handling and swapchain recreation.
-- Guest snapshot constant-bank/index uploads to actual Vulkan buffers. The
+- Guest snapshot constants, endian-converted indices/vertex streams and decoded
+  2D texture uploads to actual Vulkan buffers/images. The
   result is **ResourcesUploaded**, never Submitted: no game draw is issued yet.
 - A host state translation dispatch table for depth/raster/alpha state and
   blend-factor/op conversion. Unsupported behavior remains explicitly marked.
 
 The window currently shows a **black host clear**, not a game image. The host
 color/depth working images are not yet mapped to guest render-target resources.
-The game shader cache, vertex layouts/data, texture tiling/formats, shader descriptor
-layouts, clears/resolves, complete state and command-list replay remain to be
+The game shader cache, vertex declarations, complete texture formats/mips, shader
+descriptor layouts, clears/resolves, complete state and command-list replay remain to be
 connected before graphics pipelines and `vkCmdDraw*` can execute the game.
 Do not interpret transfer/present counters as rendered game frames.
+
+## Native resource upload path
+
+Vulkan enables owned resource capture; plain `SONIC_GPU_CAPTURE=1` keeps the
+previous state/index-only observation behavior. Before the original draw, the
+capture takes bounded copies from CPU descriptors rather than guessing a CPU
+alias for a GPU physical address:
+
+- `82DAA9E8`: vertex resource pointers at +12812+4*stream, fetch pairs at
+  +1776+8*(17-stream), stride bytes at +12880+stream (in dwords). The profile
+  handles streams 0..15, current byte offsets and four Xenos endian modes.
+- `82DA6DC0`: texture fetches at +1152+24*slot; CPU base address recovered from
+  resource+32, validated against the GPU fetch address. No synthetic physical
+  memory alias is introduced.
+- `82DA7E60`: index width from flags bit31 and endian from bits29..30. A sliced
+  16-bit index buffer supports no swap or 8-in-16; modes requiring neighbouring
+  dwords fail explicitly instead of incorrectly swapping an unaligned slice.
+
+`resource_conversion.cpp` supports unsigned base-level 2D RGBA8/R8/BC1/BC2/BC3,
+linear pitch, 2D tiling, endian conversion, BC decompression and component
+swizzles (including constant zero/one). R8 follows Xenos component replication.
+Packed mip tails, mip chains, arrays/cubes/3D, signed/gamma/exponent formats and
+swapped R8 are rejected; no mip truncation, checkerboard or placeholder texture
+is substituted. Sampler descriptors are **not** wired by this upload path.
+
+Retained bytes share the existing 8 MiB batch budget; temporary texture source
+copies are bounded separately. Failed resource capture retains a per-draw
+status/slot, not partial owned resources. The backend preflights the whole batch
+and emits a diagnostic before any uploads for rejected resources. Copies are
+owned until batch consumption, and synchronous Vulkan submissions complete
+before resource destruction. This is deliberately not yet a persistent cache.
+
+CPU tests compare tiled addressing with an independent macro/micro formula,
+check endian modes, BC colors/alpha, pitch/padding, budgets and immutable native
+capture. Vulkan tests exercise capture-to-buffer/image transfers, converted
+index/vertex triangle input and BC texture pixel readback. These are synthetic
+fixtures through production code, **not a real game launch**.
+
+## Confirmed shader ABI gap
+
+The pinned XenosRecomp (`990d03b`) uses three 64-bit buffer device addresses in
+its SPIR-V push constants: vertex constants, pixel constants, shared constants.
+Shared offsets 0/64/128 select 2D/3D/cube descriptor indices, offset192 selects
+samplers, and 256/260/264/272 hold packed booleans, swapped texcoords, half-pixel
+offset and alpha threshold. Descriptor heaps are in spaces0..3. The Generations
+patch adds the separate 32-byte hardware boolean bank at b3/space4.
+
+The workflow output is also not raw SPIR-V: its cache contains SMOL-V encoded
+modules in a Zstd-compressed blob indexed by XXH3 hashes. The current cache seam
+and descriptor-free host pipeline do not implement this ABI. Buffer device
+address features, descriptor indexing/layouts, decompression/hash lookup,
+reflection-driven vertex declarations and boolean packing still need wiring.
+Do not pass this cache to the fixture pipeline or claim shaders alone suffice.
+Reference: `tools/XenosRecomp/XenosRecomp/{shader_common.h,shader_recompiler.cpp,main.cpp}`
+and `patches/xenos-generations-booleans.patch`.
 
 ## Verified native state dispatch
 

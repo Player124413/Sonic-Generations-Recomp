@@ -5,7 +5,8 @@ find_package(Threads REQUIRED)
 set(ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
 add_library(gpu_hooks STATIC
     "${ROOT}/SonicGenerationsRecomp/gpu/guest_hooks.cpp"
-    "${ROOT}/SonicGenerationsRecomp/gpu/native_commands.cpp")
+    "${ROOT}/SonicGenerationsRecomp/gpu/native_commands.cpp"
+    "${ROOT}/SonicGenerationsRecomp/gpu/native_resources.cpp")
 target_compile_features(gpu_hooks PUBLIC cxx_std_20)
 target_include_directories(gpu_hooks PUBLIC
     "${ROOT}" "${ROOT}/SonicGenerationsRecomp"
@@ -44,3 +45,9 @@ add_executable(state_table_hook_tests state_table_hook_tests.cpp
     "${ROOT}/SonicGenerationsRecomp/gpu/state_table_hook.cpp")
 target_link_libraries(state_table_hook_tests PRIVATE state_tables)
 add_test(NAME state_table_hook_tests COMMAND state_table_hook_tests)
+
+include("${ROOT}/cmake/GpuResources.cmake")
+target_link_libraries(gpu_hooks PUBLIC SonicGpuResources)
+add_executable(resource_conversion_tests resource_conversion_tests.cpp)
+target_link_libraries(resource_conversion_tests PRIVATE gpu_hooks)
+add_test(NAME resource_conversion_tests COMMAND resource_conversion_tests)

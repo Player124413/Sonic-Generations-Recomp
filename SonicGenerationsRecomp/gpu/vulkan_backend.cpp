@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <new>
 
 VulkanBackend::VulkanBackend(SDL_Window* w, bool enableValidation) : window(w), validation(enableValidation) {}
 VulkanBackend::~VulkanBackend() { Shutdown(); }
@@ -88,29 +89,72 @@ HostGpu::Resource VulkanBackend::Upload(std::span<const uint8_t> bytes, VkBuffer
     return destination;
 }
 GuestGpu::SubmissionResult VulkanBackend::SubmitGuestBatch(const GuestGpu::NativeBatch& batch)
+try
 {
     std::lock_guard lock(mutex);
     if (!host.IsReady()) return GuestGpu::SubmissionResult::Unsupported;
     if (batch.errors.Any() || batch.draws.empty() || batch.draws.size() > GuestGpu::CommandStream::MaxDraws)
         return GuestGpu::SubmissionResult::Incomplete;
     size_t total = 0;
-    // Validate the whole batch before beginning its uploads.
-    for (const auto& draw : batch.draws)
+    std::vector<std::vector<uint8_t>> hostIndices(batch.draws.size());
+    // Validate and convert the whole batch before beginning its uploads.
+    for (size_t n = 0; n < batch.draws.size(); ++n)
     {
+        const auto& draw = batch.draws[n];
+        if (draw.resources.captured)
+        {
+            if (draw.resources.status != GuestGpu::ConversionResult::Success)
+            {
+                Fail("Native resource conversion rejected " + std::string(draw.resources.failedTexture ? "texture slot " : "vertex stream ") +
+                    std::to_string(draw.resources.failedSlot) + ": " + GuestGpu::ConversionResultName(draw.resources.status));
+                return GuestGpu::SubmissionResult::Incomplete;
+            }
+            if (draw.resources.vertices.size() > 16 || draw.resources.textures.size() > GuestGpu::NativeState::TextureCount)
+                return GuestGpu::SubmissionResult::Incomplete;
+            uint32_t vertexSlots = 0, textureSlots = 0;
+            for (const auto& vertex : draw.resources.vertices)
+            {
+                if (vertex.stream >= 16 || !vertex.stride || vertex.bytes.empty() ||
+                    vertex.resource != draw.state.words[12812 / 4 + vertex.stream] || (vertexSlots & (1u << vertex.stream)))
+                    return GuestGpu::SubmissionResult::Incomplete;
+                vertexSlots |= 1u << vertex.stream;
+                if (vertex.bytes.size() > GuestGpu::CommandStream::MaxPayloadBytes - total) return GuestGpu::SubmissionResult::Incomplete;
+                total += vertex.bytes.size();
+            }
+            for (const auto& texture : draw.resources.textures)
+            {
+                if (texture.slot >= GuestGpu::NativeState::TextureCount || !texture.width || !texture.height ||
+                    texture.width > 8192 || texture.height > 8192 ||
+                    texture.rgba.size() != uint64_t(texture.width) * texture.height * 4 ||
+                    texture.resource != draw.state.words[12896 / 4 + texture.slot] || (textureSlots & (1u << texture.slot)))
+                    return GuestGpu::SubmissionResult::Incomplete;
+                textureSlots |= 1u << texture.slot;
+                if (texture.rgba.size() > GuestGpu::CommandStream::MaxPayloadBytes - total) return GuestGpu::SubmissionResult::Incomplete;
+                total += texture.rgba.size();
+            }
+        }
+        else if (!draw.resources.vertices.empty() || !draw.resources.textures.empty()) return GuestGpu::SubmissionResult::Incomplete;
         if (draw.kind != GuestGpu::DrawKind::IndexedVertices) continue;
         const auto& index = draw.indices;
         if ((index.stride != 2 && index.stride != 4) || index.bytes.size() != uint64_t(index.count) * index.stride ||
             index.bytes.size() > GuestGpu::IndexSnapshot::MaxBytes || index.count != draw.arguments[3] ||
             index.start != draw.arguments[2] || index.resource != draw.state.IndexBuffer()) return GuestGpu::SubmissionResult::Incomplete;
+        const auto converted = GuestGpu::ConvertIndices(index.bytes, index.flags, index.stride, hostIndices[n]);
+        if (converted != GuestGpu::ConversionResult::Success)
+        {
+            Fail(std::string("Index conversion rejected: ") + GuestGpu::ConversionResultName(converted));
+            return GuestGpu::SubmissionResult::Incomplete;
+        }
         total += index.bytes.size();
         if (total > GuestGpu::CommandStream::MaxPayloadBytes) return GuestGpu::SubmissionResult::Incomplete;
     }
     ReleaseDrawResources();
     // Reserve before creating Vulkan handles, so push_back can't leak a new ID.
-    drawResources.reserve(batch.draws.size() * 2);
+    drawResources.reserve(batch.draws.size() * (2 + 16 + GuestGpu::NativeState::TextureCount));
     states.reserve(batch.draws.size());
-    for (const auto& draw : batch.draws)
+    for (size_t n = 0; n < batch.draws.size(); ++n)
     {
+        const auto& draw = batch.draws[n];
         states.push_back(HostGpu::DecodeFixedState(draw.state));
         std::array<uint8_t, 8192> constants{};
         for (size_t i = 0; i < constants.size() / 4; ++i)
@@ -123,14 +167,35 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitGuestBatch(const GuestGpu::Nativ
         drawResources.push_back(id);
         if (draw.kind == GuestGpu::DrawKind::IndexedVertices && !draw.indices.bytes.empty())
         {
-            id = Upload(draw.indices.bytes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+            id = Upload(hostIndices[n], VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
             if (!id) { ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
             drawResources.push_back(id);
+        }
+        for (const auto& vertex : draw.resources.vertices)
+        {
+            id = Upload(vertex.bytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+            if (!id) { ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
+            drawResources.push_back(id);
+        }
+        for (const auto& texture : draw.resources.textures)
+        {
+            id = host.CreateImage(texture.width, texture.height, HostGpu::ImageKind::Rgba8);
+            if (!id) { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
+            drawResources.push_back(id);
+            if (!host.UploadRgba(id, texture.rgba))
+            { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
         }
     }
     // Actual vkQueueSubmit transfers occurred, but NO vkCmdDraw was recorded.
     // Missing shaders, vertex resources and complete state remain a draw barrier.
     return GuestGpu::SubmissionResult::ResourcesUploaded;
+}
+catch (const std::bad_alloc&)
+{
+    std::lock_guard lock(mutex);
+    ReleaseDrawResources();
+    Fail("Host allocation failed while preparing resource uploads");
+    return GuestGpu::SubmissionResult::Incomplete;
 }
 void VulkanBackend::Present()
 {

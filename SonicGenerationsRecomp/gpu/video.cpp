@@ -68,7 +68,6 @@ bool Video::Init()
             const char* validation = std::getenv("SONIC_VULKAN_VALIDATION");
             g_backend = std::make_unique<VulkanBackend>(GameWindow::s_pWindow,
                 validation && std::strcmp(validation, "1") == 0);
-            GuestGpu::GetCommandStream().Enable(true);
 #else
             LOGN_ERROR("Vulkan requested but not built. Configure SONIC_GENERATIONS_ENABLE_VULKAN=ON.");
             return false;
@@ -87,6 +86,8 @@ bool Video::Init()
     s_viewportHeight = g_mode.height;
 
     const bool initialized = g_backend->Init(g_mode);
+    if (initialized && std::strcmp(g_backend->GetName(), "vulkan-transfer") == 0)
+        GuestGpu::GetCommandStream().Enable(true, true);
     GuestGpu::EnableStateReplacement(initialized && std::strcmp(g_backend->GetName(), "vulkan-transfer") == 0);
     GuestGpu::EnableStateTableAudit(initialized && std::strcmp(g_backend->GetName(), "vulkan-transfer") == 0);
     return initialized;

@@ -9,3 +9,6 @@ add_library(SonicVulkanHost STATIC
 target_compile_features(SonicVulkanHost PUBLIC cxx_std_20)
 target_include_directories(SonicVulkanHost PUBLIC "${_vulkan_root}/SonicGenerationsRecomp")
 target_link_libraries(SonicVulkanHost PUBLIC Vulkan::Vulkan SDL2::SDL2)
+
+include("${CMAKE_CURRENT_LIST_DIR}/GpuResources.cmake")
+target_link_libraries(SonicVulkanHost PUBLIC SonicGpuResources)

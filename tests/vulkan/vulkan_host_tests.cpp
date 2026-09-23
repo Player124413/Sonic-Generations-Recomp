@@ -61,8 +61,19 @@ static void GraphicsTests(VulkanHost& host)
     const auto vb = host.CreateBuffer(sizeof(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
     const auto ib = host.CreateBuffer(sizeof(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true);
     CHECK(vb && ib);
-    CHECK(host.WriteBuffer(vb, {reinterpret_cast<const uint8_t*>(vertices.data()), sizeof(vertices)}));
-    CHECK(host.WriteBuffer(ib, {reinterpret_cast<const uint8_t*>(indices.data()), sizeof(indices)}));
+    std::vector<uint8_t> vertexBytes(reinterpret_cast<const uint8_t*>(vertices.data()),
+        reinterpret_cast<const uint8_t*>(vertices.data()) + sizeof(vertices));
+    // Encode guest big-endian float words independently of the converter.
+    for (size_t offset=0; offset<vertexBytes.size(); offset+=4)
+    {
+        uint32_t word; std::memcpy(&word,vertexBytes.data()+offset,4);
+        for (size_t byte=0;byte<4;++byte) vertexBytes[offset+byte]=uint8_t(word>>(24-byte*8));
+    }
+    CHECK(GuestGpu::SwapResourceBytes(vertexBytes, GuestGpu::Endian::Swap8In32));
+    std::vector<uint8_t> indexBytes;
+    CHECK(GuestGpu::ConvertIndices(std::array<uint8_t,6>{0,0,0,1,0,2}, 1u<<29, 2, indexBytes) == GuestGpu::ConversionResult::Success);
+    CHECK(host.WriteBuffer(vb, vertexBytes));
+    CHECK(host.WriteBuffer(ib, indexBytes));
     const auto color = host.CreateImage(32, 32, ImageKind::Rgba8);
     const auto depth = host.CreateImage(32, 32, ImageKind::Depth32);
     CHECK(color && depth);
@@ -102,22 +113,41 @@ static void BackendTests(SDL_Window* window)
     VideoMode mode; mode.width = 64; mode.height = 64;
     CHECK(backend.Init(mode));
     CHECK(backend.GetHostStats().imagesCreated == 2);
-    GuestGpu::NativeBatch batch;
-    GuestGpu::NativeDraw draw;
-    draw.kind = GuestGpu::DrawKind::IndexedVertices;
-    draw.arguments = {4, 0, 0, 3};
-    draw.state.words[12788 / 4] = 0x1234;
-    draw.indices.resource = 0x1234;
-    draw.indices.stride = 2; draw.indices.count = 3;
-    draw.indices.bytes = {0, 0, 0, 1, 0, 2};
-    batch.draws.push_back(std::move(draw)); batch.payloadBytes = 6;
+    // Actual capture -> immutable conversion -> Vulkan uploads, not manually
+    // labelled host bytes. CPU descriptor pointers deliberately differ from data.
+    std::vector<uint8_t> memory(0xB000);
+    const auto store = [&](uint32_t address, uint32_t value) {
+        for (int i=0;i<4;++i) memory.at(address+i)=uint8_t(value>>(24-i*8));
+    };
+    constexpr uint32_t device=0x1000;
+    store(device+12788,0x5000); store(0x5000,1u<<29); store(0x5018,0x6000);
+    memory[0x6003]=1; memory[0x6005]=2;
+    store(device+12812,0x7000); store(0x7018,0x8003); store(0x701C,16|2);
+    store(device+1776+17*8,0x8003); store(device+1780+17*8,16|2);
+    store(device+12880,1u<<24);
+    store(device+12896,0x9000); store(0x9020,0xA006);
+    store(device+1152,2|(1<<22)); store(device+1156,0xA006);
+    store(device+1160,1); store(device+1164,(0|(1<<3)|(2<<6)|(3<<9))<<1);
+    store(device+1172,1<<9); memory[0xA000]=255; memory[0xA003]=255;
+    GuestGpu::CommandStream stream;
+    stream.Enable(true,true);
+    CHECK(stream.Capture({memory},device,GuestGpu::DrawKind::IndexedVertices,{4,0,0,3})==GuestGpu::CaptureResult::Captured);
+    auto batch=stream.Drain();
+    CHECK(batch.draws[0].resources.status==GuestGpu::ConversionResult::Success);
+    CHECK(batch.payloadBytes==6+16+8);
     const auto before = backend.GetHostStats();
     CHECK(backend.SubmitGuestBatch(batch) == GuestGpu::SubmissionResult::ResourcesUploaded);
-    CHECK(backend.GetHostStats().submissions == before.submissions + 2); // constants + index copies
+    CHECK(backend.GetHostStats().submissions == before.submissions + 4); // constants + indices + vertex + texture
     const auto allocated = backend.GetHostStats().allocatedBytes;
     for (int i = 0; i < 5; ++i)
         CHECK(backend.SubmitGuestBatch(batch) == GuestGpu::SubmissionResult::ResourcesUploaded);
     CHECK(backend.GetHostStats().allocatedBytes == allocated); // no per-frame leak
+    batch.draws[0].resources.status = GuestGpu::ConversionResult::Unsupported;
+    const auto beforeRejected = backend.GetHostStats().submissions;
+    CHECK(backend.SubmitGuestBatch(batch) == GuestGpu::SubmissionResult::Incomplete);
+    CHECK(backend.GetHostStats().submissions == beforeRejected);
+    CHECK(!backend.GetLastError().empty());
+    batch.draws[0].resources.status = GuestGpu::ConversionResult::Success;
     batch.errors.overflow = 1;
     const auto oldSubmissions = backend.GetHostStats().submissions;
     CHECK(backend.SubmitGuestBatch(batch) == GuestGpu::SubmissionResult::Incomplete);
@@ -192,6 +222,17 @@ int main(int argc, char** argv)
     CHECK(host.UploadRgba(color, pixels));
     std::vector<uint8_t> copied;
     CHECK(host.ReadImage(color, copied) && copied == pixels);
+    // Xenos DXT1 conversion is consumed by a real VkImage and read back.
+    GuestGpu::TextureLayout texture{16,8,32,18,0|(1<<3)|(2<<6)|(3<<9),GuestGpu::Endian::Swap8In16,false};
+    size_t extent=0;
+    CHECK(GuestGpu::TextureSourceExtent(texture,extent)==GuestGpu::ConversionResult::Success);
+    std::vector<uint8_t> bc(extent,0);
+    for (size_t y=0;y<2;++y) for(size_t x=0;x<4;++x) bc[y*256+x*8]=0xF8; // swapped RGB565 red
+    std::vector<uint8_t> converted;
+    CHECK(GuestGpu::ConvertTexture(texture,bc,16*8*4,converted)==GuestGpu::ConversionResult::Success);
+    CHECK(host.UploadRgba(color,converted));
+    CHECK(host.ReadImage(color,copied) && copied==converted);
+    for(size_t i=0;i<copied.size();i+=4) CHECK(copied[i]==255 && copied[i+1]==0 && copied[i+2]==0 && copied[i+3]==255);
     CHECK(!host.UploadRgba(depth, pixels));
     CHECK(host.ClearDepth(depth, 0.375f));
     CHECK(host.ReadImage(depth, pixels));

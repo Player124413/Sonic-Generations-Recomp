@@ -98,10 +98,11 @@ GuestGpu::ResourceReadResult GuestGpu::IndexSnapshot::Read(
 }
 
 GuestGpu::CommandStream::CommandStream(size_t limit) noexcept : capacity(std::min(limit, MaxDraws)) {}
-void GuestGpu::CommandStream::Enable(bool enable)
+void GuestGpu::CommandStream::Enable(bool enable, bool captureResources)
 {
     std::lock_guard lock(mutex);
     enabled = enable;
+    resourceCapture = enable && captureResources;
     pending.draws.clear();
     pending.errors = {};
     pending.payloadBytes = 0;
@@ -141,6 +142,9 @@ GuestGpu::CaptureResult GuestGpu::CommandStream::Capture(
         case ResourceReadResult::Success: break;
         }
     }
+    if (resourceCapture)
+        draw.resources = ReadDrawResources(memory, draw.state,
+            MaxPayloadBytes - pending.payloadBytes - draw.indices.bytes.size());
     draw.device = device;
     draw.kind = kind;
     draw.arguments = arguments;
@@ -151,7 +155,7 @@ GuestGpu::CaptureResult GuestGpu::CommandStream::Capture(
         ++pending.errors.allocationFailure;
         return CaptureResult::AllocationFailure;
     }
-    pending.payloadBytes += pending.draws.back().indices.bytes.size();
+    pending.payloadBytes += pending.draws.back().indices.bytes.size() + pending.draws.back().resources.payloadBytes;
     ++sequence;
     return CaptureResult::Captured;
 }

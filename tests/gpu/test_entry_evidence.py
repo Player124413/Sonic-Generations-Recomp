@@ -19,13 +19,16 @@ class EntryEvidenceTests(unittest.TestCase):
         # These are checked even though they are not all individually hooked:
         # draw snapshots cover native and inlined changes to the same fields.
         evidence = {
-            "sub_82DA6DC0": (270, ["addi r11,r4,3224", "addi r11,r4,48", "mulli r11,r11,24", "stwx r5,r29,r31"]),
+            "sub_82DA6DC0": (270, ["addi r11,r4,3224", "addi r11,r4,48", "mulli r11,r11,24", "stwx r5,r29,r31", "lwz r7,32(r5)", "clrlwi r30,r7,3", "addi r10,r10,512"]),
+            "sub_82DAA9E8": (272, ["lwz r10,24(r5)", "lwz r5,28(r5)", "subfic r11,r4,17",
+                                     "addi r4,r11,222", "stw r6,1780(r9)", "addi r11,r29,3203",
+                                     "stb r9,12880(r11)", "rlwinm r9,r26,30,24,31"]),
             "sub_82DAAB08": (272, ["stw r29,12788(r31)"]),
             "sub_82DAB6B0": (272, ["stw r4,12808(r3)"]),
             "sub_82DAAF88": (272, ["stfs f31,13000(r31)", "stfs f28,13020(r31)"]),
             "sub_82DA7A48": (270, ["addi r6,r3,1920", "li r5,16384", "addi r6,r31,6016", "li r5,17408"]),
             "sub_82DA7E60": (270, ["lwz r24,12788(r31)", "lwz r10,24(r24)", "lwz r6,0(r24)",
-                                  "rlwinm r6,r6,0,0,0", "rlwinm r11,r21,1,0,30", "rlwinm r9,r21,2,0,29"]),
+                                  "rlwinm r6,r6,0,0,0", "rlwinm r11,r21,1,0,30", "rlwinm r9,r21,2,0,29", "rlwinm r11,r6,1,0,1", "or r29,r5,r11"]),
         }
         for symbol, (part, anchors) in evidence.items():
             with self.subTest(symbol=symbol):
