@@ -1,6 +1,8 @@
 #include <os/process.h>
 
 #include <signal.h>
+#include <unistd.h>
+#include <limits.h>
 
 std::filesystem::path os::process::GetExecutablePath()
 {

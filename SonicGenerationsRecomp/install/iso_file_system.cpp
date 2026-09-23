@@ -12,6 +12,7 @@
 #include "iso_file_system.h"
 
 #include <stack>
+#include <cstring>
 
 ISOFileSystem::ISOFileSystem(const std::filesystem::path &isoPath)
 {

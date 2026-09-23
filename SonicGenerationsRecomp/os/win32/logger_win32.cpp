@@ -1,3 +1,5 @@
+#include <windows.h>
+#include <fmt/format.h>
 #include <os/logger.h>
 #include <os/process.h>
 
