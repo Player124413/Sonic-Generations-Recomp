@@ -57,6 +57,8 @@ int main()
     CHECK(reflected.status==ShaderReadStatus::Success && reflected.reflectionValid && reflected.samplerMask==4 && reflected.packedBooleansSupported);
     Store(memory,base+88+4,16);
     CHECK(!ReadShaderIdentity({memory},resource,4).packedBooleansSupported);
+    Store(memory,base+88+4,0); Store(memory,base+88+8,65535u<<16);
+    CHECK(!ReadShaderIdentity({memory},resource,4).packedBooleansSupported);
     Store(memory,base+68+4,(3u<<16)|16);
     CHECK(!ReadShaderIdentity({memory},resource,4).reflectionValid);
     Store(memory,base+40+16,UINT32_MAX);

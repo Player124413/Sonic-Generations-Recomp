@@ -58,8 +58,8 @@ GuestGpu::NativeShaderIdentity GuestGpu::ReadShaderIdentity(MemoryView memory, u
                     }
                     if(kind==0)
                     {
-                        for(uint32_t j=0;j<length;++j)
-                            if ((index+j)%128 >= 16) result.packedBooleansSupported=false;
+                        if (!length || length > 16 || index % 128 + length > 16)
+                            result.packedBooleansSupported=false;
                     }
                 }
             }
