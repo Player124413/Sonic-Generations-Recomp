@@ -181,3 +181,23 @@ Native VS/PS bindings and split-container hash reconstruction are documented in
 [SHADER_CACHE_RUNTIME.md](SHADER_CACHE_RUNTIME.md). GPU tests now also require
 `git submodule update --init tools/XenosRecomp` and
 `git -C tools/XenosRecomp submodule update --init thirdparty/xxHash`.
+
+## Native clear ordering (incremental runtime work)
+
+The lower clear helper `82DBF460` is now observed without suppressing its original
+body: device `r3`, flags `r4`, explicit rectangle `r5`, float4 color pointer `r6`,
+depth `f1`, stencil `r8`. A null color reads the actual guest constant at
+`821BB570`. Generated-code structural checks cover the entry; snapshots own
+the inputs before they can change. Clears and draws share one sequence and one
+bounded command capacity. Drain/disable handles both command kinds.
+
+The experimental Vulkan path applies full-target color/depth clears in sequence
+with draws, including clears after the last draw. It rejects MRT, stencil,
+partial rectangles, clipped viewports/scissors and mismatched target identities
+rather than clearing the whole proxy incorrectly. Pixel readback tests exercise
+clear-before-draw preservation and final clear colors; invalid batches expose no
+stale diagnostic frame.
+
+This is **not** native render-target completion: the destination is still the
+single proxy color/depth pair. Clear-only frames, target/EDRAM mapping, resolve,
+backbuffer selection, additional formats and complete draw coverage remain open.

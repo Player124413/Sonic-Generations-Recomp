@@ -236,6 +236,40 @@ static void TestXexImportBinding()
     CHECK(!xex_module::BindImports(bytes,image,error));
 }
 
+static void TestRuntimeDecoderImports()
+{
+    // Synthetic, unencrypted XEX/PE: no game assets. The tool decoder rewrites
+    // these records; the separate runtime decoder must preserve every BE byte.
+    std::vector<uint8_t> bytes(0x2400);
+    auto be32=[&](size_t off,uint32_t value) {
+        for(size_t i=0;i<4;++i) bytes[off+i]=uint8_t(value>>(24-i*8));
+    };
+    auto le32=[&](size_t off,uint32_t value) {
+        for(size_t i=0;i<4;++i) bytes[off+i]=uint8_t(value>>(i*8));
+    };
+    be32(0,0x58455832); be32(8,0x400); be32(16,0x100); be32(20,2);
+    be32(24,XEX_HEADER_IMPORT_LIBRARIES); be32(28,0x40);
+    be32(32,XEX_HEADER_FILE_FORMAT_INFO); be32(36,0xA0); be32(0xA0,8);
+    be32(0x100+offsetof(Xex2SecurityInfo,imageSize),0x2000);
+    be32(0x100+offsetof(Xex2SecurityInfo,loadAddress),uint32_t(PPC_IMAGE_BASE));
+    be32(0x40,80); be32(0x44,16); be32(0x48,1);
+    std::memcpy(bytes.data()+0x4C,"xboxkrnl.exe",13);
+    be32(0x5C,52); bytes[0x83]=3;
+    for(size_t i=0;i<3;++i) be32(0x84+i*4,uint32_t(PPC_IMAGE_BASE)+0x1000+uint32_t(i)*4);
+    le32(0x400,0x5A4D); le32(0x43C,0x80); le32(0x480,0x4550);
+    bytes[0x486]=1; bytes[0x494]=0xE0; bytes[0x498]=0x0B; bytes[0x499]=1;
+    std::memcpy(bytes.data()+0x578,".text",6);
+    le32(0x580,0x2000); // section VirtualSize; RVA 0
+    le32(0x59C,0x20); // code section
+    be32(0x1400,0x193); be32(0x1404,1); be32(0x1408,0x01000001);
+    auto image=xex_module::DecodeImage(bytes);
+    CHECK(image.data && image.size==0x2000 && image.base==PPC_IMAGE_BASE);
+    if(image.data) CHECK(std::memcmp(image.data.get()+0x1000,bytes.data()+0x1400,16)==0);
+    // Reject malformed imports before reaching the upstream decoder.
+    be32(0x5C,UINT32_MAX);
+    CHECK(!xex_module::DecodeImage(bytes).data);
+}
+
 int main()
 {
     printf("== SonicGenerationsRecomp kernel smoke tests ==\n");
@@ -244,6 +278,7 @@ int main()
 
     TestXexRegistry();
     TestXexImportBinding();
+    TestRuntimeDecoderImports();
     TestHeap();
     TestMemoryTranslation();
     TestKernelObjects();
