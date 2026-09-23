@@ -4,10 +4,6 @@
 
 #define USER_DIRECTORY "SonicGenerationsRecomp"
 
-#ifndef GAME_INSTALL_DIRECTORY
-#define GAME_INSTALL_DIRECTORY "."
-#endif
-
 extern std::filesystem::path g_executableRoot;
 
 bool CheckPortable();

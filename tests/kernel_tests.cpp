@@ -29,10 +29,7 @@ static int g_failures = 0;
         }                                                              \
     } while (0)
 
-// The runtime objects normally defined by main.cpp.
-Memory g_memory;
-Heap g_userHeap;
-XDBFWrapper g_xdbfWrapper;
+// Process-wide runtime owners are defined in runtime_globals.cpp.
 
 static void TestHeap()
 {

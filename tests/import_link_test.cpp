@@ -923,5 +923,9 @@ const PPCFunc* g_importLinkTable[] = {
 
 int main()
 {
+    // Actually read the table so section garbage collection cannot turn this
+    // into a size-only test with no import relocations.
+    for (const auto address : g_importLinkTable)
+        if (!address) return 1;
     return int(sizeof(g_importLinkTable) / sizeof(g_importLinkTable[0]) != 456);
 }
