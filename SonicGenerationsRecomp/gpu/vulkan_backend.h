@@ -23,6 +23,8 @@ public:
     void Resize(uint32_t width, uint32_t height) override;
     HostGpu::VulkanStats GetHostStats() const;
     std::string GetLastError() const;
+    // Read only a successfully submitted diagnostic frame; never stale contents.
+    bool ReadDiagnosticFrame(std::vector<uint8_t>& rgba);
 private:
     bool Fail(const std::string& error);
     bool RecreateTargets();

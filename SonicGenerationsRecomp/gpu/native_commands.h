@@ -73,6 +73,16 @@ namespace GuestGpu
         IndexSnapshot indices; // owned only for indexed draws
     };
 
+    struct NativeClear
+    {
+        uint64_t sequence = 0;
+        uint32_t device = 0, flags = 0, stencil = 0;
+        NativeState state;
+        std::array<int32_t,4> rectangle{};
+        std::array<float,4> color{};
+        float depth = 1;
+    };
+
     struct CaptureErrors
     {
         uint64_t invalidMemory = 0;
@@ -84,6 +94,7 @@ namespace GuestGpu
     struct NativeBatch
     {
         std::vector<NativeDraw> draws;
+        std::vector<NativeClear> clears;
         CaptureErrors errors;
         size_t payloadBytes = 0;
         // Only two SDK draw paths are covered. Binding addresses are identifiers,
@@ -106,6 +117,8 @@ namespace GuestGpu
         bool IsEnabled() const noexcept { return enabled.load(std::memory_order_relaxed); }
         CaptureResult Capture(MemoryView memory, uint32_t device, DrawKind kind,
                               std::array<uint32_t, 4> arguments) noexcept;
+        CaptureResult CaptureClear(MemoryView memory, uint32_t device, uint32_t flags,
+            uint32_t rectangle, uint32_t color, float depth, uint32_t stencil) noexcept;
         NativeBatch Drain(); // moves ownership to caller; no backend under mutex
     private:
         std::mutex mutex;

@@ -54,6 +54,13 @@ GuestGpu::Snapshot GuestGpu::GetSnapshot() noexcept
                       GuestGpu::Entry::name == GuestGpu::Entry::DrawIndexedVertices) \
             CaptureDraw(GuestGpu::Entry::name == GuestGpu::Entry::DrawVertices \
                     ? GuestGpu::DrawKind::Vertices : GuestGpu::DrawKind::IndexedVertices, ctx, base); \
+        if constexpr (GuestGpu::Entry::name == GuestGpu::Entry::Clear) \
+        { \
+            auto& stream=GuestGpu::GetCommandStream(); \
+            if(stream.IsEnabled()) \
+                stream.CaptureClear({base ? std::span<const uint8_t>(base,PPC_MEMORY_SIZE) : std::span<const uint8_t>()}, \
+                    ctx.r3.u32,ctx.r4.u32,ctx.r5.u32,ctx.r6.u32,float(ctx.f1.f64),ctx.r8.u32); \
+        } \
         auto& counter = counters[static_cast<size_t>(GuestGpu::Entry::name)]; \
         if (observe) counter.entered.fetch_add(1, std::memory_order_relaxed); \
         __imp__##symbol(ctx, base); \

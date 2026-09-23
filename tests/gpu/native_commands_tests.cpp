@@ -22,8 +22,41 @@ struct RejectingBackend final : IRenderBackend
     void Present() override {}
     void Resize(uint32_t, uint32_t) override {}
 };
+static void TestClearOrdering()
+{
+    std::vector<uint8_t> memory(Device+NativeState::ByteSize);
+    Store(memory,100,0); Store(memory,104,0); Store(memory,108,1280); Store(memory,112,720);
+    Store(memory,120,std::bit_cast<uint32_t>(0.25f));
+    Store(memory,124,std::bit_cast<uint32_t>(0.5f));
+    Store(memory,128,std::bit_cast<uint32_t>(0.75f));
+    Store(memory,132,std::bit_cast<uint32_t>(1.0f));
+    CommandStream stream(3);
+    CHECK(stream.CaptureClear({memory},Device,0x11,Device+100,Device+120,0.5f,0)==CaptureResult::Disabled);
+    stream.Enable(true);
+    CHECK(stream.CaptureClear({memory},Device,0x11,Device+100,Device+120,0.5f,0)==CaptureResult::Captured);
+    CHECK(stream.Capture({memory},Device,DrawKind::Vertices,{4,0,3,0})==CaptureResult::Captured);
+    CHECK(stream.CaptureClear({memory},Device,0x10,Device+100,0,0.25f,0)==CaptureResult::Captured);
+    auto batch=stream.Drain();
+    CHECK(batch.clears.size()==2 && batch.draws.size()==1 && !batch.errors.Any());
+    CHECK(batch.clears[0].sequence<batch.draws[0].sequence && batch.draws[0].sequence<batch.clears[1].sequence);
+    CHECK(batch.clears[0].rectangle[2]==1280 && batch.clears[0].rectangle[3]==720);
+    CHECK(batch.clears[0].color[0]==0.25f && batch.clears[0].color[3]==1.0f);
+    CHECK(batch.clears[1].depth==0.25f);
+    Store(memory,120,0);
+    CHECK(batch.clears[0].color[0]==0.25f); // owned snapshot
+    CHECK(stream.CaptureClear({memory},Device,1,0,Device+120,1,0)==CaptureResult::InvalidMemory);
+    CHECK(stream.Drain().errors.invalidMemory==1);
+    for(int i=0;i<3;++i)
+        CHECK(stream.CaptureClear({memory},Device,0x10,Device+100,0,1,0)==CaptureResult::Captured);
+    CHECK(stream.Capture({memory},Device,DrawKind::Vertices,{})==CaptureResult::Overflow);
+    CHECK(stream.Drain().errors.overflow==1);
+    stream.CaptureClear({memory},Device,0x10,Device+100,0,1,0);
+    stream.Enable(false);
+    CHECK(stream.Drain().clears.empty());
+}
 int main()
 {
+    TestClearOrdering();
     std::vector<uint8_t> memory(Device + NativeState::ByteSize);
     Store(memory, 12792, 0x12345678);
     Store(memory, 12804, 0xCAFEBABE);

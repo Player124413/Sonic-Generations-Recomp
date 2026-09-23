@@ -7,6 +7,7 @@
 #include <new>
 #include <bit>
 #include <cmath>
+#include <set>
 
 VulkanBackend::VulkanBackend(SDL_Window* w, bool enableValidation, bool enableGameDraws) : window(w), validation(enableValidation), drawEnabled(enableGameDraws) {}
 VulkanBackend::~VulkanBackend() { Shutdown(); }
@@ -107,7 +108,7 @@ try
     std::lock_guard lock(mutex);
     frameReady = false;
     if (!host.IsReady()) return GuestGpu::SubmissionResult::Unsupported;
-    if (batch.errors.Any() || batch.draws.empty() || batch.draws.size() > GuestGpu::CommandStream::MaxDraws)
+    if (batch.errors.Any() || batch.draws.empty() || batch.draws.size() + batch.clears.size() > GuestGpu::CommandStream::MaxDraws)
         return GuestGpu::SubmissionResult::Incomplete;
     frameReady = false;
     struct PreparedDraw
@@ -122,6 +123,36 @@ try
     const bool graphics = drawEnabled && std::any_of(batch.draws.begin(),batch.draws.end(),[](const auto& d){return d.state.VertexShader() || d.state.PixelShader();});
     if(graphics && (!host.SupportsGenerationsAbi() || !width || !height))
     { Fail("Native draw requires Vulkan 1.2 buffer device address, scalar layout and descriptor indexing features"); return GuestGpu::SubmissionResult::Unsupported; }
+    // Clear ordering shares the draw sequence. Until native render-target
+    // mapping exists, only full clears of this batch's single proxy pair are
+    // representable. Reject partial/MRT/stencil clears, never silently drop them.
+    if(!batch.clears.empty())
+    {
+        if(!graphics) return GuestGpu::SubmissionResult::Incomplete;
+        std::set<uint64_t> sequences;
+        for(const auto& draw:batch.draws) if(!sequences.insert(draw.sequence).second)
+            return GuestGpu::SubmissionResult::Incomplete;
+        uint64_t previous=0;
+        bool first=true;
+        for(const auto& clear:batch.clears)
+        {
+            const auto& target=batch.draws.front();
+            const auto viewport=clear.state.Viewport();
+            const auto scissor=clear.state.Scissor();
+            if(!sequences.insert(clear.sequence).second || (!first && clear.sequence<=previous) ||
+               clear.device!=target.device || (clear.flags&~0x11u) ||
+               clear.state.ColorTargets()!=target.state.ColorTargets() ||
+               clear.state.DepthTarget()!=target.state.DepthTarget() ||
+               ((clear.flags&0x10) && !clear.state.DepthTarget()) ||
+               clear.rectangle!=std::array<int32_t,4>{0,0,int32_t(width),int32_t(height)} ||
+               viewport[0]!=0 || viewport[1]!=0 || viewport[2]!=float(width) || viewport[3]!=float(height) ||
+               (clear.state.words[12264/4] && scissor!=clear.rectangle) ||
+               !std::isfinite(clear.depth) || clear.depth<0 || clear.depth>1 ||
+               std::any_of(clear.color.begin(),clear.color.end(),[](float c){return !std::isfinite(c);}))
+            { Fail("Clear outside supported full-target color/depth profile"); return GuestGpu::SubmissionResult::Incomplete; }
+            previous=clear.sequence; first=false;
+        }
+    }
     size_t total = 0;
     std::map<uint64_t, GuestGpu::ShaderModule> nextShaders;
     size_t shaderBytes = 0;
@@ -325,9 +356,19 @@ try
         if(!host.ClearColor(color,{0,0,0,1}) || !host.ClearDepth(depth,1))
         { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
     }
+    size_t nextClear=0;
+    auto applyClear=[&](const GuestGpu::NativeClear& clear) {
+        if(((clear.flags&1) && !host.ClearColor(color,clear.color)) ||
+           ((clear.flags&0x10) && !host.ClearDepth(depth,clear.depth)))
+        { Fail(host.Error()); return false; }
+        return true;
+    };
     for (size_t n = 0; n < batch.draws.size(); ++n)
     {
         const auto& draw = batch.draws[n];
+        while(nextClear<batch.clears.size() && batch.clears[nextClear].sequence<draw.sequence)
+            if(!applyClear(batch.clears[nextClear++]))
+            { ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
         states.push_back(HostGpu::DecodeFixedState(draw.state));
         std::array<uint8_t, 8192> constants{};
         for (size_t i = 0; i < constants.size() / 4; ++i)
@@ -377,6 +418,9 @@ try
             { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
         }
     }
+    while(nextClear<batch.clears.size())
+        if(!applyClear(batch.clears[nextClear++]))
+        { ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
     frameReady=graphics;
     return graphics ? GuestGpu::SubmissionResult::Submitted : GuestGpu::SubmissionResult::ResourcesUploaded;
 }
@@ -406,3 +450,12 @@ void VulkanBackend::Resize(uint32_t w, uint32_t h)
 }
 HostGpu::VulkanStats VulkanBackend::GetHostStats() const { std::lock_guard lock(mutex); return host.Stats(); }
 std::string VulkanBackend::GetLastError() const { std::lock_guard lock(mutex); return error; }
+
+bool VulkanBackend::ReadDiagnosticFrame(std::vector<uint8_t>& rgba)
+{
+    std::lock_guard lock(mutex);
+    rgba.clear();
+    if(!frameReady || !host.IsReady()) return false;
+    if(!host.ReadImage(color,rgba)) return Fail(host.Error());
+    return true;
+}

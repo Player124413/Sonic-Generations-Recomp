@@ -4,6 +4,7 @@ import re
 import unittest
 ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE = {
+    "sub_82DBF460": (273, ["mr r31,r3", "fmr f31,f1", "mr r27,r4", "mr r23,r6", "mr r22,r8", "lwz r11,0(r5)", "addi r11,r11,-19088", "lis r11,-32228"]),
     "sub_82DB11C0": (272, ["stw r11,0(r8)", "li r4,128", "li r3,24704", "bl 0x82dc3108", "bl 0x82dc3690"]),
     "sub_82DB0D38": (272, ["addi r11,r3,60", "lwarx r10,0,r11", "stwcx. r10,0,r11", "bl 0x82dc3248"]),
     "sub_82DAB270": (272, ["lfs f1,0(r4)", "lfs f6,20(r4)", "b 0x82daaf88"]),

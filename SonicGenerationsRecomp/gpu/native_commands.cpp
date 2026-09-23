@@ -104,6 +104,7 @@ void GuestGpu::CommandStream::Enable(bool enable, bool captureResources)
     enabled = enable;
     resourceCapture = enable && captureResources;
     pending.draws.clear();
+    pending.clears.clear();
     pending.errors = {};
     pending.payloadBytes = 0;
 }
@@ -112,7 +113,7 @@ GuestGpu::CaptureResult GuestGpu::CommandStream::Capture(
 {
     std::lock_guard lock(mutex);
     if (!enabled) return CaptureResult::Disabled;
-    if (pending.draws.size() >= capacity)
+    if (pending.draws.size() + pending.clears.size() >= capacity)
     {
         ++pending.errors.overflow;
         return CaptureResult::Overflow;
@@ -168,6 +169,7 @@ GuestGpu::NativeBatch GuestGpu::CommandStream::Drain()
     std::lock_guard lock(mutex);
     NativeBatch result;
     result.draws.swap(pending.draws);
+    result.clears.swap(pending.clears);
     result.errors = std::exchange(pending.errors, {});
     result.payloadBytes = std::exchange(pending.payloadBytes, 0);
     return result;
@@ -176,4 +178,37 @@ GuestGpu::CommandStream& GuestGpu::GetCommandStream()
 {
     static CommandStream stream;
     return stream;
+}
+
+GuestGpu::CaptureResult GuestGpu::CommandStream::CaptureClear(MemoryView memory,
+    uint32_t device, uint32_t flags, uint32_t rectangle, uint32_t color,
+    float depth, uint32_t stencil) noexcept
+{
+    std::lock_guard lock(mutex);
+    if(!enabled) return CaptureResult::Disabled;
+    if(pending.draws.size()+pending.clears.size()>=capacity)
+    { ++pending.errors.overflow; return CaptureResult::Overflow; }
+    NativeClear clear;
+    clear.sequence=sequence; clear.device=device; clear.flags=flags;
+    clear.depth=depth; clear.stencil=stencil;
+    std::array<uint8_t,16> rect{}, rgba{};
+    // sub_82DBF460 is the lower clear helper: r5 is an explicit rectangle;
+    // a null color uses the game's own constant at 0x821BB570, not host defaults.
+    if(!NativeState::Read(memory,device,clear.state) || !rectangle ||
+       !memory.Copy(rectangle,rect) ||
+       ((flags&15) && !memory.Copy(color ? color : 0x821BB570u,rgba)))
+    { ++pending.errors.invalidMemory; return CaptureResult::InvalidMemory; }
+    for(size_t i=0;i<4;++i)
+    {
+        auto word=[](const auto& bytes,size_t at) {
+            return (uint32_t(bytes[at])<<24)|(uint32_t(bytes[at+1])<<16)|
+                (uint32_t(bytes[at+2])<<8)|bytes[at+3];
+        };
+        clear.rectangle[i]=std::bit_cast<int32_t>(word(rect,i*4));
+        clear.color[i]=std::bit_cast<float>(word(rgba,i*4));
+    }
+    try { pending.clears.push_back(std::move(clear)); }
+    catch(const std::bad_alloc&) { ++pending.errors.allocationFailure; return CaptureResult::AllocationFailure; }
+    ++sequence;
+    return CaptureResult::Captured;
 }

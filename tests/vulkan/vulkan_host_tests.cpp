@@ -199,9 +199,32 @@ static void NativeGameShaderDrawTest()
     VulkanBackend backend(nullptr,true,true); CHECK(backend.Init(VideoMode{64,64}));
     CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Submitted);
     CHECK(backend.GetHostStats().indexedDraws==1 && backend.GetHostStats().pipelinesCreated==1);
+    draw.sequence=1;
+    GuestGpu::NativeClear clear;
+    clear.state=draw.state; clear.device=draw.device; clear.flags=1;
+    clear.rectangle={0,0,64,64}; clear.color={0,1,0,1};
+    batch.clears.push_back(clear);
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Submitted);
+    std::vector<uint8_t> pixels;
+    CHECK(backend.ReadDiagnosticFrame(pixels) && pixels.size()==64*64*4);
+    for(size_t i=0;i<pixels.size();i+=4)
+        CHECK(pixels[i]==0 && pixels[i+1]==255 && pixels[i+2]==0 && pixels[i+3]==255);
+    clear.sequence=2; clear.color={1,0,0,1}; batch.clears.push_back(clear);
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Submitted);
+    CHECK(backend.ReadDiagnosticFrame(pixels));
+    for(size_t i=0;i<pixels.size();i+=4)
+        CHECK(pixels[i]==255 && pixels[i+1]==0 && pixels[i+2]==0 && pixels[i+3]==255);
+    batch.clears[0].rectangle[2]=32; // partial clear must not become a full clear
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
+    CHECK(!backend.ReadDiagnosticFrame(pixels) && pixels.empty());
+    batch.clears[0].rectangle[2]=64;
+    batch.clears[0].state.words[12264/4]=1;
+    batch.clears[0].state.words[13036/4]=32; // enabled partial scissor
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
+    batch.clears.clear();
     draw.resources.declaration.clear();
     CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
-    CHECK(backend.GetHostStats().indexedDraws==1);
+    CHECK(backend.GetHostStats().indexedDraws==3);
     backend.Shutdown(); CHECK(backend.GetHostStats().validationErrors==0 && backend.GetHostStats().allocatedBytes==0);
     std::puts("Native indexed batch submitted with genuine game cache VS/PS; unsupported declaration rejected");
 }
