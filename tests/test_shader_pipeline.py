@@ -1,5 +1,7 @@
 from pathlib import Path
 import struct
+import json
+from types import SimpleNamespace
 import sys
 import tempfile
 import unittest
@@ -34,6 +36,73 @@ class ShaderPipelineTests(unittest.TestCase):
         self.assertEqual(pipeline.missing_boolean_registers('bool b128 = true; if (b128) {} // b129'), [])
         self.assertEqual(pipeline.missing_boolean_registers('#define b130 1\nif (b130) {} /* b129 */'), [])
         self.assertEqual(pipeline.missing_boolean_registers('cbuffer X : register(b0) {}; if (b0) {}'), ['b0'])
+
+    def test_forced_boolean_branches(self):
+        text = """if (true) // b160 is outside of the supported packed boolean range
+        if (false) // b32 is outside of the supported packed boolean range
+        if (true) // b160 is outside of the supported packed boolean range
+        if ((g_Booleans & (1u << 16)) != 0) // b128 (boolean constant not in reflection data)
+        if (false) {} // unrelated constant branch
+        """
+        self.assertEqual(pipeline.forced_boolean_registers(text), ['b32', 'b160'])
+        self.assertEqual(pipeline.forced_boolean_registers('if (true) {}'), [])
+
+    def test_compiler_report_requires_clean_complete_vulkan_result(self):
+        good = dict(totalShaders=2, successfulShaders=2, failedShaders=0,
+                    shadersWithWarnings=0, graphicsApi='vulkan', warnings=[], shaders=[])
+        pipeline.validate_compiler_report(good, 2)
+        for field, value in [('totalShaders', 1), ('successfulShaders', 1),
+                             ('failedShaders', 1), ('failedShaders', False),
+                             ('shadersWithWarnings', 1), ('graphicsApi', 'both'),
+                             ('warnings', ['unsupported']),
+                             ('shaders', [{'status': 'warning'}]), ('shaders', None)]:
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                pipeline.validate_compiler_report(dict(good, **{field: value}), 2)
+        for report in ({}, [], None):
+            with self.assertRaises(ValueError):
+                pipeline.validate_compiler_report(report, 2)
+
+    def test_pipeline_rejects_semantic_warnings_and_preserves_diagnostics(self):
+        for mode in ('forced_hlsl', 'report_warning', 'invalid_cache', 'clean'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, exe, header = (root / name for name in ('input.zip', 'compiler', 'common.h'))
+                for path in (source, exe, header):
+                    path.write_bytes(b'test')
+                args = SimpleNamespace(sha256='', zip=source, work=root/'work', xenos=exe, header=header)
+                calls = []
+
+                def compile_mock(command, **kwargs):
+                    calls.append(command)
+                    self.assertEqual(command[command.index('--api') + 1], 'vulkan')
+                    target = Path(command[2])
+                    if target.suffix == '.hlsl':
+                        target.write_text('if (true) // b160 is outside of the supported packed boolean range'
+                                          if mode == 'forced_hlsl' else 'void shaderMain() {}')
+                    else:
+                        target.write_text('invalid' if mode == 'invalid_cache' else
+                                          'g_shaderCacheEntryCount = 1; g_spirvCacheDecompressedSize = 100;')
+                        report = dict(totalShaders=1, successfulShaders=1, failedShaders=0,
+                                      shadersWithWarnings=int(mode == 'report_warning'),
+                                      graphicsApi='vulkan', warnings=[], shaders=[])
+                        Path(command[command.index('--report') + 1]).write_text(json.dumps(report))
+
+                with patch.object(pipeline, 'archives', return_value=[b'archive']), \
+                     patch.object(pipeline, 'containers', return_value=iter([b'container'])), \
+                     patch.object(pipeline.subprocess, 'run', side_effect=compile_mock):
+                    if mode == 'clean':
+                        pipeline.run(args)
+                    else:
+                        with self.assertRaises(ValueError):
+                            pipeline.run(args)
+                cache = args.work/'result/shader_cache.experimental.cpp'
+                self.assertEqual(cache.exists(), mode == 'clean')
+                self.assertEqual(len(calls), 1 if mode == 'forced_hlsl' else 2)
+                if mode in ('report_warning', 'invalid_cache'):
+                    self.assertTrue((args.work/'diagnostics/compiler-report.json').is_file())
+                elif mode == 'forced_hlsl':
+                    diagnostic = json.loads((args.work/'diagnostics/report.json').read_text())
+                    self.assertEqual(diagnostic['forced_boolean_registers'], ['b160'])
 
     def test_optional_checksum(self):
         self.assertEqual(pipeline.normalize_sha256('  '), '')

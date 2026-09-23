@@ -91,6 +91,33 @@ def missing_boolean_registers(text):
     return sorted(used - declared, key=lambda name: int(name[1:]))
 
 
+def forced_boolean_registers(text):
+    # Exact diagnostic emitted by the pinned fork's CondExec / CondJmp paths.
+    # Ordinary constant branches and "not in reflection" are not failures.
+    registers = re.findall(
+        r'if\s*\(\s*(?:true|false)\s*\)\s*//\s*(b[0-9]+)'
+        r'\s+is outside of the supported packed boolean range', text)
+    return sorted(set(registers), key=lambda name: int(name[1:]))
+
+
+def validate_compiler_report(report, expected):
+    # Warnings are not a proof of equivalent shader semantics. Fail closed;
+    # a future reviewed allowlist may narrow this, never --allow-failures.
+    if not isinstance(report, dict) or expected <= 0:
+        raise ValueError('Invalid compiler report')
+    for field, value in [('totalShaders', expected), ('successfulShaders', expected),
+                         ('failedShaders', 0), ('shadersWithWarnings', 0)]:
+        if type(report.get(field)) is not int or report[field] != value:
+            raise ValueError('Compiler report rejected: ' + field)
+    if report.get('graphicsApi') != 'vulkan':
+        raise ValueError('Compiler report API mismatch')
+    for field in ('warnings', 'shaders'):
+        # The pinned writer omits clean shader entries. Any item here is a
+        # warning/error, even if aggregate counters misleadingly say zero.
+        if report.get(field) != []:
+            raise ValueError('Compiler report contains warnings/errors: ' + field)
+
+
 def validate_cache(text, expected, api="both"):
     count = re.search(r'g_shaderCacheEntryCount\s*=\s*(\d+)', text)
     if not count or int(count[1]) != expected or expected == 0:
@@ -157,24 +184,37 @@ def run(args):
             raise ValueError('Missing HLSL output')
         text = target.read_text()
         missing = missing_boolean_registers(text)
-        if missing:
+        forced = forced_boolean_registers(text)
+        if missing or forced:
             diagnostics = work / 'diagnostics'
             diagnostics.mkdir(exist_ok=True)
             (diagnostics / target.name).write_text(text)
             (diagnostics / 'report.json').write_text(json.dumps({
                 'container_sha256': binary.stem,
                 'missing_boolean_registers': missing,
-                'reason': 'XenosRecomp generated undeclared boolean references',
+                'forced_boolean_registers': forced,
+                'reason': 'Undeclared boolean references or forced constant control flow',
                 'runtime_ready': False,
             }, indent=2))
-            raise ValueError(f'Unsupported boolean references {", ".join(missing)} in {target.name}. '
+            raise ValueError(f'Unsafe boolean translation {", ".join(missing + forced)} in {target.name}. '
                              'Stopped before batch DXC compilation. Diagnostic HLSL saved in private/shader-build/diagnostics '
                              '(or the diagnostics subfolder of --work). Do not replace these values with zero.')
     cache = output / 'shader_cache.experimental.cpp'
-    subprocess.run([str(exe), str(inputs), str(cache), str(header), "--api", "vulkan",
-                    "--report", str(output / "compiler-report.json"),
-                    "--dump-failed", str(work / "diagnostics")], check=True, timeout=1800)
-    validate_cache(cache.read_text(), len(unique), api="vulkan")
+    compiler_report = output / "compiler-report.json"
+    try:
+        subprocess.run([str(exe), str(inputs), str(cache), str(header), "--api", "vulkan",
+                        "--report", str(compiler_report),
+                        "--dump-failed", str(work / "diagnostics")], check=True, timeout=1800)
+        validate_compiler_report(json.loads(compiler_report.read_text()), len(unique))
+        validate_cache(cache.read_text(), len(unique), api="vulkan")
+    except (ValueError, OSError, subprocess.SubprocessError):
+        diagnostics = work / 'diagnostics'
+        diagnostics.mkdir(exist_ok=True)
+        if compiler_report.is_file():
+            (diagnostics / 'compiler-report.json').write_bytes(compiler_report.read_bytes())
+        # Do not leave a rejected cache in the success artifact directory.
+        cache.unlink(missing_ok=True)
+        raise
     (output / 'report.json').write_text(json.dumps({
         'zip_sha256': actual, 'checksum_verified': bool(expected), 'containers_per_archive': counts,
         'unique_shaders': len(unique), 'runtime_ready': False,
