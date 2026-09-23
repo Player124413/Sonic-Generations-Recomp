@@ -2,6 +2,9 @@ name: GPU observation hook tests
 on:
   push:
     paths:
+      - ".gitmodules"
+      - "tools/XenonRecomp"
+      - "tools/XenosRecomp"
       - 'SonicGenerationsRecomp/gpu/**'
       - 'cmake/GpuResources.cmake'
       - 'SonicGenerationsRecomp/CMakeLists.txt'
@@ -10,6 +13,9 @@ on:
       - '.github/workflows/gpu-tests.yml'
   pull_request:
     paths:
+      - ".gitmodules"
+      - "tools/XenonRecomp"
+      - "tools/XenosRecomp"
       - 'SonicGenerationsRecomp/gpu/**'
       - 'cmake/GpuResources.cmake'
       - 'SonicGenerationsRecomp/CMakeLists.txt'

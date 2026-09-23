@@ -2,6 +2,7 @@
 #include <smolv.h>
 #include <zstd.h>
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <map>
 #include <new>
@@ -102,7 +103,7 @@ bool GuestGpu::ShaderCache::Initialize(ShaderCacheData data, std::string& error)
             if ((!entries.empty() && entry.hash <= previousHash) || entry.spirvOffset != end ||
                 !entry.spirvSize || uint64_t(entry.spirvOffset) + entry.spirvSize > data.decodedSize)
                 return Fail(error, "Unsorted/duplicate shader hash or invalid SMOL-V range");
-            entries.push_back({entry.hash, entry.spirvOffset, entry.spirvSize});
+            entries.push_back({entry.hash, entry.spirvOffset, entry.spirvSize, entry.specConstantsMask});
             previousHash = entry.hash; end += entry.spirvSize;
         }
         if (end != data.decodedSize) return Fail(error, "Unindexed shader cache bytes");
@@ -111,7 +112,12 @@ bool GuestGpu::ShaderCache::Initialize(ShaderCacheData data, std::string& error)
         if (ZSTD_isError(size) || size != decoded.size()) return Fail(error, "Shader cache Zstd decompression failed");
         for (const auto& entry : entries)
         {
-            const size_t size = smolv::GetDecodedBufferSize(decoded.data() + entry.offset, entry.size);
+            // Packed modules need not begin on a dword boundary. The pinned
+            // SMOL-V header reader casts to uint32_t*, so provide aligned words.
+            if (entry.size < 24) return Fail(error, "Truncated SMOL-V header");
+            std::array<uint32_t, 6> header{};
+            std::memcpy(header.data(), decoded.data() + entry.offset, sizeof(header));
+            const size_t size = smolv::GetDecodedBufferSize(header.data(), sizeof(header));
             if (size < 20 || size > MaxModule || size % 4) return Fail(error, "Invalid SMOL-V module size/header");
         }
         index = std::move(entries); smolv = std::move(decoded); error.clear();
@@ -126,7 +132,9 @@ bool GuestGpu::ShaderCache::Decode(uint64_t hash, ShaderModule& module, std::str
     if (found == index.end() || found->hash != hash) return Fail(error, "Shader hash not found");
     try
     {
-        const auto* bytes = smolv.data() + found->offset;
+        std::vector<uint32_t> aligned((size_t(found->size) + 3) / 4);
+        std::memcpy(aligned.data(), smolv.data() + found->offset, found->size);
+        const auto* bytes = aligned.data();
         const size_t size = smolv::GetDecodedBufferSize(bytes, found->size);
         std::vector<uint32_t> words(size / 4);
         if (!smolv::Decode(bytes, found->size, words.data(), size)) return Fail(error, "SMOL-V decoding failed");

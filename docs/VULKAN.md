@@ -70,12 +70,15 @@ fixtures through production code, **not a real game launch**.
 
 ## Confirmed shader ABI gap
 
-The pinned XenosRecomp (`990d03b`) uses three 64-bit buffer device addresses in
-its SPIR-V push constants: vertex constants, pixel constants, shared constants.
-Shared offsets 0/64/128 select 2D/3D/cube descriptor indices, offset192 selects
-samplers, and 256/260/264/272 hold packed booleans, swapped texcoords, half-pixel
-offset and alpha threshold. Descriptor heaps are in spaces0..3. The Generations
-patch adds the separate 32-byte hardware boolean bank at b3/space4.
+The pinned Player124413/XenosRecomp (`034c1fb`) uses three 64-bit buffer device
+addresses in its SPIR-V push constants: vertex, pixel and shared constants.
+Shared offsets 0/64/128 select 2D/3D/cube descriptors, offset192 selects samplers.
+Packed booleans are at256; swapped texcoords/normals/binormals/tangents/weights
+are at260/264/268/272/276; half-pixel offset at280; clip plane at288 and its enable
+at304; alpha threshold at308; conditional rendering indices at312/316.
+Descriptor heaps are in spaces0..3. These are the fork's source ABI, not proof
+that the runtime already supplies these fields. The old extra b3/space4 bank
+patch is no longer applied; see [TOOLCHAIN.md](TOOLCHAIN.md).
 
 The uploaded cache now has a bounded Zstd/SMOL-V loader and hash lookup;
 see [SHADER_CACHE_RUNTIME.md](SHADER_CACHE_RUNTIME.md) for actual module counts,
@@ -84,7 +87,7 @@ Buffer device address features, descriptor indexing/layouts, guest hash mapping,
 reflection-driven vertex declarations and boolean packing still need wiring.
 Do not pass this cache to the fixture pipeline or claim shaders alone suffice.
 Reference: `tools/XenosRecomp/XenosRecomp/{shader_common.h,shader_recompiler.cpp,main.cpp}`
-and `patches/xenos-generations-booleans.patch`.
+in the pinned fork.
 
 ## Verified native state dispatch
 

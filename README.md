@@ -3,7 +3,9 @@
 рекомпиляция (static recompilation) **Xbox 360** версии *Sonic Generations*
 в нативное приложение для PC — по образцу
 [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp)
-на инструментах [XenonRecomp](https://github.com/hedge-dev/XenonRecomp).
+на модифицированных инструментах [Player124413/XenonRecomp](https://github.com/Player124413/XenonRecomp)
+и [Player124413/XenosRecomp](https://github.com/Player124413/XenosRecomp).
+Закреплённые версии и обновление сабмодулей: [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md).
 
 > **Важно:** проект **не содержит** файлов игры. Нужна ваша собственная
 > легальная копия (дамп ISO/XISO или распакованная папка с `default.xex`).

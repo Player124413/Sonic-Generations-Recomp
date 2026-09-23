@@ -101,6 +101,15 @@ class ShaderPipelineTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pipeline.validate_cache(text, count)
 
+    def test_vulkan_only_cache_validation(self):
+        good = 'g_shaderCacheEntryCount = 2; g_spirvCacheDecompressedSize = 43;'
+        pipeline.validate_cache(good, 2, api='vulkan')
+        for text in (good.replace('43', '0'), good.replace('2;', '1;')):
+            with self.assertRaises(ValueError):
+                pipeline.validate_cache(text, 2, api='vulkan')
+        with self.assertRaises(ValueError):
+            pipeline.validate_cache(good, 2)  # both still requires DXIL
+
     def test_download_error_does_not_leak_url(self):
         with patch.dict('os.environ', {'SHADERS_ZIP_URL': 'https://example.com/SECRET'}), patch('urllib.request.build_opener', side_effect=ValueError('SECRET')):
             with self.assertRaises(ValueError) as error:

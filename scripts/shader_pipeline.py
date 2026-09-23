@@ -91,11 +91,13 @@ def missing_boolean_registers(text):
     return sorted(used - declared, key=lambda name: int(name[1:]))
 
 
-def validate_cache(text, expected):
+def validate_cache(text, expected, api="both"):
     count = re.search(r'g_shaderCacheEntryCount\s*=\s*(\d+)', text)
     if not count or int(count[1]) != expected or expected == 0:
         raise ValueError('Incomplete or empty shader cache')
-    for kind in ('dxil', 'spirv'):
+    if api not in ('both', 'vulkan'):
+        raise ValueError('Unsupported cache API')
+    for kind in (('spirv',) if api == 'vulkan' else ('dxil', 'spirv')):
         if not re.search(r'g_' + kind + r'CacheDecompressedSize\s*=\s*[1-9][0-9]*', text):
             raise ValueError('Missing compiled payload: ' + kind)
 
@@ -150,7 +152,7 @@ def run(args):
     print(f'Found {len(unique)} unique shaders. Generating HLSL and checking boolean references.', flush=True)
     for binary in sorted(inputs.iterdir()):
         target = hlsl / (binary.stem + '.hlsl')
-        subprocess.run([str(exe), str(binary), str(target), str(header)], check=True, timeout=120)
+        subprocess.run([str(exe), str(binary), str(target), str(header), "--api", "vulkan"], check=True, timeout=120)
         if not target.is_file() or target.stat().st_size == 0:
             raise ValueError('Missing HLSL output')
         text = target.read_text()
@@ -169,15 +171,17 @@ def run(args):
                              'Stopped before batch DXC compilation. Diagnostic HLSL saved in private/shader-build/diagnostics '
                              '(or the diagnostics subfolder of --work). Do not replace these values with zero.')
     cache = output / 'shader_cache.experimental.cpp'
-    subprocess.run([str(exe), str(inputs), str(cache), str(header)], check=True, timeout=1800)
-    validate_cache(cache.read_text(), len(unique))
+    subprocess.run([str(exe), str(inputs), str(cache), str(header), "--api", "vulkan",
+                    "--report", str(output / "compiler-report.json"),
+                    "--dump-failed", str(work / "diagnostics")], check=True, timeout=1800)
+    validate_cache(cache.read_text(), len(unique), api="vulkan")
     (output / 'report.json').write_text(json.dumps({
         'zip_sha256': actual, 'checksum_verified': bool(expected), 'containers_per_archive': counts,
         'unique_shaders': len(unique), 'runtime_ready': False,
     }, indent=2))
     (output / 'README.txt').write_text(
-        'Experimental upstream cache: NOT compatible with the current runtime ABI.\n'
-        'Contains Zstd-compressed DXIL and smol-v SPIR-V plus specialization metadata.\n'
+        'Player124413 Vulkan cache: loader available; game pipeline integration incomplete.\n'
+        'Contains Zstd-compressed smol-v SPIR-V plus specialization metadata.\n'
         'Renderer integration and visual validation are still required.\n'
         'Derived game resources: do not publish without permission.\n')
     print(f'Converted {len(unique)} unique shaders. Runtime integration still required.')

@@ -13,6 +13,8 @@ int main(int argc, char** argv)
     ShaderCache cache;
     CHECK(cache.Initialize(data,error));
     CHECK(cache.Entries().size()==data.entries.size());
+    for (size_t i=0;i<data.entries.size();++i)
+        CHECK(cache.Entries()[i].specConstantsMask==data.entries[i].specConstantsMask);
     size_t vertices=0, fragments=0, addresses=0;
     std::map<std::pair<uint32_t,uint32_t>,size_t> bindings;
     if(argc==2) std::filesystem::create_directories(argv[1]);

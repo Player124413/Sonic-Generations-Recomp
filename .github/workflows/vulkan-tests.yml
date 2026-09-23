@@ -2,6 +2,9 @@ name: Vulkan resources, indexed draw and WSI
 on:
   push:
     paths:
+      - ".gitmodules"
+      - "tools/XenonRecomp"
+      - "tools/XenosRecomp"
       - 'SonicGenerationsRecomp/gpu/**'
       - 'cmake/GpuResources.cmake'
       - 'cmake/ShaderCache.cmake'
@@ -12,6 +15,9 @@ on:
       - '.github/workflows/vulkan-tests.yml'
   pull_request:
     paths:
+      - ".gitmodules"
+      - "tools/XenonRecomp"
+      - "tools/XenosRecomp"
       - 'SonicGenerationsRecomp/gpu/**'
       - 'cmake/GpuResources.cmake'
       - 'cmake/ShaderCache.cmake'

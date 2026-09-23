@@ -5,14 +5,13 @@
 #include <string>
 #include <vector>
 
-// Adapter for the uploaded nine-column generator output. Only the first five
-// columns are confirmed by offsets and codec contents. Do not interpret the
-// trailing numeric metadata as specialization masks, stages or shader pointers.
+// Nine-column generator ABI confirmed against Player124413/XenosRecomp
+// 034c1fb, XenosRecomp/main.cpp's cache writer. Generated file is unchanged.
 struct ShaderCacheEntry
 {
     uint64_t hash;
     uint32_t dxilOffset, dxilSize, spirvOffset, spirvSize;
-    uint32_t metadata0, metadata1, metadata2;
+    uint32_t airOffset, airSize, specConstantsMask;
     const char* source;
 };
 extern ShaderCacheEntry g_shaderCacheEntries[];
@@ -28,7 +27,7 @@ namespace GuestGpu
         size_t declaredCount = 0, declaredCompressedSize = 0, decodedSize = 0;
     };
     ShaderCacheData GetEmbeddedShaderCache() noexcept;
-    struct ShaderIndex { uint64_t hash; uint32_t offset, size; };
+    struct ShaderIndex { uint64_t hash; uint32_t offset, size, specConstantsMask; };
     struct ShaderBinding { uint32_t id, set, binding, storage; };
     struct ShaderModule
     {

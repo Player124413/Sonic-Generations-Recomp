@@ -2,12 +2,18 @@ name: Uploaded shader cache validation
 on:
   push:
     paths:
+      - ".gitmodules"
+      - "tools/XenonRecomp"
+      - "tools/XenosRecomp"
       - 'SonicGenerationsRecomp/gpu/shader_cache*'
       - 'cmake/ShaderCache.cmake'
       - 'tests/shader_cache/**'
       - '.github/workflows/shader-cache-tests.yml'
   pull_request:
     paths:
+      - ".gitmodules"
+      - "tools/XenonRecomp"
+      - "tools/XenosRecomp"
       - 'SonicGenerationsRecomp/gpu/shader_cache*'
       - 'cmake/ShaderCache.cmake'
       - 'tests/shader_cache/**'
