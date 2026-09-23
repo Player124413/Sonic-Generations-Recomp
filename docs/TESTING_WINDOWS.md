@@ -6,12 +6,12 @@ Linux и Python для запуска этого пакета не нужны. �
 
 ## Проверенная сборка
 
-Windows CI [35917927631](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/35917927631)
-на коммите `21530cb` успешно собрал EXE, выполнил проверки ядра и линковки
+Windows CI [35924240044](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/35924240044)
+на коммите `43130a1` успешно собрал EXE, выполнил проверки ядра и линковки
 импортов, запустил `--help` до и после упаковки. POSIX-тесты Python-лаунчера
 на Windows пропускаются; это не проверка запуска игры или `.cmd` на игровых данных.
 
-[Скачать Windows ZIP](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/35917927631/artifacts/10775718493)
+[Скачать Windows ZIP](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/35924240044/artifacts/10778986806)
 (артефакты Actions имеют ограниченный срок хранения; для скачивания может
 потребоваться вход в GitHub).
 
@@ -53,6 +53,24 @@ CI собирает диагностический вариант без опт�
 `--help` не означают проверку игрового кадра. Clear/resolve/backbuffer и прочие
 незавершённые части GPU не становятся реализованными от смены платформы.
 
-Привязка импортируемых переменных XEX также не завершена: возможен ранний
-сбой гостевого кода. Успешный CI не подтверждает загрузку уровня, правильную
+Привязаны четыре переменные ядра: указатель на модуль, timestamp bundle и
+указатели отключённых debug/cert monitors. Другие переменные (например,
+object-type descriptors) ещё не поддерживаются: загрузчик остановится с
+указанием библиотеки и ordinal, а не подставит фиктивный адрес. Успешный CI не подтверждает загрузку уровня, правильную
 графику или прохождение игры.
+
+
+## Проверки этого этапа
+
+- Полный Windows runtime и синтетические XEX/PE, kernel/import tests:
+  [35924240044](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/35924240044), успешно.
+- Регрессия полного Linux runtime:
+  [35924240050](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/35924240050), успешно.
+- GPU CPU-тесты Windows/Linux:
+  [35923949884](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/35923949884), успешно.
+- Vulkan с validation и чтением пикселей после clear/draw:
+  [35923949966](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/35923949966), успешно.
+- Локальные GPU-тесты: 8/8 обычные и 8/8 ASan/UBSan.
+
+Описание границ реализации: [XEX_IMPORT_BINDING.md](XEX_IMPORT_BINDING.md) и
+[GPU.md](GPU.md) в репозитории. Реальная игра в этих проверках не запускалась.

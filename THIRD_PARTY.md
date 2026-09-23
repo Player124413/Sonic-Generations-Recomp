@@ -98,3 +98,13 @@ Xenos register/enum encodings were cross-checked against Xenia's BSD-licensed
 state mapping is independently expressed; no Xenia register structs are copied.
 UnleashedRecomp is the architecture reference, not the source of Generations'
 device offsets or function addresses.
+
+
+## Guest XEX module/export layouts
+
+`kernel/xex_module.cpp` uses the guest LDR layout and monitor/timestamp export
+semantics researched in Xenia's `src/xenia/kernel/xmodule.h` and
+`src/xenia/kernel/xboxkrnl/xboxkrnl_module.cc` (BSD-licensed; Ben Vanik and
+contributors). See `licenses/Xenia-BSD.txt` and `docs/XEX_IMPORT_BINDING.md`.
+The separately compiled runtime decoder uses the pinned XenonRecomp source;
+it does not replace or modify the CPU generation tool.
