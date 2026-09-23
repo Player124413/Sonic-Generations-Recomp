@@ -234,6 +234,15 @@ int main(int argc, char* argv[])
         }
     }
 
+    // Resolve CLI paths before changing directory; relative dump paths belong
+    // to the invoking shell, not the executable's directory.
+    std::filesystem::path installPath, updatePath;
+    std::error_code pathError;
+    if (installSource) installPath = std::filesystem::absolute(installSource, pathError);
+    if (pathError) { std::fprintf(stderr, "Invalid install path: %s\n", pathError.message().c_str()); return 2; }
+    if (updateSource) updatePath = std::filesystem::absolute(updateSource, pathError);
+    if (pathError) { std::fprintf(stderr, "Invalid update path: %s\n", pathError.message().c_str()); return 2; }
+
     {
         // Set the current working directory to the executable's path.
         std::error_code ec;
@@ -267,9 +276,9 @@ int main(int argc, char* argv[])
         }
 
         Installer::Input input;
-        input.gameSource = installSource;
+        input.gameSource = installPath;
         if (updateSource)
-            input.updateSource = updateSource;
+            input.updateSource = updatePath;
 
         InstallJournal journal;
         printf("Installing game files from '%s'...\n", input.gameSource.string().c_str());
@@ -284,6 +293,9 @@ int main(int argc, char* argv[])
         isGameInstalled = Installer::checkGameInstall(GetGamePath(), modulePath);
         if (!isGameInstalled)
             return 1;
+        // Installation is a separate operation, not an unlogged game launch.
+        if (forceInstall)
+            return 0;
     }
 
     HostStartup();

@@ -1,20 +1,20 @@
+#include <windows.h>
 #include <os/version.h>
-
-LIB_FUNCTION(LONG, "ntdll.dll", RtlGetVersion, PRTL_OSVERSIONINFOW);
 
 os::version::OSVersion os::version::GetOSVersion()
 {
-    auto result = os::version::OSVersion{};
-
-    OSVERSIONINFOEXW osvi = { 0 };
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEXW);
-
-    if (RtlGetVersion((PRTL_OSVERSIONINFOW)&osvi) != 0)
-        return result;
-
-    result.Major = osvi.dwMajorVersion;
-    result.Minor = osvi.dwMinorVersion;
-    result.Build = osvi.dwBuildNumber;
-
+    OSVersion result{};
+    // ntdll is process-owned. No leaked LoadLibrary handle or SDK-internal type.
+    using QueryVersion = LONG (WINAPI*)(OSVERSIONINFOW*);
+    const auto module = GetModuleHandleW(L"ntdll.dll");
+    const auto query = module ? reinterpret_cast<QueryVersion>(GetProcAddress(module, "RtlGetVersion")) : nullptr;
+    OSVERSIONINFOW version{};
+    version.dwOSVersionInfoSize = sizeof(version);
+    if (query && query(&version) == 0)
+    {
+        result.Major = version.dwMajorVersion;
+        result.Minor = version.dwMinorVersion;
+        result.Build = version.dwBuildNumber;
+    }
     return result;
 }

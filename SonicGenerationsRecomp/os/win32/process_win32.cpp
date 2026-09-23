@@ -1,3 +1,5 @@
+#include <windows.h>
+#include <cstdio>
 #include <os/process.h>
 
 std::filesystem::path os::process::GetExecutablePath()

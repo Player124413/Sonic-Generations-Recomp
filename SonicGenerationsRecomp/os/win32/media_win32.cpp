@@ -1,3 +1,4 @@
+#include <fmt/format.h>
 #include <os/media.h>
 #include <os/logger.h>
 #include <winrt/Windows.Foundation.h>

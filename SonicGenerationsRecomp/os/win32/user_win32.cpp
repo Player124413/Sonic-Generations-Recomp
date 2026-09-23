@@ -1,3 +1,4 @@
+#include <windows.h>
 #include <os/user.h>
 
 bool os::user::IsDarkTheme()
