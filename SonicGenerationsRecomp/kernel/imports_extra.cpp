@@ -37,7 +37,7 @@ struct XSLIST_ENTRY
     be<uint32_t> next;
 };
 
-uint32_t InterlockedPopEntrySList(XSLIST_HEADER* list)
+uint32_t Guest_InterlockedPopEntrySList(XSLIST_HEADER* list)
 {
     while (true)
     {
@@ -59,7 +59,7 @@ uint32_t InterlockedPopEntrySList(XSLIST_HEADER* list)
     }
 }
 
-uint32_t InterlockedFlushSList(XSLIST_HEADER* list)
+uint32_t Guest_InterlockedFlushSList(XSLIST_HEADER* list)
 {
     std::atomic_ref headRef(list->head.value);
     uint32_t raw = headRef.exchange(be<uint32_t>(0).value);
@@ -286,8 +286,8 @@ uint32_t Guest_xstart()
 
 // ----- Hook table ----------------------------------------------------------
 
-GUEST_FUNCTION_HOOK(__imp__InterlockedPopEntrySList, InterlockedPopEntrySList);
-GUEST_FUNCTION_HOOK(__imp__InterlockedFlushSList, InterlockedFlushSList);
+GUEST_FUNCTION_HOOK(__imp__InterlockedPopEntrySList, Guest_InterlockedPopEntrySList);
+GUEST_FUNCTION_HOOK(__imp__InterlockedFlushSList, Guest_InterlockedFlushSList);
 GUEST_FUNCTION_HOOK(__imp__KeInitializeDpc, KeInitializeDpc);
 GUEST_FUNCTION_HOOK(__imp__KeInsertQueueDpc, KeInsertQueueDpc);
 GUEST_FUNCTION_HOOK(__imp__KeSetCurrentProcessType, KeSetCurrentProcessType);
