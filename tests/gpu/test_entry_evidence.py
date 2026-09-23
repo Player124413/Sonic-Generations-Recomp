@@ -15,6 +15,27 @@ EVIDENCE = {
 }
 
 class EntryEvidenceTests(unittest.TestCase):
+    def test_native_state_layout_anchors(self):
+        # These are checked even though they are not all individually hooked:
+        # draw snapshots cover native and inlined changes to the same fields.
+        evidence = {
+            "sub_82DA6DC0": (270, ["addi r11,r4,3224", "addi r11,r4,48", "mulli r11,r11,24", "stwx r5,r29,r31"]),
+            "sub_82DAAB08": (272, ["stw r29,12788(r31)"]),
+            "sub_82DAB6B0": (272, ["stw r4,12808(r3)"]),
+            "sub_82DAAF88": (272, ["stfs f31,13000(r31)", "stfs f28,13020(r31)"]),
+            "sub_82DA7A48": (270, ["addi r6,r3,1920", "li r5,16384", "addi r6,r31,6016", "li r5,17408"]),
+            "sub_82DA7E60": (270, ["lwz r24,12788(r31)", "lwz r10,24(r24)", "lwz r6,0(r24)",
+                                  "rlwinm r6,r6,0,0,0", "rlwinm r11,r21,1,0,30", "rlwinm r9,r21,2,0,29"]),
+        }
+        for symbol, (part, anchors) in evidence.items():
+            with self.subTest(symbol=symbol):
+                code = (ROOT / f"ppc/ppc_recomp.{part}.cpp").read_text()
+                match = re.search(r"PPC_FUNC_IMPL\(__imp__" + symbol + r"\) \{(.*?)^\}", code, re.M | re.S)
+                self.assertIsNotNone(match)
+                asm = re.findall(r"^\t// (.*)$", match.group(1), re.M)
+                for instruction in anchors:
+                    self.assertIn(instruction, asm)
+
     def test_entries_match_generated_code(self):
         inc = (ROOT / "SonicGenerationsRecomp/gpu/guest_entries.inc").read_text()
         hooks = re.findall(r"^SONIC_GPU_ENTRY\(\w+, (sub_[0-9A-F]+)\)$", inc, re.M)

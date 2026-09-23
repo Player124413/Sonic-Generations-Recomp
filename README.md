@@ -25,7 +25,7 @@
 | XMA-декодер | XMAFRAMES → guest PCM ring подключён; проверки и ограничения — [AUDIO.md](docs/AUDIO.md) |
 | Ввод (геймпад/клавиатура → XAMINPUT) | ✅ SDL |
 | Инсталлятор (папка / ISO-XISO + `.xexp` апдейт) | ✅ CLI |
-| GPU (`Vd\*`, present, backend-интерфейс) | 🚧 NullBackend; 8 наблюдательных SDK-перехватов, без рендеринга — [GPU.md](docs/GPU.md) |
+| GPU (`Vd\*`, present, backend-интерфейс) | 🚧 NullBackend; SDK-перехваты, снимки состояний/индексов и очередь, без рендеринга — [GPU.md](docs/GPU.md) |
 | Шейдеры (XenosRecomp → HLSL → DXIL/SPIR-V) | ⏳ позже (у вас) — шов `shader_cache.h` готов |
 | Патчи игры (FPS, widescreen и пр.) | ⏳ нужны адреса/символы — см. ROADMAP |
 

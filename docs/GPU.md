@@ -10,7 +10,8 @@ not a complete renderer or a demonstration that the game works.
 `guest_hooks.cpp` overrides the generated weak public `sub_*` aliases and calls
 the original `__imp__sub_*` bodies exactly once. It forwards the full PPCContext
 without argument marshalling, preserves original return values and memory side
-effects, and does not dereference guest pointers itself. No replacement device
+effects. Optional native capture reads the device prefix and bounded index data
+(see below); ordinary observation still does not read guest pointers. No replacement device
 is allocated and no unknown dispatch table is patched.
 
 `Video::Init()` calls `GuestGpu::EnableObservation`, explicitly pulling the
@@ -28,6 +29,63 @@ join guest threads and in-flight calls may finish after its snapshot.
 
 Do not use these numbers as frame draw counts: UP draws and other paths remain
 unmapped. Existing Vd ring/system-buffer implementations are still incomplete.
+
+## Shader-independent command preparation
+
+`native_commands.{h,cpp}` now adds opt-in native state/resource capture to the
+two mapped draw entrypoints. Enable it with `SONIC_GPU_CAPTURE=1` (independent
+of `SONIC_GPU_TRACE`). The default remains disabled. It needs no compiled
+shader archive or shader cache. Original SDK execution is still preserved.
+
+- Copies the known 13044-byte device prefix **before** native draw processing,
+  converts big-endian words to host integers and retains raw unknown fields.
+- Exposes four color-target pointers, the depth target, index binding, the
+  26 pointer slots before the viewport block, viewport/scissor, two 256-vector
+  float constant banks and raw six-word texture fetch descriptors. The 26-slot
+  prefix is not a declaration that all 26 API sampler indices are valid.
+- Copies the requested index range using the observed native descriptor:
+  flags at +0, data address at +24, 16/32-bit width from flag `0x80000000`, first
+  index in r6 and count in r7. Index bytes retain native order and flags; endian
+  swap mode is **not** guessed. The copy survives reuse of guest memory.
+- Uses an ordered, mutex-protected queue with monotonically increasing sequence
+  numbers and owned snapshots. Limits: 128 draws per batch, 256 KiB index data
+  per draw, 8 MiB payload per batch. Overflows, invalid address ranges, resource
+  limits and allocation failure are reported. Guest calls still execute.
+- `Video::Present` drains before backend Present. A batch with capture errors
+  is rejected without calling the backend. `IRenderBackend::SubmitGuestBatch`
+  defaults to Unsupported; NullBackend therefore never reports these draws as
+  submitted. Backend callbacks run outside the queue mutex. Batch references
+  are valid only during the callback; asynchronous consumers must own copies.
+- `FrameStats` separates captured draws/rejected batches/capture errors from
+  actual draw calls. Disabling capture clears pending data. Configure capture
+  with guest producer threads stopped; shutdown discards unpresented snapshots.
+
+This is **command preparation, not Vulkan/D3D12 rendering**. It does not replace
+render/sampler dispatch tables. It observes state changes made through setters
+or directly in device memory, but pre-draw snapshots precede SDK lazy fixups.
+Only two draw paths are covered (`NativeBatch::CompleteCoverage == false`).
+UP draws, command-list replay, resolves/clears and vertex data are not captured.
+Render-target/texture binding addresses are not retained host resources or
+stable resource identities. Their data, resource lifetimes/formats/tiling and
+shader bindings still require implementation. Backend consumers must not render
+such a batch as if it were complete. No new Vulkan or D3D12 backend is added.
+
+Memory reads check page-zero protection, alignment, 32-bit overflow and view
+bounds. They assume guest pages are accessible as in the original PPC runtime;
+this is not an OS page validator or a check of the allocation's logical size.
+Guest application synchronization must protect the device while it is being
+used. The original SDK can still fail in the unfinished Vd implementation.
+
+Additional evidence: texture binding `82DA6DC0` stores at
+`device + 4*(3224 + slot)` and updates fetch state at `(48 + slot)*24`;
+index binding `82DAAB08` stores at +12788, read by `82DA7E60`; depth binding
+`82DAB6B0` stores at +12808. The draw code flushes constant banks at +1920 and
++6016 to register bases 0x4000/0x4400. Regression tests check these anchors.
+
+Compiled shaders **can be supplied later**. That does not defer all shader
+work: native shader binding, hash/ABI agreement, constant-buffer mapping and
+pipeline layout must still be recovered before the final artifacts can draw
+the game. An empty cache must not be substituted with arbitrary shaders.
 
 ## Address evidence
 
@@ -83,7 +141,9 @@ separate static library. It checks function-table override selection, exactly
 once forwarding, entire-context/memory equivalence, success/failure returns,
 disabled counters, and concurrent counting. The Python suite checks instruction
 anchors in actual generated sources. Neither executes the real SDK. The
-standalone suite can use GCC; this does not establish GCC support for the full
+new native-command suite also checks endian decoding, range/overflow rejection,
+immutable index payloads, queue order/capacity/budget and default backend
+rejection. The standalone suite can use GCC; this does not establish GCC support for the full
 runtime. A separate workflow covers Linux Clang and Windows ClangCL.
 
 ## Remaining renderer work

@@ -1,4 +1,5 @@
 #include <gpu/guest_hooks.h>
+#include <gpu/native_commands.h>
 #include <cpu/ppc_context.h>
 #include <atomic>
 
@@ -12,6 +13,16 @@ namespace
     std::array<Counters, static_cast<size_t>(GuestGpu::Entry::Count)> counters{};
     std::atomic<uint64_t> failedCreates{0};
     std::atomic<bool> enabled{false};
+
+    void CaptureDraw(GuestGpu::DrawKind kind, const PPCContext& ctx, const uint8_t* base)
+    {
+        auto& stream = GuestGpu::GetCommandStream();
+        if (!stream.IsEnabled()) return;
+        const auto memory = base ? std::span<const uint8_t>(base, PPC_MEMORY_SIZE) : std::span<const uint8_t>();
+        stream.Capture({memory}, ctx.r3.u32, kind,
+                       {ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32});
+    }
+
 }
 
 void GuestGpu::EnableObservation(bool enable) noexcept
@@ -32,12 +43,17 @@ GuestGpu::Snapshot GuestGpu::GetSnapshot() noexcept
 }
 
 // Override the weak public alias, never the original __imp__ body. Forward the
-// entire context unchanged; do not marshal a guessed ABI or read guest pointers.
+// entire context unchanged. Optional capture reads only the known device prefix;
+// indexed capture also owns bounded index bytes. No guessed ABI is marshalled.
 #define SONIC_GPU_ENTRY(name, symbol) \
     PPC_FUNC_IMPL(__imp__##symbol); \
     PPC_FUNC(symbol) \
     { \
         const bool observe = enabled.load(std::memory_order_relaxed); \
+        if constexpr (GuestGpu::Entry::name == GuestGpu::Entry::DrawVertices || \
+                      GuestGpu::Entry::name == GuestGpu::Entry::DrawIndexedVertices) \
+            CaptureDraw(GuestGpu::Entry::name == GuestGpu::Entry::DrawVertices \
+                    ? GuestGpu::DrawKind::Vertices : GuestGpu::DrawKind::IndexedVertices, ctx, base); \
         auto& counter = counters[static_cast<size_t>(GuestGpu::Entry::name)]; \
         if (observe) counter.entered.fetch_add(1, std::memory_order_relaxed); \
         __imp__##symbol(ctx, base); \

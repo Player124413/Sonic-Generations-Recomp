@@ -41,6 +41,10 @@ bool Video::Init()
 {
     const char* trace = std::getenv("SONIC_GPU_TRACE");
     GuestGpu::EnableObservation(trace && std::strcmp(trace, "1") == 0);
+    const char* capture = std::getenv("SONIC_GPU_CAPTURE");
+    GuestGpu::GetCommandStream().Enable(capture && std::strcmp(capture, "1") == 0);
+    if (GuestGpu::GetCommandStream().IsEnabled())
+        LOGN("Native GPU state capture enabled; this does not enable rendering.");
 
     if (!g_backend)
         g_backend = std::make_unique<NullBackend>();
@@ -54,6 +58,13 @@ bool Video::Init()
 void Video::Shutdown()
 {
     GuestGpu::EnableObservation(false);
+    const auto unpresented = GuestGpu::GetCommandStream().Drain();
+    GuestGpu::GetCommandStream().Enable(false);
+    if (!unpresented.draws.empty() || unpresented.errors.Any())
+        LOGFN("Discarding unpresented GPU capture: {} draws, {} overflow, {} invalid reads, {} allocation failures, {} resource limits",
+            unpresented.draws.size(), unpresented.errors.overflow,
+            unpresented.errors.invalidMemory, unpresented.errors.allocationFailure, unpresented.errors.resourceLimit);
+
     const auto snapshot = GuestGpu::GetSnapshot();
 #define SONIC_GPU_ENTRY(name, symbol) \
     { \
@@ -80,6 +91,28 @@ void Video::OnResize(uint32_t width, uint32_t height)
 void Video::Present()
 {
     ++g_stats.presentCount;
+
+    if (GuestGpu::GetCommandStream().IsEnabled())
+    {
+        const auto batch = GuestGpu::GetCommandStream().Drain();
+        if (!batch.draws.empty() || batch.errors.Any())
+        {
+            g_stats.capturedDraws += batch.draws.size();
+            g_stats.captureErrors.invalidMemory += batch.errors.invalidMemory;
+            g_stats.captureErrors.overflow += batch.errors.overflow;
+            g_stats.captureErrors.allocationFailure += batch.errors.allocationFailure;
+            g_stats.captureErrors.resourceLimit += batch.errors.resourceLimit;
+
+            const auto result = batch.errors.Any() ? GuestGpu::SubmissionResult::Incomplete :
+                (g_backend ? g_backend->SubmitGuestBatch(batch) : GuestGpu::SubmissionResult::Unsupported);
+            if (result != GuestGpu::SubmissionResult::Submitted)
+            {
+                ++g_stats.rejectedBatches;
+                if (g_stats.rejectedBatches == 1)
+                    LOGN("GPU batch rejected: native capture is incomplete or backend submission is unsupported; no draws submitted.");
+            }
+        }
+    }
 
     if (g_backend)
         g_backend->Present();

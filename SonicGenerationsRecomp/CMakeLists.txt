@@ -19,6 +19,7 @@ set(SONIC_GENERATIONS_CORE_SOURCES
     "kernel/xam.cpp"
     "gpu/video.cpp"
     "gpu/guest_hooks.cpp"
+    "gpu/native_commands.cpp"
     "gpu/shader_cache.cpp"
     "apu/audio.cpp"
     "apu/xma.cpp"

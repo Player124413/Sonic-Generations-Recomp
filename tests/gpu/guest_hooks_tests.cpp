@@ -1,4 +1,5 @@
 #include <gpu/guest_hooks.h>
+#include <gpu/native_commands.h>
 #include "mock_originals.h"
 #include <cstdlib>
 #include <cstdio>
@@ -10,10 +11,10 @@
     std::fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #condition); std::abort(); \
 } } while (false)
 
-static void CallAndCheck(size_t entry, uint32_t status)
+static void CallAndCheck(size_t entry, uint32_t status, bool nullDevice = false)
 {
     PPCContext actual{};
-    actual.r3.u64 = 0x1234567887654321ull;
+    actual.r3.u64 = nullDevice ? 0 : 0x1234567887654321ull;
     actual.r4.u64 = status;
     actual.r9.u64 = 0xabcdef;
     actual.r1.u64 = 0x1000;
@@ -56,5 +57,12 @@ int main()
     CallAndCheck(static_cast<size_t>(GuestGpu::Entry::CreateDevice), 0x8007000Eu);
     CHECK(GuestGpu::GetSnapshot().failedCreates == 1);
     CHECK(originalCalls == count * 3 + 4001);
+    GuestGpu::GetCommandStream().Enable(true);
+    CallAndCheck(static_cast<size_t>(GuestGpu::Entry::DrawVertices), 0, true);
+    CallAndCheck(static_cast<size_t>(GuestGpu::Entry::DrawIndexedVertices), 0, true);
+    const auto rejected = GuestGpu::GetCommandStream().Drain();
+    CHECK(rejected.draws.empty() && rejected.errors.invalidMemory == 2);
+    CHECK(originalCalls == count * 3 + 4003); // failed capture never skips original
+    GuestGpu::GetCommandStream().Enable(false);
     std::puts("GPU pass-through, weak-alias link and concurrent counter tests passed");
 }

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <gpu/render_backend.h>
 
 // ---------------------------------------------------------------------------
 // GPU layer.
@@ -50,41 +51,6 @@ void VdRetrainEDRAM();
 void VdRetrainEDRAMWorker();
 
 // ---------------------------------------------------------------------------
-
-struct VideoMode
-{
-    uint32_t width = 1280;
-    uint32_t height = 720;
-    bool isInterlaced = false;
-    bool isWidescreen = true;
-    bool isHighDefinition = true;
-    float refreshRate = 60.0f;
-};
-
-// Backend-agnostic description of one submitted frame. The future
-// translation layer will fill this from the Xenos ring buffer.
-struct FrameStats
-{
-    uint64_t presentCount = 0;
-    uint64_t packetsRead = 0;
-    uint64_t drawCalls = 0;
-};
-
-class IRenderBackend
-{
-public:
-    virtual ~IRenderBackend() = default;
-
-    virtual const char* GetName() const = 0;
-    virtual bool Init(const VideoMode& mode) = 0;
-    virtual void Shutdown() = 0;
-
-    // Called from the present path (VdSwap). Backends flush/swap here.
-    virtual void Present() = 0;
-
-    // Resize notification (host window changed size).
-    virtual void Resize(uint32_t width, uint32_t height) = 0;
-};
 
 struct Video
 {
