@@ -37,6 +37,20 @@ struct VulkanHost::Impl
         VkImageAspectFlags Aspect() const { return kind == ImageKind::Rgba8 ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT; }
         ~Image() { if (view) vkDestroyImageView(device, view, nullptr); if (image) vkDestroyImage(device, image, nullptr); if (memory) vkFreeMemory(device, memory, nullptr); }
     };
+    struct Pipeline
+    {
+        VkDevice device{};
+        VkPipeline pipeline{};
+        VkPipelineLayout layout{};
+        VkRenderPass pass{};
+        uint32_t stride{};
+        ~Pipeline()
+        {
+            if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
+            if (layout) vkDestroyPipelineLayout(device, layout, nullptr);
+            if (pass) vkDestroyRenderPass(device, pass, nullptr);
+        }
+    };
     std::atomic<uint64_t> validationErrors{0};
     VkDebugUtilsMessengerEXT messenger{};
     VkInstance instance{};
@@ -58,6 +72,7 @@ struct VulkanHost::Impl
     Resource nextId = 1;
     std::unordered_map<Resource, std::unique_ptr<Buffer>> buffers;
     std::unordered_map<Resource, std::unique_ptr<Image>> images;
+    std::unordered_map<Resource, std::unique_ptr<Pipeline>> pipelines;
 
     bool Fail(const std::string& text) { error = text; return false; }
     bool Check(VkResult result, const char* operation)
@@ -188,7 +203,7 @@ struct VulkanHost::Impl
     {
         ready = false;
         if (device) vkDeviceWaitIdle(device);
-        buffers.clear(); images.clear(); stats.allocatedBytes = 0;
+        pipelines.clear(); buffers.clear(); images.clear(); stats.allocatedBytes = 0;
         swapImages.clear();
         if (swapchain) vkDestroySwapchainKHR(device, swapchain, nullptr);
         if (acquired) vkDestroySemaphore(device, acquired, nullptr);
@@ -292,7 +307,11 @@ bool VulkanHost::Init(const VulkanConfig& config)
     float priority = 1.0f;
     VkDeviceQueueCreateInfo queueInfo{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     queueInfo.queueFamilyIndex = p.queueFamily; queueInfo.queueCount = 1; queueInfo.pQueuePriorities = &priority;
+    VkPhysicalDeviceFeatures available{}, enabled{};
+    vkGetPhysicalDeviceFeatures(p.physical, &available);
+    enabled.robustBufferAccess = available.robustBufferAccess;
     VkDeviceCreateInfo deviceInfo{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+    deviceInfo.pEnabledFeatures = &enabled;
     deviceInfo.queueCreateInfoCount = 1; deviceInfo.pQueueCreateInfos = &queueInfo;
     const char* swapExtension = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
     if (p.surface) { deviceInfo.enabledExtensionCount = 1; deviceInfo.ppEnabledExtensionNames = &swapExtension; }
@@ -320,7 +339,7 @@ bool VulkanHost::Init(const VulkanConfig& config)
 Resource VulkanHost::CreateBuffer(size_t bytes, VkBufferUsageFlags usage, bool hostVisible)
 {
     auto& p = *impl;
-    if (p.buffers.size() + p.images.size() >= Impl::MaxResources || p.nextId == UINT64_MAX)
+    if (p.buffers.size() + p.images.size() + p.pipelines.size() >= Impl::MaxResources || p.nextId == UINT64_MAX)
     { p.Fail("Vulkan resource handle limit exceeded"); return 0; }
     // Transfer bits are always available to the explicit upload/readback path.
     auto buffer = p.MakeBuffer(bytes, usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, hostVisible);
@@ -338,7 +357,7 @@ Resource VulkanHost::CreateImage(uint32_t width, uint32_t height, ImageKind kind
     VkPhysicalDeviceProperties limits;
     vkGetPhysicalDeviceProperties(p.physical, &limits);
     if (!width || !height || width > limits.limits.maxImageDimension2D || height > limits.limits.maxImageDimension2D ||
-        uint64_t(width) * height > Impl::MaxAllocation / 4 || p.buffers.size() + p.images.size() >= Impl::MaxResources || p.nextId == UINT64_MAX)
+        uint64_t(width) * height > Impl::MaxAllocation / 4 || p.buffers.size() + p.images.size() + p.pipelines.size() >= Impl::MaxResources || p.nextId == UINT64_MAX)
     { p.Fail("Invalid image size or resource limit exceeded"); return 0; }
     auto image = std::make_unique<Impl::Image>();
     image->device = p.device; image->width = width; image->height = height; image->kind = kind;
@@ -373,6 +392,174 @@ Resource VulkanHost::CreateImage(uint32_t width, uint32_t height, ImageKind kind
     p.stats.allocatedBytes += requirements.size; ++p.stats.imagesCreated;
     return id;
 }
+namespace
+{
+    bool SimpleShader(std::span<const uint32_t> words)
+    {
+        if (words.size() < 5 || words.size() > 256 * 1024 || words[0] != 0x07230203u || words[1] != 0x00010000u || words[4] != 0) return false;
+        for (size_t offset = 5; offset < words.size();)
+        {
+            const uint32_t count = words[offset] >> 16, opcode = words[offset] & 0xFFFF;
+            if (!count || count > words.size() - offset) return false;
+            // This descriptor-free profile cannot satisfy a game's shader ABI.
+            if (opcode == 71 && count >= 3 && (words[offset + 2] == 33 || words[offset + 2] == 34)) return false;
+            if (opcode == 59 && count >= 4 && words[offset + 3] == 9) return false; // push constant variable
+            offset += count;
+        }
+        return true;
+    }
+    struct ShaderModule
+    {
+        VkDevice device{};
+        VkShaderModule module{};
+        ~ShaderModule() { if (module) vkDestroyShaderModule(device, module, nullptr); }
+    };
+}
+Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
+{
+    auto& p = *impl;
+    if (!p.Usable()) return 0;
+    VkPhysicalDeviceProperties limits;
+    vkGetPhysicalDeviceProperties(p.physical, &limits);
+    if ((input.cullMode & ~uint32_t(VK_CULL_MODE_FRONT_AND_BACK)) ||
+        (input.frontFace != VK_FRONT_FACE_CLOCKWISE && input.frontFace != VK_FRONT_FACE_COUNTER_CLOCKWISE) ||
+        uint32_t(input.depthCompare) > uint32_t(VK_COMPARE_OP_ALWAYS))
+    { p.Fail("Invalid graphics state enum"); return 0; }
+    if (!SimpleShader(input.vertexShader) || !SimpleShader(input.fragmentShader) || !input.vertexStride ||
+        input.vertexStride > limits.limits.maxVertexInputBindingStride || input.attributes.empty() || input.attributes.size() > 8 ||
+        p.buffers.size() + p.images.size() + p.pipelines.size() >= Impl::MaxResources || p.nextId == UINT64_MAX)
+    { p.Fail("Invalid/unsupported descriptor-free graphics pipeline input (SPIR-V required)"); return 0; }
+    uint32_t locations = 0;
+    for (const auto& attribute : input.attributes)
+    {
+        const uint32_t bytes = attribute.format == VK_FORMAT_R32G32_SFLOAT ? 8 :
+            attribute.format == VK_FORMAT_R32G32B32A32_SFLOAT ? 16 : 0;
+        if (!bytes || attribute.binding != 0 || attribute.location >= 8 || (locations & (1u << attribute.location)) ||
+            attribute.offset > input.vertexStride || bytes > input.vertexStride - attribute.offset ||
+            attribute.offset > limits.limits.maxVertexInputAttributeOffset)
+        { p.Fail("Unsupported vertex attribute in initial graphics profile"); return 0; }
+        locations |= 1u << attribute.location;
+    }
+    ShaderModule vertex{p.device}, fragment{p.device};
+    VkShaderModuleCreateInfo shader{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    shader.codeSize = input.vertexShader.size_bytes(); shader.pCode = input.vertexShader.data();
+    if (!p.Check(vkCreateShaderModule(p.device, &shader, nullptr, &vertex.module), "vkCreateShaderModule(vertex)")) return 0;
+    shader.codeSize = input.fragmentShader.size_bytes(); shader.pCode = input.fragmentShader.data();
+    if (!p.Check(vkCreateShaderModule(p.device, &shader, nullptr, &fragment.module), "vkCreateShaderModule(fragment)")) return 0;
+    auto pipeline = std::make_unique<Impl::Pipeline>(); pipeline->device = p.device; pipeline->stride = input.vertexStride;
+    VkPipelineLayoutCreateInfo layout{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    if (!p.Check(vkCreatePipelineLayout(p.device, &layout, nullptr, &pipeline->layout), "vkCreatePipelineLayout")) return 0;
+    std::array<VkAttachmentDescription, 2> attachments{};
+    attachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[0].initialLayout = attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    attachments[1] = attachments[0]; attachments[1].format = VK_FORMAT_D32_SFLOAT;
+    attachments[1].initialLayout = attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    const VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}, depth{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    VkSubpassDescription subpass{}; subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1; subpass.pColorAttachments = &color; subpass.pDepthStencilAttachment = &depth;
+    VkRenderPassCreateInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+    pass.attachmentCount = uint32_t(attachments.size()); pass.pAttachments = attachments.data();
+    pass.subpassCount = 1; pass.pSubpasses = &subpass;
+    if (!p.Check(vkCreateRenderPass(p.device, &pass, nullptr, &pipeline->pass), "vkCreateRenderPass")) return 0;
+    std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
+    for (auto& stage : stages) { stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO; stage.pName = "main"; }
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT; stages[0].module = vertex.module;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; stages[1].module = fragment.module;
+    const VkVertexInputBindingDescription binding{0, input.vertexStride, VK_VERTEX_INPUT_RATE_VERTEX};
+    VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    vi.vertexBindingDescriptionCount = 1; vi.pVertexBindingDescriptions = &binding;
+    vi.vertexAttributeDescriptionCount = uint32_t(input.attributes.size()); vi.pVertexAttributeDescriptions = input.attributes.data();
+    VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    viewport.viewportCount = viewport.scissorCount = 1;
+    VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    raster.polygonMode = VK_POLYGON_MODE_FILL; raster.lineWidth = 1; raster.cullMode = input.cullMode; raster.frontFace = input.frontFace;
+    VkPipelineMultisampleStateCreateInfo samples{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    ds.depthTestEnable = input.depthTest; ds.depthWriteEnable = input.depthWrite; ds.depthCompareOp = input.depthCompare;
+    VkPipelineColorBlendAttachmentState blend{}; blend.colorWriteMask = 15;
+    VkPipelineColorBlendStateCreateInfo colorBlend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    colorBlend.attachmentCount = 1; colorBlend.pAttachments = &blend;
+    constexpr VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    dynamic.dynamicStateCount = 2; dynamic.pDynamicStates = dynamicStates;
+    VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    info.stageCount = 2; info.pStages = stages.data(); info.pVertexInputState = &vi; info.pInputAssemblyState = &assembly;
+    info.pViewportState = &viewport; info.pRasterizationState = &raster; info.pMultisampleState = &samples;
+    info.pDepthStencilState = &ds; info.pColorBlendState = &colorBlend; info.pDynamicState = &dynamic;
+    info.layout = pipeline->layout; info.renderPass = pipeline->pass;
+    if (!p.Check(vkCreateGraphicsPipelines(p.device, VK_NULL_HANDLE, 1, &info, nullptr, &pipeline->pipeline), "vkCreateGraphicsPipelines")) return 0;
+    const auto id = p.nextId++;
+    p.pipelines.emplace(id, std::move(pipeline)); ++p.stats.pipelinesCreated;
+    return id;
+}
+bool VulkanHost::DrawIndexed(Resource pipelineId, Resource colorId, Resource depthId,
+    Resource verticesId, Resource indicesId, uint32_t count, VkIndexType indexType, const std::array<float, 4>& clearColor)
+{
+    auto& p = *impl;
+    if (!p.Usable()) return false;
+    auto it = p.pipelines.find(pipelineId);
+    if (it == p.pipelines.end()) return p.Fail("Invalid/stale graphics pipeline");
+    auto& pipeline = *it->second;
+    auto* color = p.FindImage(colorId); auto* depth = p.FindImage(depthId);
+    auto* vertices = p.FindBuffer(verticesId); auto* indices = p.FindBuffer(indicesId);
+    if (!color || !depth || !vertices || !indices) return false;
+    const uint32_t indexSize = indexType == VK_INDEX_TYPE_UINT16 ? 2 : indexType == VK_INDEX_TYPE_UINT32 ? 4 : 0;
+    if (color->kind != ImageKind::Rgba8 || depth->kind != ImageKind::Depth32 || color->width != depth->width || color->height != depth->height ||
+        !indexSize || !count || count % 3 || uint64_t(count) * indexSize > indices->size || vertices->size < pipeline.stride ||
+        !(vertices->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) || !(indices->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) ||
+        !std::all_of(clearColor.begin(), clearColor.end(), [](float x) { return std::isfinite(x); }))
+        return p.Fail("Invalid indexed draw range, target, or vertex/index resource");
+    const VkImageView views[] = {color->view, depth->view};
+    VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+    fi.renderPass = pipeline.pass; fi.attachmentCount = 2; fi.pAttachments = views;
+    fi.width = color->width; fi.height = color->height; fi.layers = 1;
+    VkFramebuffer framebuffer{};
+    if (!p.Check(vkCreateFramebuffer(p.device, &fi, nullptr, &framebuffer), "vkCreateFramebuffer")) return false;
+    bool ok = p.Begin();
+    if (ok)
+    {
+        for (auto* image : {color, depth})
+        {
+            VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            barrier.srcAccessMask = image->layout == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+            barrier.dstAccessMask = image == color ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            barrier.oldLayout = image->layout;
+            barrier.newLayout = image == color ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = image->image; barrier.subresourceRange = {image->Aspect(), 0, 1, 0, 1};
+            vkCmdPipelineBarrier(p.command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                0, 0, nullptr, 0, nullptr, 1, &barrier);
+            image->layout = barrier.newLayout;
+        }
+        VkClearValue clears[2]{};
+        std::copy(clearColor.begin(), clearColor.end(), clears[0].color.float32);
+        clears[1].depthStencil = {1.0f, 0};
+        VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+        begin.renderPass = pipeline.pass; begin.framebuffer = framebuffer;
+        begin.renderArea.extent = {color->width, color->height}; begin.clearValueCount = 2; begin.pClearValues = clears;
+        vkCmdBeginRenderPass(p.command, &begin, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(p.command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
+        const VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(p.command, 0, 1, &vertices->buffer, &offset);
+        vkCmdBindIndexBuffer(p.command, indices->buffer, 0, indexType);
+        const VkViewport viewport{0, 0, float(color->width), float(color->height), 0, 1};
+        const VkRect2D scissor{{0, 0}, {color->width, color->height}};
+        vkCmdSetViewport(p.command, 0, 1, &viewport); vkCmdSetScissor(p.command, 0, 1, &scissor);
+        vkCmdDrawIndexed(p.command, count, 1, 0, 0, 0);
+        vkCmdEndRenderPass(p.command);
+        ok = p.Submit();
+        if (ok) ++p.stats.indexedDraws;
+    }
+    vkDestroyFramebuffer(p.device, framebuffer, nullptr);
+    return ok;
+}
 bool VulkanHost::Destroy(Resource id)
 {
     auto& p = *impl;
@@ -380,6 +567,8 @@ bool VulkanHost::Destroy(Resource id)
     { p.stats.allocatedBytes -= it->second->allocation; p.buffers.erase(it); return true; }
     if (auto it = p.images.find(id); it != p.images.end())
     { p.stats.allocatedBytes -= it->second->allocation; p.images.erase(it); return true; }
+    if (auto it = p.pipelines.find(id); it != p.pipelines.end())
+    { p.pipelines.erase(it); return true; }
     return p.Fail("Invalid/stale resource handle");
 }
 bool VulkanHost::WriteBuffer(Resource id, std::span<const uint8_t> data)

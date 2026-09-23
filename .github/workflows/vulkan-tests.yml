@@ -1,4 +1,4 @@
-name: Vulkan host resources and WSI
+name: Vulkan resources, indexed draw and WSI
 on:
   push:
     paths:
@@ -29,7 +29,7 @@ jobs:
       - name: Install software Vulkan, validation and WSI dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan-dev mesa-vulkan-drivers vulkan-validationlayers libsdl2-dev xvfb xauth
+          sudo apt-get install -y libvulkan-dev mesa-vulkan-drivers vulkan-validationlayers libsdl2-dev xvfb xauth glslang-tools
       - name: Select software Vulkan ICD
         run: |
           icd=$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)

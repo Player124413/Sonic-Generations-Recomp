@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <fstream>
 
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "FAIL %d: %s\n", __LINE__, #x); std::exit(1); } } while (false)
 using namespace HostGpu;
@@ -38,6 +39,62 @@ static void StateTests()
     state = DecodeFixedState(input);
     CHECK(state.invalidBlend && state.requiresStencil && state.requiresAlphaTest && state.requiresAlphaToCoverage);
     CHECK(state.unsupportedRasterBits == (1 << 15));
+}
+static std::vector<uint32_t> ReadShader(const char* name)
+{
+    const std::string path = std::string(VULKAN_TEST_SHADER_DIRECTORY) + "/" + name;
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    CHECK(file.good());
+    const auto size = file.tellg();
+    CHECK(size > 0 && size % 4 == 0);
+    std::vector<uint32_t> words(size_t(size) / 4);
+    file.seekg(0); file.read(reinterpret_cast<char*>(words.data()), size);
+    CHECK(file.good());
+    return words;
+}
+static void GraphicsTests(VulkanHost& host)
+{
+    const auto vs = ReadShader("triangle.vert.spv"), fs = ReadShader("triangle.frag.spv");
+    struct Vertex { float x, y, r, g, b, a; };
+    const std::array<Vertex, 3> vertices{{{-0.8f, -0.8f, 1, 0, 0, 1}, {0.8f, -0.8f, 1, 0, 0, 1}, {0, 0.8f, 1, 0, 0, 1}}};
+    const std::array<uint16_t, 3> indices{0, 1, 2};
+    const auto vb = host.CreateBuffer(sizeof(vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+    const auto ib = host.CreateBuffer(sizeof(indices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true);
+    CHECK(vb && ib);
+    CHECK(host.WriteBuffer(vb, {reinterpret_cast<const uint8_t*>(vertices.data()), sizeof(vertices)}));
+    CHECK(host.WriteBuffer(ib, {reinterpret_cast<const uint8_t*>(indices.data()), sizeof(indices)}));
+    const auto color = host.CreateImage(32, 32, ImageKind::Rgba8);
+    const auto depth = host.CreateImage(32, 32, ImageKind::Depth32);
+    CHECK(color && depth);
+    GuestGpu::NativeState native;
+    native.words[10548 / 4] = 2 | 4 | (1 << 4); // depth test/write, LESS
+    const auto state = DecodeFixedState(native);
+    const std::array<VkVertexInputAttributeDescription, 2> attributes{{{0, 0, VK_FORMAT_R32G32_SFLOAT, 0}, {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 8}}};
+    GraphicsPipelineInfo info;
+    info.vertexStride = sizeof(Vertex); info.attributes = attributes;
+    CHECK(!host.CreateGraphicsPipeline(info)); // no dummy-shader success
+    info.vertexShader = vs; info.fragmentShader = fs;
+    info.depthTest = state.depth.depthTestEnable; info.depthWrite = state.depth.depthWriteEnable;
+    info.depthCompare = state.depth.depthCompareOp; info.cullMode = state.raster.cullMode;
+    info.frontFace = state.raster.frontFace;
+    const auto pipeline = host.CreateGraphicsPipeline(info);
+    CHECK(pipeline);
+    CHECK(host.DrawIndexed(pipeline, color, depth, vb, ib, 3, VK_INDEX_TYPE_UINT16, {0, 0, 0, 1}));
+    CHECK(!host.DrawIndexed(pipeline, color, depth, vb, ib, 6, VK_INDEX_TYPE_UINT16, {0, 0, 0, 1}));
+    CHECK(host.Stats().indexedDraws == 1 && host.Stats().pipelinesCreated == 1);
+    std::vector<uint8_t> pixels;
+    CHECK(host.ReadImage(color, pixels));
+    const size_t center = (16 * 32 + 16) * 4;
+    CHECK(pixels[center] == 255 && pixels[center + 1] == 0 && pixels[center + 2] == 0 && pixels[center + 3] == 255);
+    CHECK(pixels[0] == 0 && pixels[1] == 0 && pixels[2] == 0 && pixels[3] == 255);
+    CHECK(host.ReadImage(depth, pixels));
+    float centerDepth, cornerDepth;
+    std::memcpy(&centerDepth, pixels.data() + center, 4);
+    std::memcpy(&cornerDepth, pixels.data(), 4);
+    CHECK(centerDepth == 0.5f && cornerDepth == 1.0f);
+    CHECK(host.Destroy(vb) && host.Destroy(ib) && host.Destroy(color) && host.Destroy(depth) && host.Destroy(pipeline));
+    CHECK(!host.DrawIndexed(pipeline, color, depth, vb, ib, 3, VK_INDEX_TYPE_UINT16, {0, 0, 0, 1}));
+    std::puts("Actual vkCmdDrawIndexed: triangle color/depth readback matches expected pixels");
 }
 static void BackendTests(SDL_Window* window)
 {
@@ -149,6 +206,7 @@ int main(int argc, char** argv)
     CHECK(!host.Destroy(upload));
     CHECK(!host.ReadBuffer(upload, returned));
     CHECK(host.Destroy(color) && host.Destroy(depth));
+    GraphicsTests(host);
     CHECK(host.Stats().submissions >= 7 && host.Stats().allocatedBytes == 0);
     host.Shutdown();
     CHECK(host.Stats().validationErrors == 0);

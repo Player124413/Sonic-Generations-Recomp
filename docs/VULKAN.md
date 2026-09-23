@@ -11,6 +11,11 @@ rendering. It owns a Vulkan instance/device/graphics queue and implements:
   color/depth clears, texture uploads and byte-verified readback paths.
 - Command pool/buffer recording, `vkQueueSubmit`, fences and completion-before-
   destruction. This reference path is synchronous, not a high-performance queue.
+- A real descriptor-free graphics profile: SPIR-V shader modules, pipeline
+  layout/render pass, vertex input, depth/cull state, framebuffer, dynamic
+  viewport/scissor and `vkCmdDrawIndexed`. The test renders an original triangle
+  fixture and verifies both color and depth pixels via readback. It is **not**
+  the game's graphics pipeline ABI or a fallback shader for the game.
 - SDL Vulkan surface, swapchain acquire, transfer clear, presentation semaphores,
   `vkQueuePresentKHR`, out-of-date/suboptimal handling and swapchain recreation.
 - Guest snapshot constant-bank/index uploads to actual Vulkan buffers. The
@@ -20,7 +25,7 @@ rendering. It owns a Vulkan instance/device/graphics queue and implements:
 
 The window currently shows a **black host clear**, not a game image. The host
 color/depth working images are not yet mapped to guest render-target resources.
-The shader cache, vertex layouts/data, texture tiling/formats, shader descriptor
+The game shader cache, vertex layouts/data, texture tiling/formats, shader descriptor
 layouts, clears/resolves, complete state and command-list replay remain to be
 connected before graphics pipelines and `vkCmdDraw*` can execute the game.
 Do not interpret transfer/present counters as rendered game frames.
@@ -87,7 +92,14 @@ cmake --build build-vulkan --parallel 2
 xvfb-run -a ./build-vulkan/vulkan_host_tests --wsi
 ```
 
-The tests execute actual Vulkan calls, compare buffer and image readbacks,
+Tests additionally require `glslang-tools` to compile their small original GLSL
+fixtures into build-directory SPIR-V. These shaders never ship in the runtime.
+The initial graphics profile accepts descriptor-free SPIR-V 1.0, one vertex
+stream (float2/float4 attributes), triangle lists, RGBA8 + D32 and no blending.
+Unsupported descriptor/push-constant shaders are refused, not substituted.
+
+The tests execute actual Vulkan calls (including an indexed triangle draw),
+compare buffer, image and rasterized color/depth readbacks,
 check memory/handle limits, repeated initialization/destruction, native index
 and constant uploads, swapchain presentation/resizing and validation error
 counts. They fail if no Vulkan device/layer is available (no success-by-skip).
@@ -119,3 +131,10 @@ Reference architecture: hedge-dev/UnleashedRecomp's `gpu/video.cpp` (host state
 handlers and resource/queue lifecycle). This implementation uses Vulkan directly;
 it does not transplant Unleashed's title-specific GuestDevice. Xenos encoding
 cross-checks: xenia-project/xenia `src/xenia/gpu/registers.h` and `xenos.h`.
+
+## Validation history
+
+The first execution run passed resource readbacks but synchronization validation
+caught a swapchain acquire/layout-transition write-after-read hazard. The acquire
+wait and initial transition now form a full execution dependency; the subsequent
+resource + WSI run passed with zero validation errors. The tests retain this check.
