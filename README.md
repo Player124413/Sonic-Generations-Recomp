@@ -1,6 +1,6 @@
 # Sonic Generations Recompiled (Xbox 360)
 
-Нерекомпиляция (static recompilation) **Xbox 360** версии *Sonic Generations*
+рекомпиляция (static recompilation) **Xbox 360** версии *Sonic Generations*
 в нативное приложение для PC — по образцу
 [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp)
 на инструментах [XenonRecomp](https://github.com/hedge-dev/XenonRecomp).
