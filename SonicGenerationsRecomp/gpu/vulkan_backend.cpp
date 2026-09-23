@@ -5,8 +5,10 @@
 #include <array>
 #include <cstdio>
 #include <new>
+#include <bit>
+#include <cmath>
 
-VulkanBackend::VulkanBackend(SDL_Window* w, bool enableValidation) : window(w), validation(enableValidation) {}
+VulkanBackend::VulkanBackend(SDL_Window* w, bool enableValidation, bool enableGameDraws) : window(w), validation(enableValidation), drawEnabled(enableGameDraws) {}
 VulkanBackend::~VulkanBackend() { Shutdown(); }
 bool VulkanBackend::Fail(const std::string& text)
 {
@@ -20,6 +22,7 @@ bool VulkanBackend::Init(const VideoMode& mode)
     host.Shutdown(); drawResources.clear(); states.clear(); color = depth = 0;
     shaderCache = {};
     resolvedShaders.clear();
+    frameReady = false;
     error.clear(); width = mode.width; height = mode.height; resize = true;
     std::vector<const char*> extensions;
     HostGpu::VulkanConfig config;
@@ -47,7 +50,8 @@ bool VulkanBackend::Init(const VideoMode& mode)
         shaderCache.Entries().size());
     if (!host.Init(config)) { const auto message = host.Error(); host.Shutdown(); return Fail(message); }
     if (width && height && !RecreateTargets()) { host.Shutdown(); return false; }
-    std::fprintf(stderr, "Vulkan device: %s. Resources/transfers active; game graphics pipelines are not implemented.\n", host.AdapterName().c_str());
+    std::fprintf(stderr, "Vulkan device: %s. Game ABI: %s; mode: %s.\n", host.AdapterName().c_str(),
+        host.SupportsGenerationsAbi() ? "supported" : "unavailable", drawEnabled ? "experimental direct-frame draw" : "resource uploads");
     return true;
 }
 void VulkanBackend::ReleaseDrawResources()
@@ -78,7 +82,7 @@ bool VulkanBackend::RecreateTargets()
     }
     if (color) host.Destroy(color);
     if (depth) host.Destroy(depth);
-    color = newColor; depth = newDepth; resize = false;
+    color = newColor; depth = newDepth; resize = false; frameReady=false;
     return true;
 }
 HostGpu::Resource VulkanBackend::Upload(std::span<const uint8_t> bytes, VkBufferUsageFlags usage)
@@ -101,9 +105,23 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitGuestBatch(const GuestGpu::Nativ
 try
 {
     std::lock_guard lock(mutex);
+    frameReady = false;
     if (!host.IsReady()) return GuestGpu::SubmissionResult::Unsupported;
     if (batch.errors.Any() || batch.draws.empty() || batch.draws.size() > GuestGpu::CommandStream::MaxDraws)
         return GuestGpu::SubmissionResult::Incomplete;
+    frameReady = false;
+    struct PreparedDraw
+    {
+        std::vector<VkVertexInputAttributeDescription> attributes;
+        std::vector<HostGpu::GameTextureBinding> textures;
+        std::array<uint8_t,320> shared{};
+        HostGpu::GraphicsPipelineInfo pipeline;
+        HostGpu::GameDrawBindings bindings;
+    };
+    std::vector<PreparedDraw> prepared(batch.draws.size());
+    const bool graphics = drawEnabled && std::any_of(batch.draws.begin(),batch.draws.end(),[](const auto& d){return d.state.VertexShader() || d.state.PixelShader();});
+    if(graphics && (!host.SupportsGenerationsAbi() || !width || !height))
+    { Fail("Native draw requires Vulkan 1.2 buffer device address, scalar layout and descriptor indexing features"); return GuestGpu::SubmissionResult::Unsupported; }
     size_t total = 0;
     std::map<uint64_t, GuestGpu::ShaderModule> nextShaders;
     size_t shaderBytes = 0;
@@ -197,11 +215,114 @@ try
         total += index.bytes.size();
         if (total > GuestGpu::CommandStream::MaxPayloadBytes) return GuestGpu::SubmissionResult::Incomplete;
     }
+    if(graphics)
+    {
+        const auto firstTarget=batch.draws.front().state.ColorTargets()[0];
+        for(size_t n=0;n<batch.draws.size();++n)
+        {
+            const auto& d=batch.draws[n]; auto& plan=prepared[n];
+            const auto vs=nextShaders.find(d.vertexShader.hash), ps=nextShaders.find(d.pixelShader.hash);
+            const auto targets=d.state.ColorTargets();
+            const auto state=HostGpu::DecodeFixedState(d.state);
+            if(d.kind!=GuestGpu::DrawKind::IndexedVertices || d.arguments[0]!=4 || !d.indices.count || d.indices.count%3 ||
+                vs==nextShaders.end() || ps==nextShaders.end() || !d.resources.captured ||
+                !d.vertexShader.reflectionValid || !d.pixelShader.reflectionValid || d.vertexShader.samplerMask ||
+                !d.vertexShader.packedBooleansSupported || !d.pixelShader.packedBooleansSupported ||
+                !firstTarget || targets[0]!=firstTarget || targets[1] || targets[2] || targets[3] ||
+                ((d.state.words[10372/4]>>16)&15) || ((d.state.words[10368/4]>>16)&3) ||
+                d.state.DepthTarget()!=batch.draws.front().state.DepthTarget() ||
+                ((state.depth.depthTestEnable || state.depth.depthWriteEnable) && !d.state.DepthTarget()) || state.requiresStencil || state.requiresAlphaTest || state.requiresAlphaToCoverage ||
+                state.unsupportedRasterBits || state.invalidBlend || d.resources.vertices.size()!=1 || d.resources.vertices[0].stream!=0)
+            { Fail("Draw outside supported profile: indexed triangles, one target, one stream, 2D pixel textures, no stencil/MSAA/alpha test"); return GuestGpu::SubmissionResult::Incomplete; }
+            for(auto factor:{state.blend[0].srcColorBlendFactor,state.blend[0].dstColorBlendFactor,state.blend[0].srcAlphaBlendFactor,state.blend[0].dstAlphaBlendFactor})
+                if((factor>=VK_BLEND_FACTOR_CONSTANT_COLOR && factor<=VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA) || factor>=VK_BLEND_FACTOR_SRC1_COLOR)
+                { Fail("Constant/dual-source blending unsupported"); return GuestGpu::SubmissionResult::Incomplete; }
+            auto location=[](uint32_t usage,uint32_t index)->uint32_t {
+                if(usage==0 && index==0) return 0;
+                if(usage==3 && index==0) return 1;
+                if(usage==6 && index==0) return 2;
+                if(usage==7 && index==0) return 3;
+                if(usage==5 && index<24) return index<4 ? index+4 : index+8;
+                if(usage==10 && index<2) return index ? 11 : 8;
+                if(usage==1 && index==0) return 10;
+                return UINT32_MAX;
+            };
+            for(auto loc:vs->second.inputLocations)
+            {
+                const GuestGpu::NativeVertexElement* selected=nullptr;
+                for(const auto& e:d.resources.declaration) if(location(e.usage,e.usageIndex)==loc)
+                { if(selected) { Fail("Duplicate vertex declaration semantic"); return GuestGpu::SubmissionResult::Incomplete; } selected=&e; }
+                if(!selected || selected->stream || selected->method)
+                { Fail("Missing or unsupported native vertex declaration input"); return GuestGpu::SubmissionResult::Incomplete; }
+                VkFormat format=VK_FORMAT_UNDEFINED;
+                switch(selected->type)
+                {
+                    case 0x2C83A4: format=VK_FORMAT_R32_SFLOAT; break;
+                    case 0x2C23A5: format=VK_FORMAT_R32G32_SFLOAT; break;
+                    case 0x2A23B9: format=VK_FORMAT_R32G32B32_SFLOAT; break;
+                    case 0x1A23A6: format=VK_FORMAT_R32G32B32A32_SFLOAT; break;
+                    default: Fail("Native vertex format unsupported by current draw profile"); return GuestGpu::SubmissionResult::Incomplete;
+                }
+                plan.attributes.push_back({loc,0,format,selected->offset});
+            }
+            if(plan.attributes.empty()) { Fail("Procedural vertex input not supported yet"); return GuestGpu::SubmissionResult::Incomplete; }
+            const auto viewport=d.state.Viewport(); const auto scissor=d.state.Scissor();
+            if(viewport[0]!=0 || viewport[1]!=0 || viewport[2]!=float(width) || viewport[3]!=float(height) ||
+                !std::isfinite(viewport[4]) || !std::isfinite(viewport[5]) || viewport[4]<0 || viewport[5]>1 || viewport[4]>viewport[5] ||
+                scissor[0]<0 || scissor[1]<0 || scissor[2]<scissor[0] || scissor[3]<scissor[1] ||
+                uint32_t(scissor[2])>width || uint32_t(scissor[3])>height)
+            { Fail("Native draw requires full-sized viewport and bounded scissor"); return GuestGpu::SubmissionResult::Incomplete; }
+            plan.bindings.viewport={viewport[0],viewport[1],viewport[2],viewport[3],viewport[4],viewport[5]};
+            plan.bindings.scissor={{scissor[0],scissor[1]},{uint32_t(scissor[2]-scissor[0]),uint32_t(scissor[3]-scissor[1])}};
+            plan.bindings.baseVertex=std::bit_cast<int32_t>(d.arguments[1]);
+            const auto& vertices=d.resources.vertices[0];
+            for(size_t i=0;i<hostIndices[n].size();i+=d.indices.stride)
+            {
+                uint32_t index=0; for(uint32_t b=0;b<d.indices.stride;++b) index|=uint32_t(hostIndices[n][i+b])<<(8*b);
+                const int64_t vertex=int64_t(index)+plan.bindings.baseVertex;
+                if(vertex<0 || uint64_t(vertex)>=vertices.bytes.size()/vertices.stride)
+                { Fail("Native index references outside captured vertex stream"); return GuestGpu::SubmissionResult::Incomplete; }
+            }
+            for(uint32_t slot=0;slot<16;++slot) if(d.pixelShader.samplerMask & (1u<<slot))
+            {
+                const auto texture=std::find_if(d.resources.textures.begin(),d.resources.textures.end(),[&](const auto& t){return t.slot==slot;});
+                std::array<uint32_t,6> fetch{}; d.state.TextureFetch(slot,fetch);
+                const uint32_t u=(fetch[0]>>10)&7,v=(fetch[0]>>13)&7,mag=(fetch[3]>>19)&3,min=(fetch[3]>>21)&3;
+                if(texture==d.resources.textures.end() || u>2 || v>2 || mag>1 || min!=mag || (fetch[3]&(7u<<25)))
+                { Fail("Unbound texture or unsupported sampler state"); return GuestGpu::SubmissionResult::Incomplete; }
+                plan.textures.push_back({slot,0,mag ? VK_FILTER_LINEAR:VK_FILTER_NEAREST,VkSamplerAddressMode(u),VkSamplerAddressMode(v)});
+            }
+            const auto write=[&](size_t off,uint32_t value){for(size_t i=0;i<4;++i) plan.shared[off+i]=uint8_t(value>>(8*i));};
+            for(uint32_t slot=0;slot<16;++slot) {write(slot*4,slot);write(192+slot*4,slot);}
+            write(256,(d.state.words[10112/4]&0xFFFF) | ((d.state.words[(10112+16)/4]&0xFFFF)<<16));
+            write(280,std::bit_cast<uint32_t>(1.0f/float(width))); write(284,std::bit_cast<uint32_t>(-1.0f/float(height)));
+            plan.pipeline.vertexShader=vs->second.words; plan.pipeline.fragmentShader=ps->second.words;
+            plan.pipeline.vertexEntry=vs->second.entryPoint.c_str(); plan.pipeline.fragmentEntry=ps->second.entryPoint.c_str();
+            plan.pipeline.generationsAbi=true; plan.pipeline.preserveTargets=true; plan.pipeline.vertexStride=vertices.stride;
+            plan.pipeline.attributes=plan.attributes; plan.pipeline.cullMode=state.raster.cullMode;
+            plan.pipeline.frontFace=state.raster.frontFace; plan.pipeline.depthTest=state.depth.depthTestEnable;
+            plan.pipeline.depthWrite=state.depth.depthWriteEnable; plan.pipeline.depthCompare=state.depth.depthCompareOp;
+            plan.pipeline.blend=state.blend[0]; plan.pipeline.blend.colorWriteMask=d.state.words[10460/4]&15;
+        }
+    }
     ReleaseDrawResources();
     resolvedShaders = std::move(nextShaders);
     // Reserve before creating Vulkan handles, so push_back can't leak a new ID.
-    drawResources.reserve(batch.draws.size() * (2 + 16 + GuestGpu::NativeState::TextureCount));
+    drawResources.reserve(batch.draws.size() * (4 + 16 + GuestGpu::NativeState::TextureCount));
     states.reserve(batch.draws.size());
+    std::vector<HostGpu::Resource> pipelines;
+    if(graphics)
+    {
+        pipelines.reserve(batch.draws.size());
+        for(auto& plan:prepared)
+        {
+            const auto pipeline=host.CreateGraphicsPipeline(plan.pipeline);
+            if(!pipeline) { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
+            drawResources.push_back(pipeline); pipelines.push_back(pipeline);
+        }
+        if(!host.ClearColor(color,{0,0,0,1}) || !host.ClearDepth(depth,1))
+        { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
+    }
     for (size_t n = 0; n < batch.draws.size(); ++n)
     {
         const auto& draw = batch.draws[n];
@@ -212,18 +333,28 @@ try
             const auto word = draw.state.words[1920 / 4 + i];
             for (size_t byte = 0; byte < 4; ++byte) constants[i * 4 + byte] = uint8_t(word >> (byte * 8));
         }
-        auto id = Upload(constants, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+        auto id = Upload(constants, graphics ? VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT : VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
         if (!id) { ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
         drawResources.push_back(id);
+        auto& plan=prepared[n]; plan.bindings.constants=id;
+        HostGpu::Resource vertexBuffer=0,indexBuffer=0;
+        if(graphics)
+        {
+            id=Upload(plan.shared,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+            if(!id) { ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
+            drawResources.push_back(id); plan.bindings.shared=id;
+        }
         if (draw.kind == GuestGpu::DrawKind::IndexedVertices && !draw.indices.bytes.empty())
         {
             id = Upload(hostIndices[n], VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+            indexBuffer=id;
             if (!id) { ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
             drawResources.push_back(id);
         }
         for (const auto& vertex : draw.resources.vertices)
         {
             id = Upload(vertex.bytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+            vertexBuffer=id;
             if (!id) { ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
             drawResources.push_back(id);
         }
@@ -232,13 +363,20 @@ try
             id = host.CreateImage(texture.width, texture.height, HostGpu::ImageKind::Rgba8);
             if (!id) { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
             drawResources.push_back(id);
+            if(graphics) for(auto& binding:plan.textures) if(binding.slot==texture.slot) binding.image=id;
             if (!host.UploadRgba(id, texture.rgba))
             { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
         }
+        if(graphics)
+        {
+            plan.bindings.textures=plan.textures;
+            if(!host.DrawIndexed(pipelines[n],color,depth,vertexBuffer,indexBuffer,draw.indices.count,
+                draw.indices.stride==2 ? VK_INDEX_TYPE_UINT16:VK_INDEX_TYPE_UINT32,{0,0,0,1},&plan.bindings))
+            { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
+        }
     }
-    // Actual vkQueueSubmit transfers occurred, but NO vkCmdDraw was recorded.
-    // Missing shaders, vertex resources and complete state remain a draw barrier.
-    return GuestGpu::SubmissionResult::ResourcesUploaded;
+    frameReady=graphics;
+    return graphics ? GuestGpu::SubmissionResult::Submitted : GuestGpu::SubmissionResult::ResourcesUploaded;
 }
 catch (const std::bad_alloc&)
 {
@@ -252,7 +390,12 @@ void VulkanBackend::Present()
     std::lock_guard lock(mutex);
     if (!host.IsReady() || !width || !height) return;
     if ((resize || host.SwapchainNeedsResize()) && !RecreateTargets()) return;
-    if (window && !host.PresentClear({0, 0, 0, 1}) && !host.SwapchainNeedsResize()) Fail(host.Error());
+    if (window)
+    {
+        const bool ok=frameReady ? host.PresentImage(color) : host.PresentClear({0,0,0,1});
+        if(!ok && !host.SwapchainNeedsResize()) Fail(host.Error());
+    }
+    frameReady=false;
 }
 void VulkanBackend::Resize(uint32_t w, uint32_t h)
 {

@@ -17,11 +17,28 @@ GuestGpu::DrawResources GuestGpu::ReadDrawResources(MemoryView memory, const Nat
     result.captured = true;
     const auto fail = [&](ConversionResult status) {
         result.status = status;
-        result.vertices.clear(); result.textures.clear(); result.payloadBytes = 0;
+        result.declaration.clear(); result.vertices.clear(); result.textures.clear(); result.payloadBytes = 0;
         return std::move(result);
     };
     try
     {
+        const uint32_t declaration=state.words[12216/4];
+        if(declaration)
+        {
+            std::array<uint8_t,52> header{};
+            if ((declaration & 3) || !memory.Copy(declaration,header)) return fail(ConversionResult::Truncated);
+            const uint32_t count=Word(header.data()+24);
+            if ((Word(header.data())&15)!=5 || !count || count>32 || uint64_t(declaration)+52+count*12>(uint64_t{1}<<32))
+                return fail(ConversionResult::Unsupported);
+            std::array<uint8_t,384> entries{};
+            if(!memory.Copy(declaration+52,std::span(entries).first(count*12))) return fail(ConversionResult::Truncated);
+            result.declaration.reserve(count);
+            for(uint32_t i=0;i<count;++i)
+            {
+                const auto* e=entries.data()+i*12;
+                result.declaration.push_back({uint32_t(e[0])*256+e[1],uint32_t(e[2])*256+e[3],Word(e+4),e[9],e[10],e[8]});
+            }
+        }
         result.vertices.reserve(16); result.textures.reserve(NativeState::TextureCount);
         for (uint32_t stream = 0; stream < 16; ++stream)
         {

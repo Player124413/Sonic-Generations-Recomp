@@ -44,6 +44,23 @@ int main()
         Store(memory,resource+offset,0);
         CHECK(ReadShaderIdentity({memory},resource,stage).status==ShaderReadStatus::InvalidContainer);
     }
+    // Minimal bounded CTAB with sampler s2 and b0. Payload isn't a game shader.
+    std::fill(memory.begin(),memory.end(),0);
+    Store(memory,resource,7); Store(memory,resource+24,physical);
+    const uint32_t base=resource+40;
+    Store(memory,base,0x102A1100); Store(memory,base+4,160); Store(memory,base+8,32);
+    Store(memory,base+16,36);
+    Store(memory,base+40+12,2); Store(memory,base+40+16,28);
+    Store(memory,base+68+4,(3u<<16)|2); Store(memory,base+68+8,1u<<16);
+    Store(memory,base+88+4,0); Store(memory,base+88+8,1u<<16);
+    auto reflected=ReadShaderIdentity({memory},resource,4);
+    CHECK(reflected.status==ShaderReadStatus::Success && reflected.reflectionValid && reflected.samplerMask==4 && reflected.packedBooleansSupported);
+    Store(memory,base+88+4,16);
+    CHECK(!ReadShaderIdentity({memory},resource,4).packedBooleansSupported);
+    Store(memory,base+68+4,(3u<<16)|16);
+    CHECK(!ReadShaderIdentity({memory},resource,4).reflectionValid);
+    Store(memory,base+40+16,UINT32_MAX);
+    CHECK(!ReadShaderIdentity({memory},resource,4).reflectionValid);
     CHECK(ReadShaderIdentity({memory},0,0).status==ShaderReadStatus::Unbound);
     CHECK(ReadShaderIdentity({memory},resource+1,0).status==ShaderReadStatus::InvalidMemory);
     CHECK(ReadShaderIdentity({},resource,0).status==ShaderReadStatus::InvalidMemory);

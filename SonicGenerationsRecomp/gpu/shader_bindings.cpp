@@ -37,6 +37,33 @@ GuestGpu::NativeShaderIdentity GuestGpu::ReadShaderIdentity(MemoryView memory, u
         std::vector<uint8_t> container(static_cast<size_t>(size));
         if (!memory.Copy(resource + virtualOffset, std::span(container).first(virtualSize)) ||
             !memory.Copy(physical, std::span(container).subspan(virtualSize))) return fail(ShaderReadStatus::InvalidMemory);
+        // Same relative CTAB layout consumed by the pinned XenosRecomp.
+        const uint64_t table=uint64_t(Read(container.data()+16))+4;
+        const auto fits=[&](uint64_t offset,uint64_t length) { return offset<=virtualSize && length<=virtualSize-offset; };
+        if (Read(container.data()+16) && fits(table,28))
+        {
+            const uint32_t count=Read(container.data()+table+12);
+            const uint64_t entries=table+Read(container.data()+table+16);
+            if(count<=4096 && fits(entries,uint64_t(count)*20))
+            {
+                result.reflectionValid=true;
+                for(uint32_t i=0;i<count;++i)
+                {
+                    const auto* c=container.data()+entries+i*20;
+                    const uint32_t kind=uint32_t(c[4])*256+c[5], index=uint32_t(c[6])*256+c[7], length=uint32_t(c[8])*256+c[9];
+                    if(kind==3)
+                    {
+                        if(!length || index>=16 || length>16-index) { result.reflectionValid=false; break; }
+                        for(uint32_t j=0;j<length;++j) result.samplerMask |= 1u<<(index+j);
+                    }
+                    if(kind==0)
+                    {
+                        for(uint32_t j=0;j<length;++j)
+                            if ((index+j)%128 >= 16) result.packedBooleansSupported=false;
+                    }
+                }
+            }
+        }
         result.hash = XXH3_64bits(container.data(), container.size());
         result.status = ShaderReadStatus::Success;
         return result;

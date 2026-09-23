@@ -1,4 +1,5 @@
 #include <gpu/vulkan_host.h>
+#include <gpu/shader_cache.h>
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -44,11 +45,14 @@ struct VulkanHost::Impl
         VkPipelineLayout layout{};
         VkRenderPass pass{};
         uint32_t stride{};
+        bool game = false, preserve = false;
+        std::array<VkDescriptorSetLayout, 4> sets{};
         ~Pipeline()
         {
             if (pipeline) vkDestroyPipeline(device, pipeline, nullptr);
             if (layout) vkDestroyPipelineLayout(device, layout, nullptr);
             if (pass) vkDestroyRenderPass(device, pass, nullptr);
+            for (auto set : sets) if (set) vkDestroyDescriptorSetLayout(device, set, nullptr);
         }
     };
     std::atomic<uint64_t> validationErrors{0};
@@ -66,6 +70,9 @@ struct VulkanHost::Impl
     VkSwapchainKHR swapchain{};
     std::vector<VkImage> swapImages;
     VkSemaphore acquired{}, rendered{};
+    bool gameAbi = false;
+    VkExtent2D swapExtent{};
+    VkFormat swapFormat{};
     bool ready = false, failed = false, resizeNeeded = false;
     std::string error, adapter;
     VulkanStats stats;
@@ -100,6 +107,7 @@ struct VulkanHost::Impl
     std::unique_ptr<Buffer> MakeBuffer(size_t bytes, VkBufferUsageFlags usage, bool hostVisible)
     {
         if (!Usable() || !bytes || !Room(bytes)) return {};
+        if ((usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) && !gameAbi) { Fail("Buffer device address ABI unavailable"); return {}; }
         auto b = std::make_unique<Buffer>();
         b->device = device; b->size = bytes; b->usage = usage;
         VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -112,7 +120,10 @@ struct VulkanHost::Impl
             hostVisible ? VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT : 0,
             hostVisible ? VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         if (type == UINT32_MAX) { Fail("No compatible buffer memory type"); return {}; }
+        VkMemoryAllocateFlagsInfo flags{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO};
+        flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
         VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        if (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) alloc.pNext = &flags;
         alloc.allocationSize = requirements.size; alloc.memoryTypeIndex = type;
         if (!Check(vkAllocateMemory(device, &alloc, nullptr, &b->memory), "vkAllocateMemory(buffer)") ||
             !Check(vkBindBufferMemory(device, b->buffer, b->memory, 0), "vkBindBufferMemory")) return {};
@@ -162,7 +173,8 @@ struct VulkanHost::Impl
         barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = image.image;
         barrier.subresourceRange = {image.Aspect(), 0, 1, 0, 1};
-        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            (access & VK_ACCESS_SHADER_READ_BIT) ? VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
             0, 0, nullptr, 0, nullptr, 1, &barrier);
         image.layout = layout;
     }
@@ -221,13 +233,14 @@ struct VulkanHost::Impl
         if (instance) vkDestroyInstance(instance, nullptr);
         instance = {}; physical = {}; device = {}; queue = {}; pool = {}; command = {}; fence = {};
         surface = {}; swapchain = {}; acquired = {}; rendered = {};
-        failed = false; resizeNeeded = false;
+        failed = false; resizeNeeded = false; gameAbi = false;
     }
     ~Impl() { Shutdown(); }
 };
 
 VulkanHost::VulkanHost() : impl(std::make_unique<Impl>()) {}
 VulkanHost::~VulkanHost() = default;
+bool VulkanHost::SupportsGenerationsAbi() const { return impl->gameAbi; }
 bool VulkanHost::IsReady() const { return impl->ready && !impl->failed; }
 const std::string& VulkanHost::Error() const { return impl->error; }
 const std::string& VulkanHost::AdapterName() const { return impl->adapter; }
@@ -245,7 +258,7 @@ bool VulkanHost::Init(const VulkanConfig& config)
     p.Shutdown(); p.error.clear(); p.adapter.clear(); p.stats = {}; p.validationErrors = 0;
     // Do not reset nextId: stale resource IDs must remain invalid after re-init.
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName = "Sonic Generations Vulkan host"; app.apiVersion = VK_API_VERSION_1_0;
+    app.pApplicationName = "Sonic Generations Vulkan host"; app.apiVersion = VK_API_VERSION_1_2;
     VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     info.pApplicationInfo = &app;
     std::vector<const char*> extensions(config.instanceExtensions.begin(), config.instanceExtensions.end());
@@ -310,8 +323,26 @@ bool VulkanHost::Init(const VulkanConfig& config)
     VkPhysicalDeviceFeatures available{}, enabled{};
     vkGetPhysicalDeviceFeatures(p.physical, &available);
     enabled.robustBufferAccess = available.robustBufferAccess;
+    VkPhysicalDeviceVulkan12Features supported12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    VkPhysicalDeviceFeatures2 features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    features.pNext = &supported12;
+    vkGetPhysicalDeviceFeatures2(p.physical, &features);
+    VkPhysicalDeviceVulkan12Features enabled12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    p.gameAbi = properties.apiVersion >= VK_API_VERSION_1_2 && properties.limits.maxPerStageDescriptorSampledImages >= 32 &&
+        properties.limits.maxPerStageDescriptorSamplers >= 32 && available.shaderInt64 &&
+        available.shaderSampledImageArrayDynamicIndexing && supported12.bufferDeviceAddress &&
+        supported12.scalarBlockLayout && supported12.runtimeDescriptorArray &&
+        supported12.descriptorBindingPartiallyBound && supported12.shaderSampledImageArrayNonUniformIndexing;
+    if (p.gameAbi)
+    {
+        enabled.shaderInt64 = enabled.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+        enabled12.bufferDeviceAddress = enabled12.scalarBlockLayout = enabled12.runtimeDescriptorArray = VK_TRUE;
+        enabled12.descriptorBindingPartiallyBound = enabled12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+    }
+
     VkDeviceCreateInfo deviceInfo{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     deviceInfo.pEnabledFeatures = &enabled;
+    if (p.gameAbi) deviceInfo.pNext = &enabled12;
     deviceInfo.queueCreateInfoCount = 1; deviceInfo.pQueueCreateInfos = &queueInfo;
     const char* swapExtension = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
     if (p.surface) { deviceInfo.enabledExtensionCount = 1; deviceInfo.ppEnabledExtensionNames = &swapExtension; }
@@ -425,16 +456,28 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
         (input.frontFace != VK_FRONT_FACE_CLOCKWISE && input.frontFace != VK_FRONT_FACE_COUNTER_CLOCKWISE) ||
         uint32_t(input.depthCompare) > uint32_t(VK_COMPARE_OP_ALWAYS))
     { p.Fail("Invalid graphics state enum"); return 0; }
-    if (!SimpleShader(input.vertexShader) || !SimpleShader(input.fragmentShader) || !input.vertexStride ||
-        input.vertexStride > limits.limits.maxVertexInputBindingStride || input.attributes.empty() || input.attributes.size() > 8 ||
+    GuestGpu::ShaderModule vsInfo, psInfo;
+    std::string shaderError;
+    bool validShaders = SimpleShader(input.vertexShader) && SimpleShader(input.fragmentShader);
+    if (input.generationsAbi)
+    {
+        validShaders = p.gameAbi && GuestGpu::InspectShader(input.vertexShader, vsInfo, shaderError) &&
+            GuestGpu::InspectShader(input.fragmentShader, psInfo, shaderError) && vsInfo.stage == 0 && psInfo.stage == 4 &&
+            input.vertexEntry && input.fragmentEntry && vsInfo.entryPoint == input.vertexEntry && psInfo.entryPoint == input.fragmentEntry;
+        for (const auto* module : {&vsInfo, &psInfo})
+            for (const auto& binding : module->bindings)
+                validShaders &= (binding.set == 0 || binding.set == 3) && binding.binding == 0 && binding.storage == 0;
+    }
+    if (!validShaders || !input.vertexStride ||
+        input.vertexStride > limits.limits.maxVertexInputBindingStride || input.attributes.empty() || input.attributes.size() > 32 ||
         p.buffers.size() + p.images.size() + p.pipelines.size() >= Impl::MaxResources || p.nextId == UINT64_MAX)
-    { p.Fail("Invalid/unsupported descriptor-free graphics pipeline input (SPIR-V required)"); return 0; }
+    { p.Fail("Invalid/unsupported graphics shader ABI or pipeline input"); return 0; }
     uint32_t locations = 0;
     for (const auto& attribute : input.attributes)
     {
-        const uint32_t bytes = attribute.format == VK_FORMAT_R32G32_SFLOAT ? 8 :
-            attribute.format == VK_FORMAT_R32G32B32A32_SFLOAT ? 16 : 0;
-        if (!bytes || attribute.binding != 0 || attribute.location >= 8 || (locations & (1u << attribute.location)) ||
+        const uint32_t bytes = attribute.format == VK_FORMAT_R32_SFLOAT ? 4 : attribute.format == VK_FORMAT_R32G32_SFLOAT ? 8 :
+            attribute.format == VK_FORMAT_R32G32B32_SFLOAT ? 12 : attribute.format == VK_FORMAT_R32G32B32A32_SFLOAT ? 16 : 0;
+        if (!bytes || attribute.binding != 0 || attribute.location >= 32 || (locations & (1u << attribute.location)) ||
             attribute.offset > input.vertexStride || bytes > input.vertexStride - attribute.offset ||
             attribute.offset > limits.limits.maxVertexInputAttributeOffset)
         { p.Fail("Unsupported vertex attribute in initial graphics profile"); return 0; }
@@ -447,12 +490,35 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     shader.codeSize = input.fragmentShader.size_bytes(); shader.pCode = input.fragmentShader.data();
     if (!p.Check(vkCreateShaderModule(p.device, &shader, nullptr, &fragment.module), "vkCreateShaderModule(fragment)")) return 0;
     auto pipeline = std::make_unique<Impl::Pipeline>(); pipeline->device = p.device; pipeline->stride = input.vertexStride;
+    pipeline->game = input.generationsAbi; pipeline->preserve = input.preserveTargets;
+    if (pipeline->game)
+    {
+        for (uint32_t set = 0; set < 4; ++set)
+        {
+            VkDescriptorSetLayoutBinding binding{};
+            binding.binding = 0; binding.descriptorCount = 32;
+            binding.descriptorType = set == 3 ? VK_DESCRIPTOR_TYPE_SAMPLER : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+            binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+            VkDescriptorBindingFlags flag = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
+            VkDescriptorSetLayoutBindingFlagsCreateInfo flags{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO};
+            flags.bindingCount = 1; flags.pBindingFlags = &flag;
+            VkDescriptorSetLayoutCreateInfo info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+            if (set == 0 || set == 3) { info.bindingCount = 1; info.pBindings = &binding; info.pNext = &flags; }
+            if (!p.Check(vkCreateDescriptorSetLayout(p.device, &info, nullptr, &pipeline->sets[set]), "vkCreateDescriptorSetLayout")) return 0;
+        }
+    }
+    const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 24};
     VkPipelineLayoutCreateInfo layout{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    if (pipeline->game)
+    {
+        layout.setLayoutCount = 4; layout.pSetLayouts = pipeline->sets.data();
+        layout.pushConstantRangeCount = 1; layout.pPushConstantRanges = &push;
+    }
     if (!p.Check(vkCreatePipelineLayout(p.device, &layout, nullptr, &pipeline->layout), "vkCreatePipelineLayout")) return 0;
     std::array<VkAttachmentDescription, 2> attachments{};
     attachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
     attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[0].loadOp = input.preserveTargets ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR; attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachments[0].initialLayout = attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     attachments[1] = attachments[0]; attachments[1].format = VK_FORMAT_D32_SFLOAT;
@@ -466,6 +532,10 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     if (!p.Check(vkCreateRenderPass(p.device, &pass, nullptr, &pipeline->pass), "vkCreateRenderPass")) return 0;
     std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
     for (auto& stage : stages) { stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO; stage.pName = "main"; }
+    stages[0].pName = input.vertexEntry; stages[1].pName = input.fragmentEntry;
+    const VkSpecializationMapEntry specEntry{0, 0, sizeof(uint32_t)};
+    const VkSpecializationInfo spec{1, &specEntry, sizeof(uint32_t), &input.specialization};
+    if (pipeline->game) for (auto& stage : stages) stage.pSpecializationInfo = &spec;
     stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT; stages[0].module = vertex.module;
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; stages[1].module = fragment.module;
     const VkVertexInputBindingDescription binding{0, input.vertexStride, VK_VERTEX_INPUT_RATE_VERTEX};
@@ -483,6 +553,7 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
     ds.depthTestEnable = input.depthTest; ds.depthWriteEnable = input.depthWrite; ds.depthCompareOp = input.depthCompare;
     VkPipelineColorBlendAttachmentState blend{}; blend.colorWriteMask = 15;
+    if (pipeline->game) blend = input.blend;
     VkPipelineColorBlendStateCreateInfo colorBlend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
     colorBlend.attachmentCount = 1; colorBlend.pAttachments = &blend;
     constexpr VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
@@ -499,7 +570,7 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     return id;
 }
 bool VulkanHost::DrawIndexed(Resource pipelineId, Resource colorId, Resource depthId,
-    Resource verticesId, Resource indicesId, uint32_t count, VkIndexType indexType, const std::array<float, 4>& clearColor)
+    Resource verticesId, Resource indicesId, uint32_t count, VkIndexType indexType, const std::array<float, 4>& clearColor, const GameDrawBindings* game)
 {
     auto& p = *impl;
     if (!p.Usable()) return false;
@@ -515,6 +586,66 @@ bool VulkanHost::DrawIndexed(Resource pipelineId, Resource colorId, Resource dep
         !(vertices->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) || !(indices->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) ||
         !std::all_of(clearColor.begin(), clearColor.end(), [](float x) { return std::isfinite(x); }))
         return p.Fail("Invalid indexed draw range, target, or vertex/index resource");
+    if (pipeline.game != (game != nullptr)) return p.Fail("Graphics pipeline/bindings ABI mismatch");
+    if (pipeline.preserve && (color->layout == VK_IMAGE_LAYOUT_UNDEFINED || depth->layout == VK_IMAGE_LAYOUT_UNDEFINED))
+        return p.Fail("Cannot load undefined render targets");
+    struct Descriptors
+    {
+        VkDevice device;
+        VkDescriptorPool pool{};
+        std::array<VkSampler, 32> samplers{};
+        ~Descriptors() { if (pool) vkDestroyDescriptorPool(device, pool, nullptr); for(auto s:samplers) if(s) vkDestroySampler(device,s,nullptr); }
+    } descriptors{p.device};
+    std::array<VkDescriptorSet,4> sets{};
+    std::array<uint64_t,3> addresses{};
+    std::vector<Impl::Image*> sampled;
+    if (game)
+    {
+        auto* constants=p.FindBuffer(game->constants); auto* shared=p.FindBuffer(game->shared);
+        if (!constants || !shared || constants->size < 8192 || shared->size < 320 ||
+            !(constants->usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) || !(shared->usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT))
+            return p.Fail("Missing shader-address constant buffers");
+        const auto& v=game->viewport; const auto& r=game->scissor;
+        if (!std::isfinite(v.x)||!std::isfinite(v.y)||!std::isfinite(v.width)||!std::isfinite(v.height)||
+            !std::isfinite(v.minDepth)||!std::isfinite(v.maxDepth)||v.width<=0||v.height<=0||
+            v.minDepth<0||v.maxDepth>1||v.minDepth>v.maxDepth||r.offset.x<0||r.offset.y<0||
+            uint64_t(r.offset.x)+r.extent.width>color->width||uint64_t(r.offset.y)+r.extent.height>color->height)
+            return p.Fail("Invalid game viewport/scissor");
+        VkBufferDeviceAddressInfo address{VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
+        address.buffer=constants->buffer; addresses[0]=vkGetBufferDeviceAddress(p.device,&address); addresses[1]=addresses[0]+4096;
+        address.buffer=shared->buffer; addresses[2]=vkGetBufferDeviceAddress(p.device,&address);
+        if (!addresses[0] || !addresses[2]) return p.Fail("Zero shader buffer address");
+        const VkDescriptorPoolSize sizes[]={{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,32},{VK_DESCRIPTOR_TYPE_SAMPLER,32}};
+        VkDescriptorPoolCreateInfo pool{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        pool.maxSets=4; pool.poolSizeCount=2; pool.pPoolSizes=sizes;
+        if (!p.Check(vkCreateDescriptorPool(p.device,&pool,nullptr,&descriptors.pool),"vkCreateDescriptorPool")) return false;
+        VkDescriptorSetAllocateInfo allocate{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        allocate.descriptorPool=descriptors.pool; allocate.descriptorSetCount=4; allocate.pSetLayouts=pipeline.sets.data();
+        if (!p.Check(vkAllocateDescriptorSets(p.device,&allocate,sets.data()),"vkAllocateDescriptorSets")) return false;
+        uint32_t slots=0;
+        for (const auto& texture:game->textures)
+        {
+            if (texture.slot>=32 || (slots & (1u<<texture.slot)) || texture.image==colorId || texture.image==depthId ||
+                (texture.filter!=VK_FILTER_NEAREST && texture.filter!=VK_FILTER_LINEAR) ||
+                uint32_t(texture.u)>uint32_t(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE) || uint32_t(texture.v)>uint32_t(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE))
+                return p.Fail("Invalid sampled image binding or render feedback loop");
+            slots |= 1u<<texture.slot;
+            auto* image=p.FindImage(texture.image);
+            if (!image || image->kind!=ImageKind::Rgba8 || image->layout==VK_IMAGE_LAYOUT_UNDEFINED) return p.Fail("Invalid/uninitialized sampled image");
+            VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+            sampler.minFilter=sampler.magFilter=texture.filter; sampler.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST;
+            sampler.addressModeU=texture.u; sampler.addressModeV=texture.v; sampler.addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            if (!p.Check(vkCreateSampler(p.device,&sampler,nullptr,&descriptors.samplers[texture.slot]),"vkCreateSampler")) return false;
+            const VkDescriptorImageInfo imageInfo{VK_NULL_HANDLE,image->view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            const VkDescriptorImageInfo samplerInfo{descriptors.samplers[texture.slot],VK_NULL_HANDLE,VK_IMAGE_LAYOUT_UNDEFINED};
+            VkWriteDescriptorSet writes[2]{};
+            for (auto& write:writes) { write.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET; write.dstArrayElement=texture.slot; write.descriptorCount=1; }
+            writes[0].dstSet=sets[0]; writes[0].descriptorType=VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE; writes[0].pImageInfo=&imageInfo;
+            writes[1].dstSet=sets[3]; writes[1].descriptorType=VK_DESCRIPTOR_TYPE_SAMPLER; writes[1].pImageInfo=&samplerInfo;
+            vkUpdateDescriptorSets(p.device,2,writes,0,nullptr);
+            sampled.push_back(image);
+        }
+    }
     const VkImageView views[] = {color->view, depth->view};
     VkFramebufferCreateInfo fi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
     fi.renderPass = pipeline.pass; fi.attachmentCount = 2; fi.pAttachments = views;
@@ -524,11 +655,12 @@ bool VulkanHost::DrawIndexed(Resource pipelineId, Resource colorId, Resource dep
     bool ok = p.Begin();
     if (ok)
     {
+        for(auto* image:sampled) p.Transition(*image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_ACCESS_SHADER_READ_BIT);
         for (auto* image : {color, depth})
         {
             VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
             barrier.srcAccessMask = image->layout == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-            barrier.dstAccessMask = image == color ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            barrier.dstAccessMask = image == color ? VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
             barrier.oldLayout = image->layout;
             barrier.newLayout = image == color ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
             barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -546,13 +678,18 @@ bool VulkanHost::DrawIndexed(Resource pipelineId, Resource colorId, Resource dep
         begin.renderArea.extent = {color->width, color->height}; begin.clearValueCount = 2; begin.pClearValues = clears;
         vkCmdBeginRenderPass(p.command, &begin, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(p.command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
+        if (game)
+        {
+            vkCmdBindDescriptorSets(p.command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline.layout,0,4,sets.data(),0,nullptr);
+            vkCmdPushConstants(p.command,pipeline.layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,24,addresses.data());
+        }
         const VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(p.command, 0, 1, &vertices->buffer, &offset);
         vkCmdBindIndexBuffer(p.command, indices->buffer, 0, indexType);
-        const VkViewport viewport{0, 0, float(color->width), float(color->height), 0, 1};
-        const VkRect2D scissor{{0, 0}, {color->width, color->height}};
+        const VkViewport viewport=game ? game->viewport : VkViewport{0, 0, float(color->width), float(color->height), 0, 1};
+        const VkRect2D scissor=game ? game->scissor : VkRect2D{{0, 0}, {color->width, color->height}};
         vkCmdSetViewport(p.command, 0, 1, &viewport); vkCmdSetScissor(p.command, 0, 1, &scissor);
-        vkCmdDrawIndexed(p.command, count, 1, 0, 0, 0);
+        vkCmdDrawIndexed(p.command, count, 1, 0, game ? game->baseVertex : 0, 0);
         vkCmdEndRenderPass(p.command);
         ok = p.Submit();
         if (ok) ++p.stats.indexedDraws;
@@ -714,7 +851,7 @@ bool VulkanHost::ResizeSwapchain(uint32_t width, uint32_t height)
     VkSwapchainKHR replacement{};
     if (!p.Check(vkCreateSwapchainKHR(p.device, &info, nullptr, &replacement), "vkCreateSwapchainKHR")) return false;
     if (p.swapchain) vkDestroySwapchainKHR(p.device, p.swapchain, nullptr);
-    p.swapchain = replacement;
+    p.swapchain = replacement; p.swapExtent = extent; p.swapFormat = format.format;
     if (!p.Check(vkGetSwapchainImagesKHR(p.device, p.swapchain, &count, nullptr), "vkGetSwapchainImagesKHR")) { p.failed = true; return false; }
     p.swapImages.resize(count);
     if (!p.Check(vkGetSwapchainImagesKHR(p.device, p.swapchain, &count, p.swapImages.data()), "vkGetSwapchainImagesKHR")) { p.failed = true; return false; }
@@ -729,11 +866,24 @@ bool VulkanHost::ResizeSwapchain(uint32_t width, uint32_t height)
     return true;
 }
 bool VulkanHost::SwapchainNeedsResize() const { return impl->resizeNeeded; }
-bool VulkanHost::PresentClear(const std::array<float, 4>& color)
+bool VulkanHost::PresentClear(const std::array<float, 4>& color) { return PresentFrame(0,color); }
+bool VulkanHost::PresentImage(Resource image) { return image ? PresentFrame(image,{0,0,0,1}) : impl->Fail("Invalid presentation image"); }
+bool VulkanHost::PresentFrame(Resource sourceId, const std::array<float, 4>& color)
 {
     auto& p = *impl;
     if (!p.Usable() || !p.swapchain || p.resizeNeeded) return false;
     if (!std::all_of(color.begin(), color.end(), [](float x) { return std::isfinite(x); })) return p.Fail("Invalid presentation clear color");
+    Impl::Image* source=nullptr;
+    if (sourceId)
+    {
+        source=p.FindImage(sourceId);
+        if (!source || source->kind!=ImageKind::Rgba8 || source->layout==VK_IMAGE_LAYOUT_UNDEFINED) return p.Fail("Invalid image for presentation");
+        VkFormatProperties src{}, dst{};
+        vkGetPhysicalDeviceFormatProperties(p.physical,VK_FORMAT_R8G8B8A8_UNORM,&src);
+        vkGetPhysicalDeviceFormatProperties(p.physical,p.swapFormat,&dst);
+        if (!(src.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) || !(dst.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT))
+            return p.Fail("Swapchain image blit unsupported");
+    }
     uint32_t index = 0;
     auto result = vkAcquireNextImageKHR(p.device, p.swapchain, UINT64_MAX, p.acquired, VK_NULL_HANDLE, &index);
     if (result == VK_ERROR_OUT_OF_DATE_KHR) { p.resizeNeeded = true; return false; }
@@ -749,7 +899,16 @@ bool VulkanHost::PresentClear(const std::array<float, 4>& color)
     vkCmdPipelineBarrier(p.command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
         0, 0, nullptr, 0, nullptr, 1, &barrier);
     VkClearColorValue clear{}; std::copy(color.begin(), color.end(), clear.float32);
-    vkCmdClearColorImage(p.command, barrier.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &barrier.subresourceRange);
+    if (source)
+    {
+        p.Transition(*source,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_ACCESS_TRANSFER_READ_BIT);
+        VkImageBlit blit{};
+        blit.srcSubresource=blit.dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};
+        blit.srcOffsets[1]={int32_t(source->width),int32_t(source->height),1};
+        blit.dstOffsets[1]={int32_t(p.swapExtent.width),int32_t(p.swapExtent.height),1};
+        vkCmdBlitImage(p.command,source->image,source->layout,barrier.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,VK_FILTER_NEAREST);
+    }
+    else vkCmdClearColorImage(p.command, barrier.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &barrier.subresourceRange);
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dstAccessMask = 0;
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     vkCmdPipelineBarrier(p.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,

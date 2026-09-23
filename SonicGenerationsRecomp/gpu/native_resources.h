@@ -15,6 +15,10 @@ namespace GuestGpu
         uint32_t slot = 0, resource = 0, width = 0, height = 0;
         std::vector<uint8_t> rgba;
     };
+    struct NativeVertexElement
+    {
+        uint32_t stream, offset, type, usage, usageIndex, method;
+    };
     struct DrawResources
     {
         bool captured = false;
@@ -22,6 +26,7 @@ namespace GuestGpu
         uint32_t failedSlot = 0;
         bool failedTexture = false;
         size_t payloadBytes = 0;
+        std::vector<NativeVertexElement> declaration;
         std::vector<VertexSnapshot> vertices;
         std::vector<TextureSnapshot> textures;
     };

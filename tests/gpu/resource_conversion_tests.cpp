@@ -98,6 +98,9 @@ static void CaptureTests()
     constexpr uint32_t device=0x1000, vertex=0x5000, data=0x6000, texture=0x7000, texels=0x8000;
     std::vector<uint8_t> memory(0x9000);
     const auto store=[&](uint32_t address,uint32_t value){for(int i=0;i<4;++i)memory.at(address+i)=uint8_t(value>>(24-i*8));};
+    constexpr uint32_t declaration=0x5800;
+    store(device+12216,declaration); store(declaration,0x100005); store(declaration+24,1);
+    store(declaration+52,0); store(declaration+56,0x2C83A4); store(declaration+60,0);
     store(device+12812,vertex); store(vertex+24,data|3); store(vertex+28,32|2);
     store(device+1776+17*8,(data+4)|3); store(device+1780+17*8,28|2);
     store(device+12880,1u<<24); // stream0 stride=4, big-endian byte array
@@ -116,6 +119,9 @@ static void CaptureTests()
     CHECK(batch.draws.size()==1 && batch.payloadBytes==36);
     const auto& r=batch.draws[0].resources;
     CHECK(r.captured && r.status==ConversionResult::Success && r.vertices.size()==1 && r.textures.size()==1);
+    CHECK(r.declaration.size()==1 && r.declaration[0].type==0x2C83A4 && r.declaration[0].stream==0 && r.declaration[0].offset==0);
+    store(declaration+56,0xFFFFFFFF);
+    CHECK(r.declaration[0].type==0x2C83A4); // immutable capture
     CHECK(r.vertices[0].stride==4 && r.vertices[0].bytes[0]==7 && r.vertices[0].bytes[3]==4);
     CHECK(std::equal(colors.begin(),colors.end(),r.textures[0].rgba.begin()));
     auto failed=ReadDrawResources({memory},batch.draws[0].state,1);

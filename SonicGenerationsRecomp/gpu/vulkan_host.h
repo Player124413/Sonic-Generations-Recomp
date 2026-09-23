@@ -13,9 +13,9 @@ namespace HostGpu
 {
     using Resource = uint64_t; // monotonically allocated, zero is invalid
     enum class ImageKind { Rgba8, Depth32 };
-    // Initial host graphics profile: one RGBA8 target, D32 depth, one vertex
-    // stream and no shader descriptors/push constants. This is not the game's
-    // shader ABI. Real compiled SPIR-V is mandatory; there are no dummy shaders.
+    // One RGBA8 target, D32 depth and one vertex stream. generationsAbi selects
+    // the fork's BDA/push-constant + 2D image/sampler layout; otherwise this is
+    // a descriptor-free fixture profile. No runtime fallback shaders.
     struct GraphicsPipelineInfo
     {
         std::span<const uint32_t> vertexShader, fragmentShader;
@@ -23,8 +23,29 @@ namespace HostGpu
         std::span<const VkVertexInputAttributeDescription> attributes;
         VkCullModeFlags cullMode = VK_CULL_MODE_NONE;
         VkFrontFace frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        bool generationsAbi = false;
+        const char* vertexEntry = "main";
+        const char* fragmentEntry = "main";
+        uint32_t specialization = 0;
+        bool preserveTargets = false;
+        VkPipelineColorBlendAttachmentState blend{};
         bool depthTest = false, depthWrite = false;
         VkCompareOp depthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
+    };
+    struct GameTextureBinding
+    {
+        uint32_t slot = 0;
+        Resource image = 0;
+        VkFilter filter = VK_FILTER_NEAREST;
+        VkSamplerAddressMode u = VK_SAMPLER_ADDRESS_MODE_REPEAT, v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    };
+    struct GameDrawBindings
+    {
+        Resource constants = 0, shared = 0;
+        std::span<const GameTextureBinding> textures;
+        VkViewport viewport{};
+        VkRect2D scissor{};
+        int32_t baseVertex = 0;
     };
     struct VulkanConfig
     {
@@ -63,10 +84,11 @@ namespace HostGpu
 
         Resource CreateBuffer(size_t bytes, VkBufferUsageFlags usage, bool hostVisible);
         Resource CreateImage(uint32_t width, uint32_t height, ImageKind kind);
+        bool SupportsGenerationsAbi() const;
         Resource CreateGraphicsPipeline(const GraphicsPipelineInfo& info);
         bool DrawIndexed(Resource pipeline, Resource color, Resource depth,
             Resource vertices, Resource indices, uint32_t count, VkIndexType indexType,
-            const std::array<float, 4>& clearColor);
+            const std::array<float, 4>& clearColor, const GameDrawBindings* game = nullptr);
         bool Destroy(Resource id);
         bool WriteBuffer(Resource id, std::span<const uint8_t> data);
         bool ReadBuffer(Resource id, std::span<uint8_t> data);
@@ -76,12 +98,14 @@ namespace HostGpu
         bool ClearDepth(Resource image, float depth);
         bool ReadImage(Resource image, std::vector<uint8_t>& out);
 
-        // WSI displays an explicit host clear until game shaders/resolve are wired.
-        // It is not a game frame and never increments a draw-call counter.
+        // PresentImage blits a completed host target. It does not implement
+        // native Xenos EDRAM resolves or select the guest backbuffer.
         bool ResizeSwapchain(uint32_t width, uint32_t height);
         bool PresentClear(const std::array<float, 4>& color);
+        bool PresentImage(Resource image);
         bool SwapchainNeedsResize() const;
     private:
+        bool PresentFrame(Resource image, const std::array<float, 4>& clear);
         struct Impl;
         std::unique_ptr<Impl> impl;
     };

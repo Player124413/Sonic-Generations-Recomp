@@ -29,3 +29,14 @@ add_custom_target(vulkan_test_shaders DEPENDS ${SHADER_OUTPUTS})
 add_dependencies(vulkan_host_tests vulkan_test_shaders)
 target_compile_definitions(vulkan_host_tests PRIVATE
     VULKAN_TEST_SHADER_DIRECTORY="${CMAKE_CURRENT_BINARY_DIR}")
+set(GAME_SHADER_OUTPUTS)
+foreach(stage vert frag)
+    set(output "${CMAKE_CURRENT_BINARY_DIR}/game_abi.${stage}.spv")
+    add_custom_command(OUTPUT "${output}"
+        COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.2
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/game_abi.${stage}" -o "${output}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/game_abi.${stage}" VERBATIM)
+    list(APPEND GAME_SHADER_OUTPUTS "${output}")
+endforeach()
+add_custom_target(vulkan_game_abi_shaders DEPENDS ${GAME_SHADER_OUTPUTS})
+add_dependencies(vulkan_host_tests vulkan_game_abi_shaders)

@@ -107,6 +107,48 @@ static void GraphicsTests(VulkanHost& host)
     CHECK(!host.DrawIndexed(pipeline, color, depth, vb, ib, 3, VK_INDEX_TYPE_UINT16, {0, 0, 0, 1}));
     std::puts("Actual vkCmdDrawIndexed: triangle color/depth readback matches expected pixels");
 }
+static void GameAbiTests(VulkanHost& host)
+{
+    // This is an ABI fixture, not a replacement for any game shader.
+    CHECK(host.SupportsGenerationsAbi());
+    auto vs=ReadShader("game_abi.vert.spv"), ps=ReadShader("game_abi.frag.spv");
+    const std::array<float,6> vertices{-0.8f,-0.8f,0.8f,-0.8f,0,0.8f};
+    const std::array<uint16_t,3> indices{0,1,2};
+    auto vb=host.CreateBuffer(sizeof(vertices),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,true);
+    auto ib=host.CreateBuffer(sizeof(indices),VK_BUFFER_USAGE_INDEX_BUFFER_BIT,true);
+    auto constants=host.CreateBuffer(8192,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,true);
+    auto shared=host.CreateBuffer(320,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,true);
+    auto color=host.CreateImage(32,32,ImageKind::Rgba8), depth=host.CreateImage(32,32,ImageKind::Depth32);
+    auto texture=host.CreateImage(1,1,ImageKind::Rgba8);
+    CHECK(vb && ib && constants && shared && color && depth && texture);
+    CHECK(host.WriteBuffer(vb,{reinterpret_cast<const uint8_t*>(vertices.data()),sizeof(vertices)}));
+    CHECK(host.WriteBuffer(ib,{reinterpret_cast<const uint8_t*>(indices.data()),sizeof(indices)}));
+    std::array<uint8_t,8192> data{};
+    const std::array<float,4> tint{0.5f,1,0.25f,1}; std::memcpy(data.data()+4096,tint.data(),16);
+    CHECK(host.WriteBuffer(constants,data));
+    std::array<uint8_t,320> sharedData{}; CHECK(host.WriteBuffer(shared,sharedData));
+    CHECK(host.UploadRgba(texture,std::array<uint8_t,4>{255,128,0,255}));
+    CHECK(host.ClearColor(color,{0,0,1,1}) && host.ClearDepth(depth,1));
+    const std::array<VkVertexInputAttributeDescription,1> attributes{{{0,0,VK_FORMAT_R32G32_SFLOAT,0}}};
+    GraphicsPipelineInfo info; info.vertexShader=vs; info.fragmentShader=ps; info.vertexStride=8;
+    info.attributes=attributes; info.generationsAbi=true; info.preserveTargets=true; info.blend.colorWriteMask=15;
+    auto pipeline=host.CreateGraphicsPipeline(info); CHECK(pipeline);
+    const std::array<GameTextureBinding,1> textures{{{0,texture}}};
+    GameDrawBindings game; game.constants=constants; game.shared=shared; game.textures=textures;
+    game.viewport={0,0,32,32,0,1}; game.scissor={{0,0},{32,32}};
+    CHECK(host.DrawIndexed(pipeline,color,depth,vb,ib,3,VK_INDEX_TYPE_UINT16,{0,0,0,1},&game));
+    std::vector<uint8_t> result; CHECK(host.ReadImage(color,result));
+    size_t center=(16*32+16)*4;
+    CHECK(std::abs(int(result[center])-128)<=1 && result[center+1]==128 && result[center+2]==0 && result[center+3]==255);
+    CHECK(result[0]==0 && result[1]==0 && result[2]==255); // LOAD, not per-draw clear
+    const auto first=result; game.scissor={{0,0},{0,0}};
+    CHECK(host.DrawIndexed(pipeline,color,depth,vb,ib,3,VK_INDEX_TYPE_UINT16,{1,0,0,1},&game));
+    CHECK(host.ReadImage(color,result) && result==first);
+    game.shared=vb;
+    CHECK(!host.DrawIndexed(pipeline,color,depth,vb,ib,3,VK_INDEX_TYPE_UINT16,{0,0,0,1},&game));
+    for(auto id:{pipeline,vb,ib,constants,shared,color,depth,texture}) CHECK(host.Destroy(id));
+    std::puts("Game ABI: device-address constants, descriptor textures/samplers, push constants and indexed draw pixels passed");
+}
 static void BackendTests(SDL_Window* window)
 {
     VulkanBackend backend(window, true);
@@ -278,6 +320,7 @@ int main(int argc, char** argv)
     CHECK(!host.ReadBuffer(upload, returned));
     CHECK(host.Destroy(color) && host.Destroy(depth));
     GraphicsTests(host);
+    GameAbiTests(host);
     CHECK(host.Stats().submissions >= 7 && host.Stats().allocatedBytes == 0);
     host.Shutdown();
     CHECK(host.Stats().validationErrors == 0);

@@ -13,7 +13,7 @@ struct SDL_Window;
 class VulkanBackend final : public IRenderBackend
 {
 public:
-    explicit VulkanBackend(SDL_Window* window = nullptr, bool validation = false);
+    explicit VulkanBackend(SDL_Window* window = nullptr, bool validation = false, bool enableGameDraws = false);
     ~VulkanBackend() override;
     const char* GetName() const override { return "vulkan-transfer"; }
     bool Init(const VideoMode& mode) override;
@@ -31,6 +31,7 @@ private:
     mutable std::mutex mutex;
     SDL_Window* window;
     bool validation;
+    bool drawEnabled = false, frameReady = false;
     HostGpu::VulkanHost host;
     GuestGpu::ShaderCache shaderCache;
     std::map<uint64_t, GuestGpu::ShaderModule> resolvedShaders;

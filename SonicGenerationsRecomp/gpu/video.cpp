@@ -67,7 +67,8 @@ bool Video::Init()
             }
             const char* validation = std::getenv("SONIC_VULKAN_VALIDATION");
             g_backend = std::make_unique<VulkanBackend>(GameWindow::s_pWindow,
-                validation && std::strcmp(validation, "1") == 0);
+                validation && std::strcmp(validation, "1") == 0,
+                std::getenv("SONIC_VULKAN_DIRECT_DRAW") && std::strcmp(std::getenv("SONIC_VULKAN_DIRECT_DRAW"), "1") == 0);
 #else
             LOGN_ERROR("Vulkan requested but not built. Configure SONIC_GENERATIONS_ENABLE_VULKAN=ON.");
             return false;
