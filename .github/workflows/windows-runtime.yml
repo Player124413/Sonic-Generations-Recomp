@@ -65,6 +65,10 @@ jobs:
           foreach ($port in @('sdl2','vulkan-headers','vulkan-loader')) {
             Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows-static/share/$port/copyright" "package/licenses/$port.txt"
           }
+      - name: Packaged executable smoke test
+        run: |
+          & ./package/SonicGenerationsRecomp.exe --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64-diagnostic-runtime
