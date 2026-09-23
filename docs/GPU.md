@@ -42,7 +42,7 @@ two mapped draw entrypoints. Enable it with `SONIC_GPU_CAPTURE=1` (independent
 of `SONIC_GPU_TRACE`). The default remains disabled. It needs no compiled
 shader archive or shader cache. Original SDK execution is still preserved.
 
-- Copies the known 13044-byte device prefix **before** native draw processing,
+- Copies the known 13052-byte device prefix **before** native draw processing,
   converts big-endian words to host integers and retains raw unknown fields.
 - Exposes four color-target pointers, the depth target, index binding, the
   26 pointer slots before the viewport block, viewport/scissor, two 256-vector
@@ -175,3 +175,8 @@ are now implemented; see [VULKAN.md](VULKAN.md). Remaining game rendering:
 Reference: https://github.com/hedge-dev/UnleashedRecomp,
 `UnleashedRecomp/gpu/video.{h,cpp}`. This change does not transplant its
 title-specific addresses, GuestDevice struct or renderer code.
+
+Native VS/PS bindings and split-container hash reconstruction are documented in
+[SHADER_CACHE_RUNTIME.md](SHADER_CACHE_RUNTIME.md). GPU tests now also require
+`git submodule update --init tools/XenosRecomp` and
+`git -C tools/XenosRecomp submodule update --init thirdparty/xxHash`.

@@ -39,7 +39,7 @@ jobs:
       - name: Fetch pinned shader decoders
         run: |
           git submodule update --init tools/XenosRecomp
-          git -C tools/XenosRecomp submodule update --init thirdparty/smol-v thirdparty/zstd
+          git -C tools/XenosRecomp submodule update --init thirdparty/smol-v thirdparty/zstd thirdparty/xxHash
       - name: Install software Vulkan, validation and WSI dependencies
         run: |
           sudo apt-get update

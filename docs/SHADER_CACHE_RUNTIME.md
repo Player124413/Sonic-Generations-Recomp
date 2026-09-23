@@ -57,3 +57,43 @@ on the current host device and does not establish correct game rendering.
 Optionally pass a build-directory path to `shader_cache_tests` to export decoded
 modules for validation. These are generated game-derived assets: do not commit
 or publish another copy. No dump is made by normal runtime initialization.
+
+## Native shader binding resolution
+
+The snapshot now includes the setters' shader slots: PS at device+13044
+(`82DB1D18`), VS at device+13048 (`82DB1F20`). These were just outside the old
+13,044-byte prefix; it is now 13,052 bytes. This is still not a synthetic device.
+
+Native constructors split the original XenosRecomp input container:
+
+| Stage | Constructor / initializer | Virtual container | Physical-data pointer | Native resource type |
+|---|---|---|---|---|
+| PS | `82DB25E0` / `82DB1CE0` | object+40 | object+24 | 7 |
+| VS | `82DB27C8` / `82DB26D0` | object+872 | object+32 | 6 |
+
+The reader concatenates exact guest virtual/physical bytes (without endian
+conversion), with validated sizes and a 4 MiB scratch cap. XXH3 is the pinned
+XenosRecomp algorithm over the entire container, not just GPU instructions or
+a native object address. Shader magic, stage flag, native resource type,
+reserved header fields, alignment and 32-bit memory bounds are checked.
+No synthetic shader address is substituted and no guest data is rewritten.
+
+With Vulkan resource capture enabled, identities are captured before the original
+draw. The backend resolves them from the uploaded cache and verifies the decoded
+SPIR-V stage. Missing hashes, mismatched stages and partially bound pairs stop the
+batch before resource uploads. Decoded modules are deduplicated by hash within
+the batch with a 64 MiB word budget; entry names and specialization masks are
+retained. Fully unbound batches may still exercise the existing upload-only path.
+
+Tests guard initializer/setter PPC instruction evidence, split-container hashing,
+mutation after capture, malformed addresses/sizes, stage mismatch and actual-cache
+lookup in the Vulkan backend. The last test uses fabricated binding IDs paired
+with real cache hashes; it is not proof of a match during a real game launch.
+Native resource mutation / in-place creation paths may require additional capture
+hooks if reconstruction no longer matches an original container; the current
+behavior is an explicit missing-hash failure, never arbitrary shader selection.
+
+**Still not connected:** descriptor allocation and writes, reflected vertex
+layouts, game shader pipeline creation, render-target/resolve semantics and guest
+`vkCmdDraw*`. Successful resolution currently returns `ResourcesUploaded`, not
+`Submitted`, and is not evidence of game playability.

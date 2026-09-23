@@ -140,7 +140,18 @@ bool GuestGpu::ShaderCache::Decode(uint64_t hash, ShaderModule& module, std::str
         if (!smolv::Decode(bytes, found->size, words.data(), size)) return Fail(error, "SMOL-V decoding failed");
         ShaderModule result;
         if (!InspectShader(words, result, error)) return false;
-        result.hash = hash; module = std::move(result); return true;
+        result.hash = hash; result.specializationMask = found->specConstantsMask;
+        module = std::move(result); return true;
     }
     catch (const std::bad_alloc&) { return Fail(error, "Shader module allocation failed"); }
+}
+
+bool GuestGpu::ShaderCache::DecodeStage(uint64_t hash, uint32_t stage, ShaderModule& module, std::string& error) const
+{
+    if (stage != 0 && stage != 4) return Fail(error, "Unsupported requested shader stage");
+    ShaderModule result;
+    if (!Decode(hash, result, error)) return false;
+    if (result.stage != stage) return Fail(error, "Shader cache stage does not match native binding");
+    module = std::move(result);
+    return true;
 }

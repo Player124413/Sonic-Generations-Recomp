@@ -4,6 +4,7 @@
 #include <gpu/vulkan_host.h>
 #include <gpu/vulkan_state.h>
 #include <mutex>
+#include <map>
 
 struct SDL_Window;
 
@@ -32,6 +33,7 @@ private:
     bool validation;
     HostGpu::VulkanHost host;
     GuestGpu::ShaderCache shaderCache;
+    std::map<uint64_t, GuestGpu::ShaderModule> resolvedShaders;
     uint32_t width = 0, height = 0;
     bool resize = true;
     HostGpu::Resource color = 0, depth = 0;

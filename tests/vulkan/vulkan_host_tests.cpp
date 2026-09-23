@@ -142,6 +142,36 @@ static void BackendTests(SDL_Window* window)
     for (int i = 0; i < 5; ++i)
         CHECK(backend.SubmitGuestBatch(batch) == GuestGpu::SubmissionResult::ResourcesUploaded);
     CHECK(backend.GetHostStats().allocatedBytes == allocated); // no per-frame leak
+    // Exercise stage-safe lookup with real uploaded modules. These fabricated
+    // binding IDs test backend validation, not a real guest asset association.
+    GuestGpu::ShaderCache probe;
+    std::string shaderError;
+    CHECK(probe.Initialize(GuestGpu::GetEmbeddedShaderCache(),shaderError));
+    uint64_t vsHash=0, psHash=0;
+    for(const auto& entry:probe.Entries())
+    {
+        GuestGpu::ShaderModule module;
+        CHECK(probe.Decode(entry.hash,module,shaderError));
+        if(module.stage==0 && !vsHash) vsHash=entry.hash;
+        if(module.stage==4 && !psHash) psHash=entry.hash;
+        if(vsHash && psHash) break;
+    }
+    CHECK(vsHash && psHash);
+    batch.draws[0].state.words[13048/4]=0xB000;
+    batch.draws[0].state.words[13044/4]=0xC000;
+    batch.draws[0].vertexShader={0xB000,0,vsHash,GuestGpu::ShaderReadStatus::Success};
+    batch.draws[0].pixelShader={0xC000,4,psHash,GuestGpu::ShaderReadStatus::Success};
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::ResourcesUploaded);
+    CHECK(backend.GetHostStats().indexedDraws==0); // lookup is not a graphics submission
+    const auto beforeWrongStage=backend.GetHostStats().submissions;
+    batch.draws[0].pixelShader.hash=vsHash;
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
+    CHECK(backend.GetHostStats().submissions==beforeWrongStage);
+    batch.draws[0].pixelShader.hash=0;
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
+    CHECK(backend.GetHostStats().submissions==beforeWrongStage);
+    batch.draws[0].state.words[13048/4]=batch.draws[0].state.words[13044/4]=0;
+    batch.draws[0].vertexShader={}; batch.draws[0].pixelShader={};
     batch.draws[0].resources.status = GuestGpu::ConversionResult::Unsupported;
     const auto beforeRejected = backend.GetHostStats().submissions;
     CHECK(backend.SubmitGuestBatch(batch) == GuestGpu::SubmissionResult::Incomplete);

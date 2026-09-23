@@ -34,6 +34,7 @@ namespace GuestGpu
         uint64_t hash = 0;
         std::string entryPoint;
         uint32_t stage = 0; // SPIR-V ExecutionModel, 0=vertex, 4=fragment
+        uint32_t specializationMask = 0;
         bool bufferDeviceAddress = false;
         std::vector<uint32_t> words, capabilities, inputLocations;
         std::vector<ShaderBinding> bindings;
@@ -48,6 +49,7 @@ namespace GuestGpu
         // with consumer threads stopped. Decode is then read-only/thread-safe.
         bool Initialize(ShaderCacheData data, std::string& error);
         bool Decode(uint64_t hash, ShaderModule& module, std::string& error) const;
+        bool DecodeStage(uint64_t hash, uint32_t stage, ShaderModule& module, std::string& error) const;
         std::span<const ShaderIndex> Entries() const noexcept { return index; }
     private:
         std::vector<ShaderIndex> index;

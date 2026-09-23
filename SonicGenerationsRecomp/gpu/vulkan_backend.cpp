@@ -19,6 +19,7 @@ bool VulkanBackend::Init(const VideoMode& mode)
     std::lock_guard lock(mutex);
     host.Shutdown(); drawResources.clear(); states.clear(); color = depth = 0;
     shaderCache = {};
+    resolvedShaders.clear();
     error.clear(); width = mode.width; height = mode.height; resize = true;
     std::vector<const char*> extensions;
     HostGpu::VulkanConfig config;
@@ -52,7 +53,7 @@ bool VulkanBackend::Init(const VideoMode& mode)
 void VulkanBackend::ReleaseDrawResources()
 {
     for (auto id : drawResources) host.Destroy(id);
-    drawResources.clear(); states.clear();
+    drawResources.clear(); states.clear(); resolvedShaders.clear();
 }
 void VulkanBackend::Shutdown()
 {
@@ -60,6 +61,7 @@ void VulkanBackend::Shutdown()
     // Host waits idle before freeing every resource, including exceptional paths.
     host.Shutdown(); drawResources.clear(); states.clear(); color = depth = 0;
     shaderCache = {};
+    resolvedShaders.clear();
 }
 bool VulkanBackend::RecreateTargets()
 {
@@ -103,6 +105,9 @@ try
     if (batch.errors.Any() || batch.draws.empty() || batch.draws.size() > GuestGpu::CommandStream::MaxDraws)
         return GuestGpu::SubmissionResult::Incomplete;
     size_t total = 0;
+    std::map<uint64_t, GuestGpu::ShaderModule> nextShaders;
+    size_t shaderBytes = 0;
+    constexpr size_t MaxDecodedShaderBytes = 64 * 1024 * 1024;
     std::vector<std::vector<uint8_t>> hostIndices(batch.draws.size());
     // Validate and convert the whole batch before beginning its uploads.
     for (size_t n = 0; n < batch.draws.size(); ++n)
@@ -110,6 +115,43 @@ try
         const auto& draw = batch.draws[n];
         if (draw.resources.captured)
         {
+            // Resolve actual native bindings, never select a fixture shader or
+            // the first module in the cache. Unbound batches remain upload-only.
+            if (draw.state.VertexShader() || draw.state.PixelShader())
+            {
+                for (const auto* shader : {&draw.vertexShader, &draw.pixelShader})
+                {
+                    const bool vertex = shader == &draw.vertexShader;
+                    const uint32_t expectedResource = vertex ? draw.state.VertexShader() : draw.state.PixelShader();
+                    if (shader->status != GuestGpu::ShaderReadStatus::Success || !expectedResource ||
+                        shader->resource != expectedResource || shader->stage != (vertex ? 0u : 4u))
+                    {
+                        Fail(vertex ? "Invalid/unbound native vertex shader" : "Invalid/unbound native pixel shader");
+                        return GuestGpu::SubmissionResult::Incomplete;
+                    }
+                    const auto found = nextShaders.find(shader->hash);
+                    if (found != nextShaders.end())
+                    {
+                        if (found->second.stage != shader->stage)
+                        { Fail("Same shader hash bound to different stages"); return GuestGpu::SubmissionResult::Incomplete; }
+                        continue;
+                    }
+                    GuestGpu::ShaderModule module;
+                    std::string reason;
+                    if (!shaderCache.DecodeStage(shader->hash, shader->stage, module, reason))
+                    {
+                        Fail(std::string(vertex ? "Vertex shader: " : "Pixel shader: ") + reason +
+                            " (hash=" + std::to_string(shader->hash) + ")");
+                        return GuestGpu::SubmissionResult::Incomplete;
+                    }
+                    const size_t size = module.words.size() * sizeof(uint32_t);
+                    if (size > MaxDecodedShaderBytes - shaderBytes)
+                    { Fail("Decoded shader batch budget exceeded"); return GuestGpu::SubmissionResult::Incomplete; }
+                    shaderBytes += size;
+                    nextShaders.emplace(shader->hash, std::move(module));
+                }
+            }
+
             if (draw.resources.status != GuestGpu::ConversionResult::Success)
             {
                 Fail("Native resource conversion rejected " + std::string(draw.resources.failedTexture ? "texture slot " : "vertex stream ") +
@@ -156,6 +198,7 @@ try
         if (total > GuestGpu::CommandStream::MaxPayloadBytes) return GuestGpu::SubmissionResult::Incomplete;
     }
     ReleaseDrawResources();
+    resolvedShaders = std::move(nextShaders);
     // Reserve before creating Vulkan handles, so push_back can't leak a new ID.
     drawResources.reserve(batch.draws.size() * (2 + 16 + GuestGpu::NativeState::TextureCount));
     states.reserve(batch.draws.size());

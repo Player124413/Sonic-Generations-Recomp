@@ -22,7 +22,11 @@ int main(int argc, char** argv)
     {
         ShaderModule module;
         CHECK(cache.Decode(entry.hash,module,error));
-        CHECK(module.hash==entry.hash);
+        CHECK(module.hash==entry.hash && module.specializationMask==entry.specConstantsMask);
+        ShaderModule wrongStage; wrongStage.hash=123;
+        CHECK(!cache.DecodeStage(entry.hash, module.stage==0 ? 4 : 0, wrongStage, error));
+        CHECK(wrongStage.hash==123);
+
         if (vertices+fragments==0) std::printf("First entry point: %s\n",module.entryPoint.c_str());
         vertices+=module.stage==0; fragments+=module.stage==4;
         addresses+=module.bufferDeviceAddress;

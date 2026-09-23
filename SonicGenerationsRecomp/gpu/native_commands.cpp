@@ -143,8 +143,12 @@ GuestGpu::CaptureResult GuestGpu::CommandStream::Capture(
         }
     }
     if (resourceCapture)
+    {
+        draw.vertexShader = ReadShaderIdentity(memory, draw.state.VertexShader(), 0);
+        draw.pixelShader = ReadShaderIdentity(memory, draw.state.PixelShader(), 4);
         draw.resources = ReadDrawResources(memory, draw.state,
             MaxPayloadBytes - pending.payloadBytes - draw.indices.bytes.size());
+    }
     draw.device = device;
     draw.kind = kind;
     draw.arguments = arguments;

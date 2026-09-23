@@ -83,7 +83,8 @@ patch is no longer applied; see [TOOLCHAIN.md](TOOLCHAIN.md).
 The uploaded cache now has a bounded Zstd/SMOL-V loader and hash lookup;
 see [SHADER_CACHE_RUNTIME.md](SHADER_CACHE_RUNTIME.md) for actual module counts,
 entry names, observed descriptors and tests. Vulkan initialization loads it.
-Buffer device address features, descriptor indexing/layouts, guest hash mapping,
+Native shader bindings now resolve to stage-checked cache modules (see the
+cache document). Buffer device address features, descriptor indexing/layouts,
 reflection-driven vertex declarations and boolean packing still need wiring.
 Do not pass this cache to the fixture pipeline or claim shaders alone suffice.
 Reference: `tools/XenosRecomp/XenosRecomp/{shader_common.h,shader_recompiler.cpp,main.cpp}`

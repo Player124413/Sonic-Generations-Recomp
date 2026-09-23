@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gpu/native_resources.h>
+#include <gpu/shader_bindings.h>
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -23,7 +24,7 @@ namespace GuestGpu
     // Preserve raw bits (including constants/NaNs); never write it back to guest.
     struct NativeState
     {
-        static constexpr size_t ByteSize = 13044;
+        static constexpr size_t ByteSize = 13052;
         // Pointer slots up to the viewport block, not a validated API stage limit.
         static constexpr size_t TextureCount = 26;
         std::array<uint32_t, ByteSize / 4> words{}; // host-endian words
@@ -31,6 +32,8 @@ namespace GuestGpu
         static bool Read(MemoryView memory, uint32_t device, NativeState& out) noexcept;
         std::array<uint32_t, 4> ColorTargets() const noexcept;
         uint32_t DepthTarget() const noexcept { return words[12808 / 4]; }
+        uint32_t VertexShader() const noexcept { return words[13048 / 4]; }
+        uint32_t PixelShader() const noexcept { return words[13044 / 4]; }
         uint32_t IndexBuffer() const noexcept { return words[12788 / 4]; }
         std::array<uint32_t, TextureCount> Textures() const noexcept;
         std::array<float, 6> Viewport() const noexcept;
@@ -65,6 +68,7 @@ namespace GuestGpu
         DrawKind kind{};
         std::array<uint32_t, 4> arguments{}; // unmodified entry r4..r7
         NativeState state;
+        NativeShaderIdentity vertexShader, pixelShader;
         DrawResources resources; // owned, opt-in native resource capture
         IndexSnapshot indices; // owned only for indexed draws
     };

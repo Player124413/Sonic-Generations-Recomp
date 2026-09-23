@@ -38,7 +38,8 @@ jobs:
           persist-credentials: false
       - name: Fetch pinned PPC context dependency
         run: |
-          git submodule update --init tools/XenonRecomp
+          git submodule update --init tools/XenonRecomp tools/XenosRecomp
+          git -C tools/XenosRecomp submodule update --init thirdparty/xxHash
           git -C tools/XenonRecomp submodule update --init thirdparty/simde
       - name: Configure Linux
         if: runner.os == 'Linux'
