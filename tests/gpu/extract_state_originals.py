@@ -8,9 +8,10 @@ import re
 import sys
 root = Path(__file__).resolve().parents[2]
 inc = (root / 'SonicGenerationsRecomp/gpu/state_dispatch.inc').read_text()
-symbols = re.findall(r'^SONIC_STATE\(\w+, (sub_[0-9A-F]+),', inc, re.M)
+inc += (root / 'SonicGenerationsRecomp/gpu/sampler_dispatch.inc').read_text()
+symbols = re.findall(r'^SONIC_(?:STATE|SAMPLER)\(\w+, (sub_[0-9A-F]+),', inc, re.M)
 bodies = {}
-for part in (270, 271):
+for part in (270, 271, 272):
     text = (root / f'ppc/ppc_recomp.{part}.cpp').read_text()
     for symbol in symbols:
         match = re.search(r'PPC_FUNC_IMPL\(__imp__' + symbol + r'\) \{.*?^\}', text, re.M | re.S)
@@ -26,6 +27,7 @@ header = '''#include <bit>
 #if defined(__GNUC__) && !defined(__clang__)
 #define __builtin_assume(x) ((void)0)
 #define __builtin_rotateleft32(x, n) std::rotl(uint32_t(x), int(n))
+#define __builtin_rotateleft64(x, n) std::rotl(uint64_t(x), int(n))
 #endif
 #include <cpu/ppc_context.h>
 '''

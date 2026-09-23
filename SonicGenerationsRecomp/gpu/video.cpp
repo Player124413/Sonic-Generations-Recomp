@@ -2,6 +2,7 @@
 #include <gpu/video.h>
 #include <gpu/guest_hooks.h>
 #include <gpu/state_dispatch.h>
+#include <gpu/state_tables.h>
 #include <os/logger.h>
 #ifdef SONIC_GENERATIONS_ENABLE_VULKAN
 #include <gpu/vulkan_backend.h>
@@ -45,6 +46,7 @@ void Video::SetBackend(std::unique_ptr<IRenderBackend> backend)
 bool Video::Init()
 {
     GuestGpu::EnableStateReplacement(false);
+    GuestGpu::EnableStateTableAudit(false);
     const char* trace = std::getenv("SONIC_GPU_TRACE");
     GuestGpu::EnableObservation(trace && std::strcmp(trace, "1") == 0);
     const char* capture = std::getenv("SONIC_GPU_CAPTURE");
@@ -86,12 +88,14 @@ bool Video::Init()
 
     const bool initialized = g_backend->Init(g_mode);
     GuestGpu::EnableStateReplacement(initialized && std::strcmp(g_backend->GetName(), "vulkan-transfer") == 0);
+    GuestGpu::EnableStateTableAudit(initialized && std::strcmp(g_backend->GetName(), "vulkan-transfer") == 0);
     return initialized;
 }
 
 void Video::Shutdown()
 {
     GuestGpu::EnableStateReplacement(false);
+    GuestGpu::EnableStateTableAudit(false);
     GuestGpu::EnableObservation(false);
     const auto unpresented = GuestGpu::GetCommandStream().Drain();
     GuestGpu::GetCommandStream().Enable(false);
@@ -100,6 +104,11 @@ void Video::Shutdown()
             unpresented.draws.size(), unpresented.errors.overflow,
             unpresented.errors.invalidMemory, unpresented.errors.allocationFailure, unpresented.errors.resourceLimit);
 
+    const auto tableAudit = GuestGpu::GetStateTableAuditCounters();
+    if (tableAudit.initializedDevices || tableAudit.rejectedDevices)
+        LOGFN("GPU dispatch table audit: {} matched initializations, {} rejected; {} render/{} sampler replacement slots observed",
+            tableAudit.initializedDevices, tableAudit.rejectedDevices,
+            tableAudit.renderReplacementSlots, tableAudit.samplerReplacementSlots);
     const auto snapshot = GuestGpu::GetSnapshot();
 #define SONIC_GPU_ENTRY(name, symbol) \
     { \

@@ -54,3 +54,23 @@ void GuestGpu::EnableStateReplacement(bool enabled) noexcept
     }
 #include "state_dispatch.inc"
 #undef SONIC_STATE
+
+// These setters address the first word of the native 24-byte texture fetch
+// record. Preserve r8-r11 exactly; unvalidated slot indices use the original.
+#define SONIC_SAMPLER(name, symbol, mask, shift) \
+    PPC_FUNC_IMPL(__imp__##symbol); \
+    PPC_FUNC(symbol) \
+    { \
+        if (!replacementEnabled.load(std::memory_order_relaxed) || ctx.r4.u64 >= 26) \
+        { __imp__##symbol(ctx, base); return; } \
+        const uint32_t slot = ctx.r4.u32; \
+        const uint32_t address = ctx.r3.u32 + (slot + 48) * 24; \
+        ctx.r9.u64 = (PPC_LOAD_U32(address) & ~mask) | ((ctx.r5.u32 << shift) & mask); \
+        ctx.r8.u64 = 1; \
+        PPC_STORE_U32(address, ctx.r9.u32); \
+        ctx.r10.u64 = PPC_LOAD_U64(ctx.r3.u32 + 24); \
+        ctx.r11.u64 = ctx.r10.u64 | (uint64_t{1} << (31 - slot)); \
+        PPC_STORE_U64(ctx.r3.u32 + 24, ctx.r11.u64); \
+    }
+#include "sampler_dispatch.inc"
+#undef SONIC_SAMPLER

@@ -36,6 +36,31 @@ class EntryEvidenceTests(unittest.TestCase):
                 for instruction in anchors:
                     self.assertIn(instruction, asm)
 
+    def test_dispatch_table_initializer(self):
+        code = (ROOT / 'ppc/ppc_recomp.273.cpp').read_text()
+        match = re.search(r'PPC_FUNC_IMPL\(__imp__sub_82DC2A50\) \{(.*?)^\}', code, re.M | re.S)
+        self.assertIsNotNone(match)
+        asm = re.findall(r'^\t// (.*)$', match.group(1), re.M)
+        # Source base + record stride, destination index math, loop bounds,
+        # default argument registers and actual indirect calls are all guarded.
+        anchors = [
+            'lis r11,-31879', 'addi r29,r11,1944',
+            'addi r8,r11,16', 'addi r11,r11,137', 'stwx r10,r8,r31', 'stwx r10,r11,r31',
+            'lwz r4,8(r29)', 'lwz r11,64(r9)', 'mtctr r11', 'bctrl ',
+            'addi r30,r30,4', 'addi r29,r29,12', 'cmplwi cr6,r30,404',
+            'addi r26,r11,3160', 'addi r29,r26,8', 'addi r8,r11,117', 'addi r11,r11,238',
+            'lwz r5,0(r29)', 'lwz r11,468(r9)', 'cmplwi cr6,r30,80', 'cmplwi cr6,r28,26',
+        ]
+        for instruction in anchors:
+            self.assertIn(instruction, asm)
+        self.assertEqual((-31879 * 65536 + 1944) & 0xffffffff, 0x83790798)
+        self.assertEqual((-31879 * 65536 + 3160) & 0xffffffff, 0x83790C58)
+        # Both immediate and type-2 recording devices use the initializer.
+        for symbol in ('sub_82DC3690', 'sub_82DC3178'):
+            body = re.search(r'PPC_FUNC_IMPL\(__imp__' + symbol + r'\) \{(.*?)^\}', code, re.M | re.S)
+            self.assertIsNotNone(body)
+            self.assertIn('sub_82DC2A50(ctx, base);', body.group(1))
+
     def test_entries_match_generated_code(self):
         inc = (ROOT / "SonicGenerationsRecomp/gpu/guest_entries.inc").read_text()
         hooks = re.findall(r"^SONIC_GPU_ENTRY\(\w+, (sub_[0-9A-F]+)\)$", inc, re.M)

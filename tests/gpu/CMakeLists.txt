@@ -27,10 +27,20 @@ add_custom_command(OUTPUT "${STATE_ORIGINALS}"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/extract_state_originals.py" "${STATE_ORIGINALS}"
     DEPENDS extract_state_originals.py
         "${ROOT}/SonicGenerationsRecomp/gpu/state_dispatch.inc"
-        "${ROOT}/ppc/ppc_recomp.270.cpp" "${ROOT}/ppc/ppc_recomp.271.cpp"
+        "${ROOT}/SonicGenerationsRecomp/gpu/sampler_dispatch.inc"
+        "${ROOT}/ppc/ppc_recomp.270.cpp" "${ROOT}/ppc/ppc_recomp.271.cpp" "${ROOT}/ppc/ppc_recomp.272.cpp"
     VERBATIM)
 add_library(state_replacements STATIC "${ROOT}/SonicGenerationsRecomp/gpu/state_dispatch.cpp")
 target_link_libraries(state_replacements PUBLIC gpu_hooks)
 add_executable(state_dispatch_tests state_dispatch_tests.cpp "${STATE_ORIGINALS}")
 target_link_libraries(state_dispatch_tests PRIVATE state_replacements)
 add_test(NAME state_dispatch_tests COMMAND state_dispatch_tests)
+add_library(state_tables STATIC "${ROOT}/SonicGenerationsRecomp/gpu/state_tables.cpp")
+target_link_libraries(state_tables PUBLIC gpu_hooks)
+add_executable(state_tables_tests state_tables_tests.cpp)
+target_link_libraries(state_tables_tests PRIVATE state_tables)
+add_test(NAME state_tables_tests COMMAND state_tables_tests)
+add_executable(state_table_hook_tests state_table_hook_tests.cpp
+    "${ROOT}/SonicGenerationsRecomp/gpu/state_table_hook.cpp")
+target_link_libraries(state_table_hook_tests PRIVATE state_tables)
+add_test(NAME state_table_hook_tests COMMAND state_table_hook_tests)

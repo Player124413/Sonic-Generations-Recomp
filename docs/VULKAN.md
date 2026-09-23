@@ -30,32 +30,54 @@ layouts, clears/resolves, complete state and command-list replay remain to be
 connected before graphics pipelines and `vkCmdDraw*` can execute the game.
 Do not interpret transfer/present counters as rendered game frames.
 
-## Three real guest state replacements
+## Verified native state dispatch
 
-`gpu/state_dispatch.inc` declares verified replacements for:
+`sub_82DC2A50` establishes the layout below for both native device creation
+paths (`82DC3690` and `82DC3178`). Offsets are bytes from the device pointer:
 
-| Entry | Function | Effect retained in native device |
-|---|---|---|
-| `82DA8D28` | Depth-write enable | bit 2 of +10548; dirty bit 0x800 at +16 |
-| `82DA8D58` | Depth comparison | bits 4..6 of +10548; dirty bits 0x800/0x20000 |
-| `82DA85C0` | Culling/orientation | bits 0..2 of +10568; dirty bit 0x40 |
+| Table | Entries | Setter offsets | Opaque metadata offsets | Source template |
+|---|---:|---|---|---|
+| Render | 101 | 64..467 | 548..951 | `0x83790798` |
+| Sampler | 20 | 468..547 | 952..1031 | `0x83790C58` |
 
-On successful Vulkan backend initialization, the **existing PPC function
-mapping resolves these entries to host implementations** rather than forwarding
-to the original functions. They preserve native memory and volatile register
-results, so unported SDK code still sees the same state. With Vulkan disabled,
-they forward to the originals. `Video::Init` explicitly anchors their object
-file in the runtime library.
+Each source record is 12 bytes: metadata at +0, setter address at +4,
+default value at +8. The initializer copies the first two fields and invokes
+the setters with defaults. Render defaults use r3=device/r4=value; sampler
+defaults use r3=device/r4=slot/r5=value, repeated for 26 slots. Metadata
+semantics are not established; these words are **not assumed to be getters**.
 
-The standalone test build extracts the exact original function bodies from
-`ppc_recomp.270.cpp` and `.271.cpp`, then compares replacements and originals
-across 6000 randomized enabled/disabled cases, including the entire PPCContext
-and device-memory region. Generated PPC files are not modified.
+`gpu/state_dispatch.inc` contains **25 render leaf replacements**, including
+native depth, stencil, raster and alpha word updates. `sampler_dispatch.inc`
+contains **3 sampler address U/V/W replacements**. Entries whose semantic name
+is uncertain retain address-based names. These implement exact native word
+updates, dirty writes and volatile-register effects, not a complete mapping of
+all those states into Vulkan pipeline objects.
 
-This is a **partial state-function replacement**, not a completed replacement of
-all render/sampler dispatch tables. The location and ABI of those complete
-native tables remain unproven. No Unleashed device layout or invented guest
-function address is written into Generations memory.
+On successful Vulkan backend initialization, the existing PPC function mapping
+resolves these addresses to strong host implementations. Native table addresses
+stay unchanged; unsupported functions still execute their original PPC bodies.
+Sampler slots outside 0..25 also use their original functions. With Vulkan
+disabled, all replacements forward to originals. `Video::Init` anchors the
+replacement and initializer-hook object files in the runtime library.
+
+After the original initializer returns, a read-only audit compares all 121
+setter pointers and metadata words to their native templates, checks setter
+alignment/code range, and counts slots pointing to known replacements. On
+failure it logs the first rejection and disables replacements (until explicitly
+re-enabled by initialization); it never fabricates or repairs guest tables.
+The audit preserves the original initializer's context/results. Counters report
+observed slots, not rendered frames or full semantic coverage. This runtime
+audit has unit tests but has **not yet been exercised by a real game launch**.
+
+Standalone differential tests extract exact original bodies from generated
+`ppc_recomp.270.cpp` through `.272.cpp` and compare the entire PPCContext and
+memory across **69,200** enabled/disabled cases. Additional tests cover table
+bounds, mismatches, opaque metadata, hook forwarding/fail-closed behavior and
+instruction evidence in the original initializer. Generated PPC is unchanged.
+
+This confirms table layout and replaces a tested subset of native leaves;
+it does **not** implement all 121 dispatch entries or complete guest rendering.
+No Unleashed device layout or invented guest function addresses are written.
 
 ## Build and select
 
@@ -71,7 +93,7 @@ SONIC_RENDER_BACKEND=vulkan ./build/SonicGenerationsRecomp/SonicGenerationsRecom
 ```
 
 `SONIC_RENDER_BACKEND` must be set **before window creation**. `vulkan` enables
-native capture and the three state replacements automatically. `null` (or an
+native capture, the verified state replacements and table audit automatically. `null` (or an
 unset variable) retains the previous default. Requesting Vulkan without a
 Vulkan-enabled build fails explicitly, without silently selecting NullBackend.
 Set `SONIC_VULKAN_VALIDATION=1` to require `VK_LAYER_KHRONOS_validation`.

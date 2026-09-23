@@ -3,7 +3,7 @@
 **NullBackend remains the default. An opt-in Vulkan backend now submits actual
 resource transfers/clears and presents a host clear, not game rendering. A
 separate host graphics profile also executes a pixel-verified indexed test draw.** See
-[VULKAN.md](VULKAN.md) for host resources, submission, three verified guest state
+[VULKAN.md](VULKAN.md) for host resources, submission, verified guest state
 replacements, build options and tests. The eight observation hooks below retain
 their original pass-through behavior.
 They are a preparatory layer for the static-SDK approach used by UnleashedRecomp,
@@ -126,7 +126,9 @@ Native allocation: **0x6080**, versus Unleashed's replacement GuestDevice
 
 Unleashed's `dirtyFlags[8]` at offset zero would overlap Generations' command
 pointers/refcount. Do not transplant that layout while native methods remain
-active. Render/sampler dispatch table location and extent are not established.
+active. The native initializer now confirms 101 render setters at +64 and
+20 sampler setters at +468; see [VULKAN.md](VULKAN.md) for templates, opaque
+metadata arrays, replacement coverage and the runtime table audit.
 
 UP candidates `82DA6F60` and `82DA7468` prepare guest allocations/pointers;
 their begin/end protocol is not established and they are deliberately unhooked.
@@ -146,7 +148,9 @@ The C++ suite uses the real PPCContext and mock generated weak aliases in a
 separate static library. It checks function-table override selection, exactly
 once forwarding, entire-context/memory equivalence, success/failure returns,
 disabled counters, and concurrent counting. The Python suite checks instruction
-anchors in actual generated sources. Neither executes the real SDK. The
+anchors in actual generated sources. These observation tests do not execute the
+real SDK. The separate state differential suite executes extracted real SDK leaf
+bodies (not the full device initializer or game). The
 new native-command suite also checks endian decoding, range/overflow rejection,
 immutable index payloads, queue order/capacity/budget and default backend
 rejection. The standalone suite can use GCC; this does not establish GCC support for the full
@@ -154,10 +158,10 @@ runtime. A separate workflow covers Linux Clang and Windows ClangCL.
 
 ## Remaining renderer work
 
-Host Vulkan resource/transfer/WSI foundations and three leaf-state replacements
+Host Vulkan resource/transfer/WSI foundations and 28 leaf-state replacements
 are now implemented; see [VULKAN.md](VULKAN.md). Remaining game rendering:
 
-1. Recover state dispatch, shader/stream/index bindings, resource lifetimes,
+1. Complete state semantics, shader/stream/index bindings, resource lifetimes,
    constants, clears/resolves and UP protocols.
 2. Validate the ABI and layout against real guest execution.
 3. Implement host resources, ordered command submission through plume/Vulkan

@@ -21,6 +21,8 @@ set(SONIC_GENERATIONS_CORE_SOURCES
     "gpu/guest_hooks.cpp"
     "gpu/native_commands.cpp"
     "gpu/state_dispatch.cpp"
+    "gpu/state_tables.cpp"
+    "gpu/state_table_hook.cpp"
     "gpu/shader_cache.cpp"
     "apu/audio.cpp"
     "apu/xma.cpp"
