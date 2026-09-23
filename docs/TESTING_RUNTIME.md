@@ -51,3 +51,23 @@ Vulkan layer. Выйдите из игры обычным способом; Ctrl
 
 Отчёт `report.json`, `runtime.log`, версия игры/TU и скриншот первого сбоя нужны
 для воспроизведения. Успешный код завершения не доказывает правильность кадра.
+
+## Проверенный результат
+
+Полная Linux x86-64 сборка с Vulkan и XMA прошла в Actions run
+[35913674899](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/35913674899)
+на ревизии `3958e4b`: все 603 PPC translation units, runtime, executable,
+тесты ядра/гостевых XEX headers, линковка импортов и тесты diagnostic launcher.
+`--help` проверен запуском самого executable. Артефакт:
+`linux-x64-diagnostic-runtime` (Ubuntu 24.04, Clang 18, Debug без символов).
+Полная Windows-сборка этим workflow не проверялась.
+
+Исправлены монтирование `game:`/`D:` в фактический каталог установки, загрузка
+XEX через закреплённый XenonUtils (включая его decrypt/LZX путь), регистрация
+секций из декодированного Image и размещение возвращаемых XEX headers в гостевой
+памяти. Границы заголовков и entry point проверяются до запуска PPC.
+Совпадение base/size/entry **не является** проверкой точной версии XEX.
+
+Эти проверки не запускали игру: полные guest data imports, GPU SDK/EDRAM,
+Clear/resolve, backbuffer mapping и остальные графические профили требуют
+дальнейшей реализации/проверки. Не считать артефакт готовой играбельной версией.
