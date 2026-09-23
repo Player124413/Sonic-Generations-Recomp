@@ -86,8 +86,6 @@ if (WIN32)
     target_link_libraries(SonicGenerationsRecompCore PUBLIC winmm ole32 shell32)
 endif()
 
-target_compile_definitions(SonicGenerationsRecompCore PUBLIC
-    GAME_INSTALL_DIRECTORY="${SONIC_GENERATIONS_RECOMP_ROOT}")
 
 # ---------------------------------------------------------------------------
 # Game executable.

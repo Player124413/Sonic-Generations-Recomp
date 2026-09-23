@@ -13,7 +13,9 @@ void os::logger::Init()
 
 void os::logger::Log(const std::string_view str, ELogType type, const char* func)
 {
-    if (!os::process::g_consoleVisible)
+    const DWORD outputType = GetFileType(g_hStandardOutput);
+    const bool redirected = outputType == FILE_TYPE_PIPE || outputType == FILE_TYPE_DISK;
+    if (!os::process::g_consoleVisible && !redirected)
         return;
 
     switch (type)

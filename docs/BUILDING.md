@@ -3,7 +3,7 @@
 ## Требования
 
 - **CMake** ≥ 3.20
-- **C++20** компилятор: Clang (рекомендуется, как у Unleashed Recompiled) или GCC ≥ 12
+- **C++20** компилятор: Clang/clang-cl (GCC/MSVC не поддерживаются полным runtime)
 - **SDL2** (для окна/ввода/звука)
 - Git (для сабмодулей)
 - ~8 GB RAM и ~5 GB на диске (код игры большой)
@@ -19,14 +19,15 @@ git clone --recursive <repo>
 cd Sonic-Generations-Recomp
 git submodule update --init --recursive   # если клонировали без --recursive
 
-cmake -B build -DCMAKE_BUILD_TYPE=Release # -G Ninja по желанию
-cmake --build build -j$(nproc)
+cmake --preset linux-vulkan
+# Полная инструкция и диагностический workflow: TESTING_RUNTIME.md
+cmake --build --preset linux-vulkan --parallel 2
 ```
 
 Тесты (без данных игры):
 
 ```bash
-cd build && ctest --output-on-failure
+ctest --preset linux-vulkan
 ```
 
 ## Установка игры
@@ -35,12 +36,14 @@ cd build && ctest --output-on-failure
 `default.xex` в корне):
 
 ```bash
-./build/SonicGenerationsRecomp/SonicGenerationsRecomp --install /path/to/dump
+./build/linux-vulkan/SonicGenerationsRecomp/SonicGenerationsRecomp --install /path/to/dump
 # с title update:
-./build/SonicGenerationsRecomp/SonicGenerationsRecomp --install /path/to/dump --update /path/to/default.xexp
+./build/linux-vulkan/SonicGenerationsRecomp/SonicGenerationsRecomp --install /path/to/dump --update /path/to/default.xexp
 ```
 
-Файлы копируются в `game/`, `update/`, `dlc/` рядом с исполняемым файлом.
+Файлы копируются в пользовательское хранилище (`GetUserPath`). Чтобы хранить
+их рядом с executable, создайте там `portable.txt` **до установки**. Старые
+установки в корне исходников автоматически не перемещаются.
 Проверка: `--check`. Запуск: без аргументов.
 
 ## Регенерация ppc/ (опционально)

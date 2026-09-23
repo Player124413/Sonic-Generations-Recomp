@@ -16,13 +16,9 @@ const std::filesystem::path& GetUserPath();
 
 inline std::filesystem::path GetGamePath()
 {
-#ifdef __APPLE__
-    // On macOS the app bundle itself must not be modified, so game files
-    // are installed to the user directory instead of next to the app.
+    // Never embed a build runner's source directory in a distributed binary.
+    // portable.txt selects the executable directory; otherwise use user storage.
     return GetUserPath();
-#else
-    return GAME_INSTALL_DIRECTORY;
-#endif
 }
 
 inline std::filesystem::path GetSavePath(bool checkForMods = false)

@@ -198,6 +198,8 @@ int main(int argc, char* argv[])
     timeBeginPeriod(1);
 #endif
 
+    // Preserve diagnostics when stdout is redirected and the guest crashes.
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     os::logger::Init();
 
     bool forceInstall = false;
