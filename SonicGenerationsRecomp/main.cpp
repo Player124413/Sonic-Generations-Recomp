@@ -11,6 +11,8 @@
 #include <kernel/memory.h>
 #include <kernel/xam.h>
 #include <kernel/xdbf.h>
+#include <kernel/xex_module.h>
+#include <image.h>
 #include <os/logger.h>
 #include <os/process.h>
 #include <ui/game_window.h>
@@ -61,7 +63,7 @@ void KiSystemStartup()
 
     const auto gameContent = XamMakeContent(XCONTENTTYPE_RESERVED, "Game");
     const auto updateContent = XamMakeContent(XCONTENTTYPE_RESERVED, "Update");
-    const std::string gamePath = (const char*)(GetGamePath() / "game").u8string().c_str();
+    const std::string gamePath = (const char*)GetGamePath().u8string().c_str();
     const std::string updatePath = (const char*)(GetGamePath() / "update").u8string().c_str();
     XamRegisterContent(gameContent, gamePath);
     XamRegisterContent(updateContent, updatePath);
@@ -110,54 +112,33 @@ void KiSystemStartup()
 }
 
 uint32_t LdrLoadModule(const std::filesystem::path& path)
+try
 {
-    auto loadResult = LoadFile(path);
-    if (loadResult.empty())
-    {
-        LOGFN_ERROR("Failed to load module: {}", path.string().c_str());
-        assert(!"Failed to load module");
-        return 0;
-    }
-
-    auto* header = reinterpret_cast<const Xex2Header*>(loadResult.data());
-    auto* security = reinterpret_cast<const Xex2SecurityInfo*>(loadResult.data() + header->securityOffset);
-    const auto* fileFormatInfo = reinterpret_cast<const Xex2OptFileFormatInfo*>(getOptHeaderPtr(loadResult.data(), XEX_HEADER_FILE_FORMAT_INFO));
-    auto entry = *reinterpret_cast<const uint32_t*>(getOptHeaderPtr(loadResult.data(), XEX_HEADER_ENTRY_POINT));
-    ByteSwapInplace(entry);
-
-    auto srcData = loadResult.data() + header->headerSize;
-    auto destData = reinterpret_cast<uint8_t*>(g_memory.Translate(security->loadAddress));
-
-    if (fileFormatInfo->compressionType == XEX_COMPRESSION_NONE)
-    {
-        memcpy(destData, srcData, security->imageSize);
-    }
-    else if (fileFormatInfo->compressionType == XEX_COMPRESSION_BASIC)
-    {
-        auto* blocks = reinterpret_cast<const Xex2FileBasicCompressionBlock*>(fileFormatInfo + 1);
-        const size_t numBlocks = (fileFormatInfo->infoSize / sizeof(Xex2FileBasicCompressionInfo)) - 1;
-
-        for (size_t i = 0; i < numBlocks; i++)
-        {
-            memcpy(destData, srcData, blocks[i].dataSize);
-
-            srcData += blocks[i].dataSize;
-            destData += blocks[i].dataSize;
-
-            memset(destData, 0, blocks[i].zeroSize);
-            destData += blocks[i].zeroSize;
-        }
-    }
-    else
-    {
-        assert(!"Unknown compression type.");
-    }
-
-    auto res = reinterpret_cast<const Xex2ResourceInfo*>(getOptHeaderPtr(loadResult.data(), XEX_HEADER_RESOURCE_INFO));
-
-    g_xdbfWrapper = XDBFWrapper((uint8_t*)g_memory.Translate(res->offset.get()), res->sizeOfData);
-
-    return entry;
+    const auto bytes=LoadFile(path);
+    if(!xex_module::ValidateHeader(bytes))
+    { LOGN_ERROR("Invalid or truncated XEX2 header."); return 0; }
+    const auto* header=reinterpret_cast<const Xex2Header*>(bytes.data());
+    const auto* security=reinterpret_cast<const Xex2SecurityInfo*>(bytes.data()+header->securityOffset);
+    if(security->loadAddress!=PPC_IMAGE_BASE || security->imageSize!=PPC_IMAGE_SIZE)
+    { LOGN_ERROR("XEX image layout does not match the compiled PPC image. Check game/TU version."); return 0; }
+    const auto image=Xex2LoadImage(bytes.data(),bytes.size());
+    if(!image.data || image.base!=PPC_IMAGE_BASE || image.size!=PPC_IMAGE_SIZE ||
+        image.entry_point<PPC_CODE_BASE || image.entry_point>=PPC_CODE_BASE+PPC_CODE_SIZE ||
+        (image.entry_point&3) || !g_memory.FindFunction(uint32_t(image.entry_point)))
+    { LOGN_ERROR("XEX decode failed or entry point is absent from the compiled function map."); return 0; }
+    const auto* resource=static_cast<const Xex2ResourceInfo*>(getOptHeaderPtr(bytes.data(),XEX_HEADER_RESOURCE_INFO));
+    if(resource && (resource->offset<image.base || uint64_t(resource->offset.get())+resource->sizeOfData>image.base+image.size))
+    { LOGN_ERROR("XDBF resource lies outside the loaded image."); return 0; }
+    std::memcpy(g_memory.Translate(image.base),image.data.get(),image.size);
+    if(!xex_module::RegisterImage(bytes,image))
+    { LOGN_ERROR("Failed to register guest XEX headers/sections."); return 0; }
+    if(resource) g_xdbfWrapper=XDBFWrapper(static_cast<uint8_t*>(g_memory.Translate(resource->offset.get())),resource->sizeOfData);
+    return uint32_t(image.entry_point);
+}
+catch(const std::exception& error)
+{
+    LOGFN_ERROR("XEX loading failed: {}",error.what());
+    return 0;
 }
 
 #ifdef __x86_64__
@@ -311,6 +292,7 @@ int main(int argc, char* argv[])
     xma::Init();
 
     uint32_t entry = LdrLoadModule(modulePath);
+    if(!entry) return 1;
     LOGFN("Entry point: 0x{:08X}", entry);
 
     GuestThread::Start({ entry, 0, 0 });

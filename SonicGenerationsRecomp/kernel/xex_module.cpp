@@ -4,73 +4,72 @@
 #include <kernel/memory.h>
 #include <os/logger.h>
 #include <xex.h>
+#include <image.h>
+#include <kernel/heap.h>
 
-static std::vector<uint8_t> g_imageHeader;
+static uint8_t* g_imageHeader = nullptr;
 static std::vector<std::tuple<std::string, uint32_t, uint32_t>> g_sections;
 
-void xex_module::RegisterImage(const uint8_t* xexBytes, size_t size)
+bool xex_module::ValidateHeader(std::span<const uint8_t> bytes)
 {
-    // Keep a copy of the raw XEX for RtlImageXexHeaderField queries.
-    auto* header = reinterpret_cast<const Xex2Header*>(xexBytes);
-    g_imageHeader.assign(xexBytes, xexBytes + header->headerSize);
-
-    // Parse the section table from the PE image. XEX section names are the PE
-    // section names; guest virtual addresses are imageBase + RVA.
-    g_sections.clear();
+    if (bytes.size() < sizeof(Xex2Header) || std::memcmp(bytes.data(), "XEX2", 4)) return false;
+    const auto word = [&](size_t at) { return (uint32_t(bytes[at])<<24) | (uint32_t(bytes[at+1])<<16) |
+        (uint32_t(bytes[at+2])<<8) | bytes[at+3]; };
+    const size_t headerSize=word(8), security=word(16), count=word(20);
+    if (headerSize < sizeof(Xex2Header) || headerSize > bytes.size() || headerSize > 4*1024*1024 ||
+        count > (headerSize-sizeof(Xex2Header))/sizeof(Xex2OptHeader) || (security&3) ||
+        security < sizeof(Xex2Header) || security > headerSize || sizeof(Xex2SecurityInfo)>headerSize-security) return false;
+    std::set<uint32_t> keys;
+    for(size_t i=0;i<count;++i)
     {
-        uint32_t imageBase = 0;
-        const auto* baseHeader = reinterpret_cast<const be<uint32_t>*>(
-            getOptHeaderPtr(g_imageHeader.data(), XEX_HEADER_IMAGE_BASE_ADDRESS));
-        if (baseHeader != nullptr)
-            imageBase = baseHeader->get();
-
-        if (size >= 0x40 && xexBytes[0] == 'M' && xexBytes[1] == 'Z')
-        {
-            uint32_t peOffset = reinterpret_cast<const be<uint32_t>*>(xexBytes + 0x3C)->get();
-            if (peOffset + 0x18 < size &&
-                xexBytes[peOffset] == 'P' && xexBytes[peOffset + 1] == 'E')
-            {
-                const be<uint16_t>* coff = reinterpret_cast<const be<uint16_t>*>(xexBytes + peOffset + 6);
-                uint32_t numSections = coff->get();
-                uint32_t sizeOfOptional = coff[1].get();
-                uint32_t sectionTable = peOffset + 0x18 + sizeOfOptional;
-
-                for (uint32_t i = 0; i < numSections && sectionTable + (i + 1) * 40 <= size; i++)
-                {
-                    const uint8_t* s = xexBytes + sectionTable + i * 40;
-                    std::string name(reinterpret_cast<const char*>(s), 8);
-                    name.resize(strlen(name.c_str()));
-
-                    uint32_t rva = reinterpret_cast<const be<uint32_t>*>(s + 12)->get();
-                    uint32_t vsize = reinterpret_cast<const be<uint32_t>*>(s + 8)->get();
-
-                    g_sections.emplace_back(name, imageBase + rva, vsize);
-                    LOGFN_UTILITY("section \"{}\" addr 0x{:08X} size 0x{:X}", name.c_str(), imageBase + rva, vsize);
-                }
-            }
-        }
+        const auto key=word(24+i*8), offset=word(28+i*8), units=key&255;
+        if(!keys.insert(key).second) return false;
+        if(units<=1) continue; // inline value in the optional-header table
+        if((offset&3) || offset<24+count*8 || offset>headerSize || headerSize-offset<4) return false;
+        const size_t length=units==255 ? word(offset) : units*4;
+        if(length<4 || length>headerSize-offset) return false;
+        if(key==XEX_HEADER_FILE_FORMAT_INFO && length<sizeof(Xex2OptFileFormatInfo)) return false;
+        if(key==XEX_HEADER_RESOURCE_INFO && length<sizeof(Xex2ResourceInfo)) return false;
     }
+    return true;
+}
+
+bool xex_module::RegisterImage(std::span<const uint8_t> bytes, const Image& image)
+{
+    if(!ValidateHeader(bytes) || image.base>UINT32_MAX || image.size>UINT32_MAX-image.base) return false;
+    std::vector<std::tuple<std::string,uint32_t,uint32_t>> sections;
+    for(const auto& section:image.sections)
+    {
+        if(section.base<image.base || section.base-image.base>image.size ||
+            section.size>image.size-(section.base-image.base)) return false;
+        sections.emplace_back(section.name,uint32_t(section.base),section.size);
+    }
+    const auto header=reinterpret_cast<const Xex2Header*>(bytes.data());
+    const size_t headerSize=header->headerSize;
+    auto* copy=static_cast<uint8_t*>(g_userHeap.Alloc(headerSize));
+    if(!copy) return false;
+    std::memcpy(copy,bytes.data(),headerSize);
+    if(g_imageHeader) g_userHeap.Free(g_imageHeader);
+    g_imageHeader=copy; g_sections=std::move(sections);
+    return true;
 }
 
 const uint8_t* xex_module::GetOptHeader(uint32_t headerId, uint32_t* size)
 {
-    if (g_imageHeader.empty())
-        return nullptr;
-
-    auto* ptr = getOptHeaderPtr(g_imageHeader.data(), headerId);
-    if (!ptr)
-        return nullptr;
-
-    // Optional headers store their size in the low 16 bits of the key word
-    // for sized entries; fall back to 4 bytes of payload.
-    if (size)
-        *size = 4;
-
-    return reinterpret_cast<const uint8_t*>(ptr);
+    if(size) *size=0;
+    if(!g_imageHeader) return nullptr;
+    const auto* ptr=static_cast<const uint8_t*>(getOptHeaderPtr(g_imageHeader,headerId));
+    if(ptr && size)
+    {
+        const auto units=headerId&255;
+        *size=units<=1 ? 4 : units==255 ? reinterpret_cast<const be<uint32_t>*>(ptr)->get() : units*4;
+    }
+    return ptr;
 }
 
 bool xex_module::GetSection(const char* name, uint32_t& address, uint32_t& size)
 {
+    if (!name) return false;
     for (auto& [sectionName, sectionAddress, sectionSize] : g_sections)
     {
         if (sectionName == name)
@@ -79,14 +78,6 @@ bool xex_module::GetSection(const char* name, uint32_t& address, uint32_t& size)
             size = sectionSize;
             return true;
         }
-    }
-
-    // Synthetic fallbacks based on the recompilation layout.
-    if (strcmp(name, ".text") == 0)
-    {
-        address = PPC_CODE_BASE;
-        size = PPC_CODE_SIZE;
-        return true;
     }
 
     return false;
@@ -98,7 +89,8 @@ bool xex_module::GetSection(const char* name, uint32_t& address, uint32_t& size)
 
 uint32_t RtlImageXexHeaderField(uint32_t headerId)
 {
-    return g_memory.MapVirtual((void*)xex_module::GetOptHeader(headerId, nullptr));
+    const auto* ptr=xex_module::GetOptHeader(headerId, nullptr);
+    return ptr ? g_memory.MapVirtual(ptr) : 0;
 }
 
 uint32_t XexGetModuleHandle(const char* name, be<uint32_t>* handle)

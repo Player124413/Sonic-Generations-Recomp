@@ -11,6 +11,9 @@
 #include <cpu/ppc_context.h>
 #include <apu/xma.h>
 #include <kernel/xdbf.h>
+#include <kernel/xex_module.h>
+#include <image.h>
+#include <xex.h>
 
 // ---------------------------------------------------------------------------
 // Smoke tests for the kernel layer. These run on the host without any game
@@ -128,12 +131,37 @@ static void TestXma()
     CHECK(!xma::ReleaseContext(context));
 }
 
+static void TestXexRegistry()
+{
+    std::vector<uint8_t> bytes(0x400);
+    const auto store=[&](size_t off,uint32_t value) { for(size_t i=0;i<4;++i) bytes[off+i]=uint8_t(value>>(24-i*8)); };
+    store(0,0x58455832); store(8,uint32_t(bytes.size())); store(16,0x100); store(20,1);
+    store(24,XEX_HEADER_ENTRY_POINT); store(28,uint32_t(PPC_CODE_BASE));
+    CHECK(xex_module::ValidateHeader(bytes));
+    Image image; image.base=PPC_IMAGE_BASE; image.size=PPC_IMAGE_SIZE;
+    image.sections.insert({".test",PPC_CODE_BASE,16,SectionFlags_Code,nullptr});
+    CHECK(xex_module::RegisterImage(bytes,image));
+    uint32_t size=0, address=0;
+    const auto* entry=xex_module::GetOptHeader(XEX_HEADER_ENTRY_POINT,&size);
+    CHECK(entry && size==4 && g_memory.IsInMemoryRange(entry));
+    CHECK(entry && reinterpret_cast<const be<uint32_t>*>(entry)->get()==PPC_CODE_BASE);
+    CHECK(xex_module::GetSection(".test",address,size) && address==PPC_CODE_BASE && size==16);
+    CHECK(!xex_module::GetSection(".text",address,size)); // no synthetic section
+    CHECK(!xex_module::GetSection(nullptr,address,size));
+    CHECK(!xex_module::GetOptHeader(0xFFFFFFFF,&size) && size==0);
+    store(20,UINT32_MAX); CHECK(!xex_module::ValidateHeader(bytes)); store(20,1);
+    store(24,XEX_HEADER_FILE_FORMAT_INFO); store(28,0xFFFFFFFC);
+    CHECK(!xex_module::ValidateHeader(bytes));
+    CHECK(!xex_module::ValidateHeader(std::span(bytes).first(16)));
+}
+
 int main()
 {
     printf("== SonicGenerationsRecomp kernel smoke tests ==\n");
 
     g_userHeap.Init();
 
+    TestXexRegistry();
     TestHeap();
     TestMemoryTranslation();
     TestKernelObjects();
