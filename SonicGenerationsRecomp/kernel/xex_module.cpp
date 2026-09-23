@@ -87,8 +87,10 @@ bool xex_module::GetSection(const char* name, uint32_t& address, uint32_t& size)
 // Import entry points.
 // ---------------------------------------------------------------------------
 
-uint32_t RtlImageXexHeaderField(uint32_t headerId)
+uint32_t RtlImageXexHeaderField(uint32_t imageHeader, uint32_t headerId)
 {
+    // sub_82DA0F70 passes the header pointer in r3 and the key in r4.
+    if(!g_imageHeader || imageHeader!=g_memory.MapVirtual(g_imageHeader)) return 0;
     const auto* ptr=xex_module::GetOptHeader(headerId, nullptr);
     return ptr ? g_memory.MapVirtual(ptr) : 0;
 }

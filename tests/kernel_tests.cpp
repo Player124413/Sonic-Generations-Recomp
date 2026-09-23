@@ -131,6 +131,8 @@ static void TestXma()
     CHECK(!xma::ReleaseContext(context));
 }
 
+extern uint32_t RtlImageXexHeaderField(uint32_t imageHeader, uint32_t headerId);
+
 static void TestXexRegistry()
 {
     std::vector<uint8_t> bytes(0x400);
@@ -145,6 +147,13 @@ static void TestXexRegistry()
     const auto* entry=xex_module::GetOptHeader(XEX_HEADER_ENTRY_POINT,&size);
     CHECK(entry && size==4 && g_memory.IsInMemoryRange(entry));
     CHECK(entry && reinterpret_cast<const be<uint32_t>*>(entry)->get()==PPC_CODE_BASE);
+    if(entry)
+    {
+        const auto header=g_memory.MapVirtual(entry-28);
+        CHECK(RtlImageXexHeaderField(header,XEX_HEADER_ENTRY_POINT)==g_memory.MapVirtual(entry));
+        CHECK(RtlImageXexHeaderField(header,0xFFFFFFFF)==0);
+        CHECK(RtlImageXexHeaderField(0,XEX_HEADER_ENTRY_POINT)==0);
+    }
     CHECK(xex_module::GetSection(".test",address,size) && address==PPC_CODE_BASE && size==16);
     CHECK(!xex_module::GetSection(".text",address,size)); // no synthetic section
     CHECK(!xex_module::GetSection(nullptr,address,size));
