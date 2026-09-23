@@ -86,7 +86,7 @@ namespace GuestGpu
         static constexpr bool CompleteCoverage = false;
     };
     enum class CaptureResult { Disabled, Captured, InvalidMemory, Overflow, AllocationFailure, ResourceLimit };
-    enum class SubmissionResult { Unsupported, Incomplete, Submitted };
+    enum class SubmissionResult { Unsupported, Incomplete, ResourcesUploaded, Submitted };
 
     class CommandStream
     {

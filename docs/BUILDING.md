@@ -73,3 +73,11 @@ git submodule update --init tools/ffmpeg-xma
 Он собирается C-компилятором вместе с runtime на Windows/Linux x86-64.
 Старый флаг `SONIC_GENERATIONS_FFMPEG_XMA` больше не нужен. Подробности и
 standalone-тесты без полной PPC-сборки: [AUDIO.md](AUDIO.md).
+
+## Optional Vulkan backend
+
+The resource/transfer/WSI backend is opt-in with
+`-DSONIC_GENERATIONS_ENABLE_VULKAN=ON` and requires Vulkan SDK/loader plus SDL2.
+Select it before launch with `SONIC_RENDER_BACKEND=vulkan`. It currently uploads
+resources and presents a host clear; it does not render game draws yet.
+See [VULKAN.md](VULKAN.md) for execution tests and limitations.

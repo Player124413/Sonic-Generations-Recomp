@@ -1,6 +1,9 @@
 #include <stdafx.h>
 #include <ui/game_window.h>
 #include <gpu/video.h>
+#ifdef SONIC_GENERATIONS_ENABLE_VULKAN
+#include <SDL_vulkan.h>
+#endif
 #include <os/logger.h>
 #include <user/config.h>
 
@@ -43,7 +46,14 @@ SDL_Rect GameWindow::GetDimensions()
 void GameWindow::GetSizeInPixels(int* w, int* h)
 {
     if (s_pWindow)
-        SDL_GL_GetDrawableSize(s_pWindow, w, h);
+    {
+#ifdef SONIC_GENERATIONS_ENABLE_VULKAN
+        if (SDL_GetWindowFlags(s_pWindow) & SDL_WINDOW_VULKAN)
+            SDL_Vulkan_GetDrawableSize(s_pWindow, w, h);
+        else
+#endif
+            SDL_GL_GetDrawableSize(s_pWindow, w, h);
+    }
     else
     {
         if (w) *w = s_width;
@@ -80,6 +90,11 @@ void GameWindow::Init(const char* sdlVideoDriver)
     s_height = Config::WindowHeight;
 
     uint32_t flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+#ifdef SONIC_GENERATIONS_ENABLE_VULKAN
+    const char* requested = std::getenv("SONIC_RENDER_BACKEND");
+    if (requested && std::strcmp(requested, "vulkan") == 0)
+        flags |= SDL_WINDOW_VULKAN;
+#endif
     if (Config::Fullscreen)
         flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 
@@ -102,7 +117,11 @@ void GameWindow::Update()
             case SDL_WINDOWEVENT_SIZE_CHANGED:
                 s_width = event.window.data1;
                 s_height = event.window.data2;
-                Video::OnResize(s_width, s_height);
+                {
+                    int pixelWidth = 0, pixelHeight = 0;
+                    GetSizeInPixels(&pixelWidth, &pixelHeight);
+                    Video::OnResize(uint32_t(std::max(0, pixelWidth)), uint32_t(std::max(0, pixelHeight)));
+                }
                 break;
 
             case SDL_WINDOWEVENT_FOCUS_GAINED:

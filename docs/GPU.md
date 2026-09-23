@@ -1,6 +1,10 @@
 # Generations GPU: observation hooks
 
-**The runtime still uses NullBackend. These hooks do not submit host GPU work.**
+**NullBackend remains the default. An opt-in Vulkan backend now submits actual
+resource transfers/clears and presents a host clear, not game rendering.** See
+[VULKAN.md](VULKAN.md) for host resources, submission, three verified guest state
+replacements, build options and tests. The eight observation hooks below retain
+their original pass-through behavior.
 They are a preparatory layer for the static-SDK approach used by UnleashedRecomp,
 not a complete renderer or a demonstration that the game works.
 
@@ -68,7 +72,8 @@ UP draws, command-list replay, resolves/clears and vertex data are not captured.
 Render-target/texture binding addresses are not retained host resources or
 stable resource identities. Their data, resource lifetimes/formats/tiling and
 shader bindings still require implementation. Backend consumers must not render
-such a batch as if it were complete. No new Vulkan or D3D12 backend is added.
+such a batch as if it were complete. The optional Vulkan backend now consumes these snapshots for resource uploads;
+this does not make the partial batches ready for graphics draws. D3D12 is not added.
 
 Memory reads check page-zero protection, alignment, 32-bit overflow and view
 bounds. They assume guest pages are accessible as in the original PPC runtime;
@@ -147,6 +152,9 @@ rejection. The standalone suite can use GCC; this does not establish GCC support
 runtime. A separate workflow covers Linux Clang and Windows ClangCL.
 
 ## Remaining renderer work
+
+Host Vulkan resource/transfer/WSI foundations and three leaf-state replacements
+are now implemented; see [VULKAN.md](VULKAN.md). Remaining game rendering:
 
 1. Recover state dispatch, shader/stream/index bindings, resource lifetimes,
    constants, clears/resolves and UP protocols.

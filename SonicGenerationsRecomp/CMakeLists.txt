@@ -20,6 +20,7 @@ set(SONIC_GENERATIONS_CORE_SOURCES
     "gpu/video.cpp"
     "gpu/guest_hooks.cpp"
     "gpu/native_commands.cpp"
+    "gpu/state_dispatch.cpp"
     "gpu/shader_cache.cpp"
     "apu/audio.cpp"
     "apu/xma.cpp"
@@ -98,3 +99,11 @@ target_precompile_headers(SonicGenerationsRecomp PRIVATE
 # Guest audio requires frame-level XMA, not the system FFmpeg packet decoder.
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/XmaFrameDecoder.cmake")
 target_link_libraries(SonicGenerationsRecompCore PUBLIC SonicXmaFrames)
+
+# Explicit opt-in: SDK/loader is required; never silently substitute NullBackend.
+option(SONIC_GENERATIONS_ENABLE_VULKAN "Build the Vulkan resource/transfer/WSI backend" OFF)
+if (SONIC_GENERATIONS_ENABLE_VULKAN)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/VulkanHost.cmake")
+    target_link_libraries(SonicGenerationsRecompCore PUBLIC SonicVulkanHost)
+    target_compile_definitions(SonicGenerationsRecompCore PUBLIC SONIC_GENERATIONS_ENABLE_VULKAN=1)
+endif()

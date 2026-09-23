@@ -85,3 +85,16 @@ with this project. You must own the game and provide your own dump.
 The guest register/context layout was researched using Xenia's BSD-licensed
 `src/xenia/apu/xma_context.h`, `xma_context.cc` and `xma_register_table.inc`.
 No copyrighted game audio is included in this repository.
+
+## Optional Vulkan host backend
+
+Vulkan headers/loader and the installed Vulkan ICD are system dependencies, not
+vendored into this repository. Khronos Vulkan-Headers and Vulkan-Loader use
+Apache-2.0 (see their upstream LICENSE files); driver licensing varies by ICD.
+The CI software ICD is Mesa lavapipe (Mesa license notices apply).
+
+Xenos register/enum encodings were cross-checked against Xenia's BSD-licensed
+`src/xenia/gpu/registers.h` and `xenos.h` (Ben Vanik and contributors). The Vulkan
+state mapping is independently expressed; no Xenia register structs are copied.
+UnleashedRecomp is the architecture reference, not the source of Generations'
+device offsets or function addresses.

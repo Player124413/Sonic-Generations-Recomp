@@ -1,7 +1,12 @@
 #include <stdafx.h>
 #include <gpu/video.h>
 #include <gpu/guest_hooks.h>
+#include <gpu/state_dispatch.h>
 #include <os/logger.h>
+#ifdef SONIC_GENERATIONS_ENABLE_VULKAN
+#include <gpu/vulkan_backend.h>
+#include <ui/game_window.h>
+#endif
 
 // ---------------------------------------------------------------------------
 // Null backend: keeps the guest alive without touching a real GPU.
@@ -39,6 +44,7 @@ void Video::SetBackend(std::unique_ptr<IRenderBackend> backend)
 
 bool Video::Init()
 {
+    GuestGpu::EnableStateReplacement(false);
     const char* trace = std::getenv("SONIC_GPU_TRACE");
     GuestGpu::EnableObservation(trace && std::strcmp(trace, "1") == 0);
     const char* capture = std::getenv("SONIC_GPU_CAPTURE");
@@ -47,16 +53,45 @@ bool Video::Init()
         LOGN("Native GPU state capture enabled; this does not enable rendering.");
 
     if (!g_backend)
-        g_backend = std::make_unique<NullBackend>();
+    {
+        const char* requested = std::getenv("SONIC_RENDER_BACKEND");
+        if (requested && std::strcmp(requested, "vulkan") == 0)
+        {
+#ifdef SONIC_GENERATIONS_ENABLE_VULKAN
+            if (!GameWindow::s_pWindow)
+            {
+                LOGN_ERROR("Vulkan requested, but SDL window creation failed.");
+                return false;
+            }
+            const char* validation = std::getenv("SONIC_VULKAN_VALIDATION");
+            g_backend = std::make_unique<VulkanBackend>(GameWindow::s_pWindow,
+                validation && std::strcmp(validation, "1") == 0);
+            GuestGpu::GetCommandStream().Enable(true);
+#else
+            LOGN_ERROR("Vulkan requested but not built. Configure SONIC_GENERATIONS_ENABLE_VULKAN=ON.");
+            return false;
+#endif
+        }
+        else if (!requested || std::strcmp(requested, "null") == 0)
+            g_backend = std::make_unique<NullBackend>();
+        else
+        {
+            LOGFN_ERROR("Unknown render backend: {}", requested);
+            return false;
+        }
+    }
 
     s_viewportWidth = g_mode.width;
     s_viewportHeight = g_mode.height;
 
-    return g_backend->Init(g_mode);
+    const bool initialized = g_backend->Init(g_mode);
+    GuestGpu::EnableStateReplacement(initialized && std::strcmp(g_backend->GetName(), "vulkan-transfer") == 0);
+    return initialized;
 }
 
 void Video::Shutdown()
 {
+    GuestGpu::EnableStateReplacement(false);
     GuestGpu::EnableObservation(false);
     const auto unpresented = GuestGpu::GetCommandStream().Drain();
     GuestGpu::GetCommandStream().Enable(false);
@@ -105,11 +140,13 @@ void Video::Present()
 
             const auto result = batch.errors.Any() ? GuestGpu::SubmissionResult::Incomplete :
                 (g_backend ? g_backend->SubmitGuestBatch(batch) : GuestGpu::SubmissionResult::Unsupported);
+            if (result == GuestGpu::SubmissionResult::ResourcesUploaded)
+                ++g_stats.resourceUploadBatches;
             if (result != GuestGpu::SubmissionResult::Submitted)
             {
                 ++g_stats.rejectedBatches;
                 if (g_stats.rejectedBatches == 1)
-                    LOGN("GPU batch rejected: native capture is incomplete or backend submission is unsupported; no draws submitted.");
+                    LOGN("GPU draws not submitted: pipeline/state/resource coverage is incomplete. Transfer uploads, if any, are counted separately.");
             }
         }
     }

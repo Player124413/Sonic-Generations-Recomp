@@ -20,6 +20,7 @@ struct FrameStats
     uint64_t drawCalls = 0;
     uint64_t capturedDraws = 0;
     uint64_t rejectedBatches = 0;
+    uint64_t resourceUploadBatches = 0;
     GuestGpu::CaptureErrors captureErrors;
 };
 
@@ -36,7 +37,8 @@ public:
     // valid only during this call; retain an owned copy if processing later.
     // A backend must validate coverage, resources and shaders before submission.
     // Native binding addresses alone are not host resources. Never report
-    // Submitted for skipped/placeholder draws. Default/NullBackend rejects.
+    // Submitted for skipped/placeholder draws. ResourcesUploaded denotes only
+    // completed transfers, not draws. Default/NullBackend rejects.
     virtual GuestGpu::SubmissionResult SubmitGuestBatch(const GuestGpu::NativeBatch&)
     {
         return GuestGpu::SubmissionResult::Unsupported;

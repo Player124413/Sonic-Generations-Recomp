@@ -1,0 +1,44 @@
+name: Vulkan host resources and WSI
+on:
+  push:
+    paths:
+      - 'SonicGenerationsRecomp/gpu/**'
+      - 'SonicGenerationsRecomp/ui/game_window.cpp'
+      - 'SonicGenerationsRecomp/CMakeLists.txt'
+      - 'cmake/VulkanHost.cmake'
+      - 'tests/vulkan/**'
+      - '.github/workflows/vulkan-tests.yml'
+  pull_request:
+    paths:
+      - 'SonicGenerationsRecomp/gpu/**'
+      - 'SonicGenerationsRecomp/ui/game_window.cpp'
+      - 'SonicGenerationsRecomp/CMakeLists.txt'
+      - 'cmake/VulkanHost.cmake'
+      - 'tests/vulkan/**'
+      - '.github/workflows/vulkan-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lavapipe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install software Vulkan, validation and WSI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev mesa-vulkan-drivers vulkan-validationlayers libsdl2-dev xvfb xauth
+      - name: Select software Vulkan ICD
+        run: |
+          icd=$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)
+          test -n "$icd"
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+          echo 'VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT' >> "$GITHUB_ENV"
+      - name: Configure
+        run: cmake -S tests/vulkan -B build-vulkan -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
+      - name: Build
+        run: cmake --build build-vulkan --parallel 2
+      - name: Actual Vulkan execution and presentation
+        run: xvfb-run -a ctest --test-dir build-vulkan --output-on-failure
