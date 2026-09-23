@@ -124,6 +124,18 @@ void GameWindow::Update()
                 }
                 break;
 
+            case SDL_WINDOWEVENT_MINIMIZED:
+                Video::OnResize(0, 0);
+                break;
+
+            case SDL_WINDOWEVENT_RESTORED:
+                {
+                    int w = 0, h = 0;
+                    GetSizeInPixels(&w, &h);
+                    Video::OnResize(uint32_t(std::max(0, w)), uint32_t(std::max(0, h)));
+                }
+                break;
+
             case SDL_WINDOWEVENT_FOCUS_GAINED:
                 s_isFocused = true;
                 break;

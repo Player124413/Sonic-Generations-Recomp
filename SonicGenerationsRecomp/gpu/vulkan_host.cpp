@@ -28,13 +28,14 @@ struct VulkanHost::Impl
     {
         VkDevice device{};
         VkImage image{};
+        VkImageView view{};
         VkDeviceMemory memory{};
         VkDeviceSize allocation{};
         uint32_t width{}, height{};
         ImageKind kind{};
         VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
         VkImageAspectFlags Aspect() const { return kind == ImageKind::Rgba8 ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT; }
-        ~Image() { if (image) vkDestroyImage(device, image, nullptr); if (memory) vkFreeMemory(device, memory, nullptr); }
+        ~Image() { if (view) vkDestroyImageView(device, view, nullptr); if (image) vkDestroyImage(device, image, nullptr); if (memory) vkFreeMemory(device, memory, nullptr); }
     };
     std::atomic<uint64_t> validationErrors{0};
     VkDebugUtilsMessengerEXT messenger{};
@@ -117,7 +118,10 @@ struct VulkanHost::Impl
         if (!Check(vkEndCommandBuffer(command), "vkEndCommandBuffer")) { failed = true; return false; }
         VkSubmitInfo info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         info.commandBufferCount = 1; info.pCommandBuffers = &command;
-        const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        // Acquire protects the first layout transition too, not just the clear.
+        // A transfer-only wait with a TOP_OF_PIPE source barrier leaves a WSI
+        // read -> layout-write hazard. The reference path uses a full wait.
+        const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
         if (wsi)
         {
             info.waitSemaphoreCount = 1; info.pWaitSemaphores = &acquired; info.pWaitDstStageMask = &waitStage;
@@ -359,6 +363,10 @@ Resource VulkanHost::CreateImage(uint32_t width, uint32_t height, ImageKind kind
     alloc.allocationSize = requirements.size; alloc.memoryTypeIndex = type;
     if (!p.Check(vkAllocateMemory(p.device, &alloc, nullptr, &image->memory), "vkAllocateMemory(image)") ||
         !p.Check(vkBindImageMemory(p.device, image->image, image->memory, 0), "vkBindImageMemory")) return 0;
+    VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    view.image = image->image; view.viewType = VK_IMAGE_VIEW_TYPE_2D; view.format = format;
+    view.subresourceRange = {image->Aspect(), 0, 1, 0, 1};
+    if (!p.Check(vkCreateImageView(p.device, &view, nullptr, &image->view), "vkCreateImageView")) return 0;
     image->allocation = requirements.size;
     const auto id = p.nextId++;
     p.images.emplace(id, std::move(image));
@@ -549,7 +557,7 @@ bool VulkanHost::PresentClear(const std::array<float, 4>& color)
     barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = p.swapImages.at(index); barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    vkCmdPipelineBarrier(p.command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+    vkCmdPipelineBarrier(p.command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
         0, 0, nullptr, 0, nullptr, 1, &barrier);
     VkClearColorValue clear{}; std::copy(color.begin(), color.end(), clear.float32);
     vkCmdClearColorImage(p.command, barrier.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1, &barrier.subresourceRange);
