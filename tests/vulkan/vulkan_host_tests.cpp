@@ -2,6 +2,9 @@
 #include <gpu/vulkan_backend.h>
 #include <gpu/vulkan_state.h>
 #include <SDL.h>
+#include <SDL_vulkan.h>
+#include <bit>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -107,7 +110,7 @@ static void GraphicsTests(VulkanHost& host)
     CHECK(!host.DrawIndexed(pipeline, color, depth, vb, ib, 3, VK_INDEX_TYPE_UINT16, {0, 0, 0, 1}));
     std::puts("Actual vkCmdDrawIndexed: triangle color/depth readback matches expected pixels");
 }
-static void GameAbiTests(VulkanHost& host)
+static void GameAbiTests(VulkanHost& host, bool present = false)
 {
     // This is an ABI fixture, not a replacement for any game shader.
     CHECK(host.SupportsGenerationsAbi());
@@ -141,6 +144,7 @@ static void GameAbiTests(VulkanHost& host)
     size_t center=(16*32+16)*4;
     CHECK(std::abs(int(result[center])-128)<=1 && result[center+1]==128 && result[center+2]==0 && result[center+3]==255);
     CHECK(result[0]==0 && result[1]==0 && result[2]==255); // LOAD, not per-draw clear
+    if(present) { CHECK(host.PresentImage(color)); CHECK(host.Stats().presents==1); }
     const auto first=result; game.scissor={{0,0},{0,0}};
     CHECK(host.DrawIndexed(pipeline,color,depth,vb,ib,3,VK_INDEX_TYPE_UINT16,{1,0,0,1},&game));
     CHECK(host.ReadImage(color,result) && result==first);
@@ -148,6 +152,57 @@ static void GameAbiTests(VulkanHost& host)
     CHECK(!host.DrawIndexed(pipeline,color,depth,vb,ib,3,VK_INDEX_TYPE_UINT16,{0,0,0,1},&game));
     for(auto id:{pipeline,vb,ib,constants,shared,color,depth,texture}) CHECK(host.Destroy(id));
     std::puts("Game ABI: device-address constants, descriptor textures/samplers, push constants and indexed draw pixels passed");
+}
+static void NativeGameShaderDrawTest()
+{
+    GuestGpu::ShaderCache cache; std::string error;
+    CHECK(cache.Initialize(GuestGpu::GetEmbeddedShaderCache(),error));
+    GuestGpu::ShaderModule vs,ps;
+    for(const auto& entry:cache.Entries())
+    {
+        GuestGpu::ShaderModule module; CHECK(cache.Decode(entry.hash,module,error));
+        if(!module.bindings.empty()) continue;
+        if(!vs.hash && module.stage==0 && !module.inputLocations.empty() &&
+            std::all_of(module.inputLocations.begin(),module.inputLocations.end(),[](auto loc){return loc<=8 || loc==10 || loc==11;})) vs=std::move(module);
+        else if(!ps.hash && module.stage==4 && module.inputLocations.empty()) ps=std::move(module);
+        if(vs.hash && ps.hash) break;
+    }
+    CHECK(vs.hash && ps.hash);
+    // Fabricated device snapshot, but genuine modules from the user's game cache.
+    // This tests native-batch dispatch, not actual in-game object association.
+    GuestGpu::NativeBatch batch; batch.draws.emplace_back(); auto& draw=batch.draws[0];
+    draw.kind=GuestGpu::DrawKind::IndexedVertices; draw.arguments={4,0,0,3};
+    draw.state.words[13048/4]=0x5000; draw.state.words[13044/4]=0x6000;
+    draw.vertexShader={0x5000,0,vs.hash,GuestGpu::ShaderReadStatus::Success,0,true,true};
+    draw.pixelShader={0x6000,4,ps.hash,GuestGpu::ShaderReadStatus::Success,0,true,true};
+    draw.state.words[12792/4]=0x7000; draw.state.words[10460/4]=15;
+    for(auto offset:{10552,10584,10588,10592}) draw.state.words[offset/4]=0x10001;
+    const std::array<float,6> viewport{0,0,64,64,0,1};
+    for(size_t i=0;i<6;++i) draw.state.words[13000/4+i]=std::bit_cast<uint32_t>(viewport[i]);
+    draw.state.words[13028/4+2]=64; draw.state.words[13028/4+3]=64;
+    draw.resources.captured=true; draw.resources.status=GuestGpu::ConversionResult::Success;
+    GuestGpu::VertexSnapshot vertices; vertices.stride=uint32_t(vs.inputLocations.size())*16;
+    vertices.bytes.resize(vertices.stride*3);
+    for(size_t i=0;i<vs.inputLocations.size();++i)
+    {
+        auto loc=vs.inputLocations[i]; uint32_t usage=0,index=0;
+        if(loc==1) usage=3; else if(loc==2) usage=6; else if(loc==3) usage=7;
+        else if(loc>=4 && loc<=7) {usage=5;index=loc-4;}
+        else if(loc==8 || loc==11) {usage=10;index=loc==11;}
+        else if(loc==10) usage=1;
+        draw.resources.declaration.push_back({0,uint32_t(i)*16,0x1A23A6,usage,index,0});
+    }
+    draw.resources.vertices.push_back(std::move(vertices));
+    draw.indices.count=3; draw.indices.stride=2; draw.indices.bytes={0,0,1,0,2,0};
+    draw.resources.payloadBytes=draw.resources.vertices[0].bytes.size(); batch.payloadBytes=draw.resources.payloadBytes+6;
+    VulkanBackend backend(nullptr,true,true); backend.Init(64,64);
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Submitted);
+    CHECK(backend.GetHostStats().indexedDraws==1 && backend.GetHostStats().pipelinesCreated==1);
+    draw.resources.declaration.clear();
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
+    CHECK(backend.GetHostStats().indexedDraws==1);
+    backend.Shutdown(); CHECK(backend.GetHostStats().validationErrors==0 && backend.GetHostStats().allocatedBytes==0);
+    std::puts("Native indexed batch submitted with genuine game cache VS/PS; unsupported declaration rejected");
 }
 static void BackendTests(SDL_Window* window)
 {
@@ -250,6 +305,12 @@ int main(int argc, char** argv)
         auto* window = SDL_CreateWindow("Vulkan WSI regression", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
             64, 64, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
         CHECK(window);
+        unsigned count=0; CHECK(SDL_Vulkan_GetInstanceExtensions(window,&count,nullptr));
+        std::vector<const char*> extensions(count); CHECK(SDL_Vulkan_GetInstanceExtensions(window,&count,extensions.data()));
+        VulkanHost host; VulkanConfig config; config.validation=true; config.instanceExtensions=extensions;
+        config.createSurface=[window](VkInstance instance) { VkSurfaceKHR surface{}; SDL_Vulkan_CreateSurface(window,instance,&surface); return surface; };
+        CHECK(host.Init(config)); CHECK(host.ResizeSwapchain(64,64));
+        GameAbiTests(host,true); host.Shutdown(); CHECK(host.Stats().validationErrors==0);
         BackendTests(window);
         SDL_DestroyWindow(window); SDL_Quit();
         std::puts("Vulkan WSI acquire/clear/submit/present/resize with validation passed");
@@ -331,5 +392,6 @@ int main(int argc, char** argv)
     host.Shutdown();
     CHECK(host.Stats().validationErrors == 0);
     BackendTests(nullptr);
+    NativeGameShaderDrawTest();
     std::puts("Vulkan resources, readback, transfers, state translation and lifecycle with validation passed");
 }

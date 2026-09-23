@@ -97,3 +97,12 @@ behavior is an explicit missing-hash failure, never arbitrary shader selection.
 layouts, game shader pipeline creation, render-target/resolve semantics and guest
 `vkCmdDraw*`. Successful resolution currently returns `ResourcesUploaded`, not
 `Submitted`, and is not evidence of game playability.
+
+## Direct-frame consumer
+
+The experimental `SONIC_VULKAN_DIRECT_DRAW=1` path now creates Vulkan pipelines
+from resolved cache modules, binds 24-byte address constants and 2D/sampler
+descriptors, and issues indexed commands. See [VULKAN.md](VULKAN.md) for its
+strict single-target/float-vertex profile and its missing native target/resolve
+and Clear semantics. Successful cache validation still does not imply shader
+profile support, verified in-game bindings or playability.

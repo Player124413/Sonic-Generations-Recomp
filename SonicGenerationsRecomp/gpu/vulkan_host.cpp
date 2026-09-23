@@ -329,13 +329,13 @@ bool VulkanHost::Init(const VulkanConfig& config)
     vkGetPhysicalDeviceFeatures2(p.physical, &features);
     VkPhysicalDeviceVulkan12Features enabled12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     p.gameAbi = properties.apiVersion >= VK_API_VERSION_1_2 && properties.limits.maxPerStageDescriptorSampledImages >= 32 &&
-        properties.limits.maxPerStageDescriptorSamplers >= 32 && available.shaderInt64 &&
+        properties.limits.maxPerStageDescriptorSamplers >= 32 && available.shaderInt64 && available.shaderClipDistance &&
         available.shaderSampledImageArrayDynamicIndexing && supported12.bufferDeviceAddress &&
         supported12.scalarBlockLayout && supported12.runtimeDescriptorArray &&
         supported12.descriptorBindingPartiallyBound && supported12.shaderSampledImageArrayNonUniformIndexing;
     if (p.gameAbi)
     {
-        enabled.shaderInt64 = enabled.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+        enabled.shaderClipDistance = enabled.shaderInt64 = enabled.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
         enabled12.bufferDeviceAddress = enabled12.scalarBlockLayout = enabled12.runtimeDescriptorArray = VK_TRUE;
         enabled12.descriptorBindingPartiallyBound = enabled12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     }

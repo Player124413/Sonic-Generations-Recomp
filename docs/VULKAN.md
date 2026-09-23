@@ -11,25 +11,52 @@ rendering. It owns a Vulkan instance/device/graphics queue and implements:
   color/depth clears, texture uploads and byte-verified readback paths.
 - Command pool/buffer recording, `vkQueueSubmit`, fences and completion-before-
   destruction. This reference path is synchronous, not a high-performance queue.
-- A real descriptor-free graphics profile: SPIR-V shader modules, pipeline
-  layout/render pass, vertex input, depth/cull state, framebuffer, dynamic
-  viewport/scissor and `vkCmdDrawIndexed`. The test renders an original triangle
-  fixture and verifies both color and depth pixels via readback. It is **not**
-  the game's graphics pipeline ABI or a fallback shader for the game.
-- SDL Vulkan surface, swapchain acquire, transfer clear, presentation semaphores,
-  `vkQueuePresentKHR`, out-of-date/suboptimal handling and swapchain recreation.
-- Guest snapshot constants, endian-converted indices/vertex streams and decoded
-  2D texture uploads to actual Vulkan buffers/images. The
-  result is **ResourcesUploaded**, never Submitted: no game draw is issued yet.
-- A host state translation dispatch table for depth/raster/alpha state and
-  blend-factor/op conversion. Unsupported behavior remains explicitly marked.
+- Both the original descriptor-free fixture path and the fork's Vulkan shader
+  ABI: three 64-bit buffer addresses in 24 bytes of push constants, scalar
+  layout, runtime image arrays at set 0/binding 0, samplers at set 3/binding 0,
+  per-module entry names (`shaderMain` in the supplied cache), specialization 0.
+  Sets 1/2 are reserved, not implemented 3D/cube heaps.
+- Indexed draw pipelines with float1..float4 attributes, depth/cull/blend state,
+  viewport/scissor, signed base vertex, and attachment LOAD between draws.
+- SDL swapchain acquire, clear or image blit, presentation semaphores,
+  `vkQueuePresentKHR`, and out-of-date/suboptimal recreation.
+- Native declaration capture (device +12216; count +24; elements +52), CTAB
+  sampler reflection, constant/resource uploads, stage-checked cache lookup,
+  pipeline creation and `vkCmdDrawIndexed` dispatch from `SubmitGuestBatch`.
 
-The window currently shows a **black host clear**, not a game image. The host
-color/depth working images are not yet mapped to guest render-target resources.
-The game shader cache, vertex declarations, complete texture formats/mips, shader
-descriptor layouts, clears/resolves, complete state and command-list replay remain to be
-connected before graphics pipelines and `vkCmdDraw*` can execute the game.
-Do not interpret transfer/present counters as rendered game frames.
+## Experimental direct-frame drawing
+
+Set `SONIC_RENDER_BACKEND=vulkan` and `SONIC_VULKAN_DIRECT_DRAW=1` in a build
+with `SONIC_GENERATIONS_ENABLE_VULKAN=ON`. `SONIC_VULKAN_VALIDATION=1` enables
+validation. Without the direct-draw flag, the previous resource-upload-only
+mode remains available and shows a black host clear.
+
+**This is not the complete game renderer or a playability claim.** Direct-frame
+mode treats one full-window native color target as a host RGBA8 working image.
+It does not yet establish the native backbuffer/EDRAM/resolve association. It
+clears that image to black and depth to 1 at the start of the batch; it does not
+replay guest Clear calls. It preserves attachments between draws and presents
+the completed image only after successful submission of the batch. Failed or
+unsupported batches are not reported as rendered frames.
+
+The bounded profile accepts indexed triangle lists, a single stream of float
+attributes, one color/depth target identity per batch, a full-window viewport,
+bounded scissor and base-level 2D pixel textures. It rejects vertex textures,
+3D/cube descriptors, packed/half vertex formats, MRT, MSAA, stencil, alpha test,
+constant/dual-source blending and unsupported state bits. These restrictions
+exclude substantial game rendering; they must not be mistaken for compatibility
+with all 6,404 compiled shaders. Vulkan 1.2 BDA, scalar layout, descriptor
+indexing, shaderInt64 and shaderClipDistance features are checked/enabled.
+
+Only successful real native-batch draws return `Submitted`; upload-only mode
+returns `ResourcesUploaded`. No fixture shader is used as a runtime fallback.
+The path is synchronous and recreates per-batch resources/pipelines: persistent
+caches and asynchronous frame resource management are not implemented.
+
+Tests separately cover CPU capture/CTAB bounds, colored ABI-fixture pixel
+readback (including descriptors and BDA), target preservation, WSI image blits,
+and native-batch submission with genuine cache modules but **fabricated guest
+state**. Neither fixture proves in-game shader binding or correct game frames.
 
 ## Native resource upload path
 
