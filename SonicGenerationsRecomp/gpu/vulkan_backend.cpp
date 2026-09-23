@@ -225,6 +225,7 @@ try
             const auto targets=d.state.ColorTargets();
             const auto state=HostGpu::DecodeFixedState(d.state);
             if(d.kind!=GuestGpu::DrawKind::IndexedVertices || d.arguments[0]!=4 || !d.indices.count || d.indices.count%3 ||
+                !d.state.IndexBuffer() || !d.state.words[12812/4] || !d.state.words[12216/4] ||
                 vs==nextShaders.end() || ps==nextShaders.end() || !d.resources.captured ||
                 !d.vertexShader.reflectionValid || !d.pixelShader.reflectionValid || d.vertexShader.samplerMask ||
                 !d.vertexShader.packedBooleansSupported || !d.pixelShader.packedBooleansSupported ||
@@ -313,6 +314,7 @@ try
     std::vector<HostGpu::Resource> pipelines;
     if(graphics)
     {
+        if((resize || host.SwapchainNeedsResize()) && !RecreateTargets()) return GuestGpu::SubmissionResult::Incomplete;
         pipelines.reserve(batch.draws.size());
         for(auto& plan:prepared)
         {

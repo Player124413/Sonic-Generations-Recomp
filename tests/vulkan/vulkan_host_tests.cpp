@@ -129,14 +129,14 @@ static void GameAbiTests(VulkanHost& host, bool present = false)
     std::array<uint8_t,8192> data{};
     const std::array<float,4> tint{0.5f,1,0.25f,1}; std::memcpy(data.data()+4096,tint.data(),16);
     CHECK(host.WriteBuffer(constants,data));
-    std::array<uint8_t,320> sharedData{}; CHECK(host.WriteBuffer(shared,sharedData));
+    std::array<uint8_t,320> sharedData{}; sharedData[0]=3; sharedData[192]=3; CHECK(host.WriteBuffer(shared,sharedData));
     CHECK(host.UploadRgba(texture,std::array<uint8_t,4>{255,128,0,255}));
     CHECK(host.ClearColor(color,{0,0,1,1}) && host.ClearDepth(depth,1));
     const std::array<VkVertexInputAttributeDescription,1> attributes{{{0,0,VK_FORMAT_R32G32_SFLOAT,0}}};
     GraphicsPipelineInfo info; info.vertexShader=vs; info.fragmentShader=ps; info.vertexStride=8;
     info.attributes=attributes; info.generationsAbi=true; info.preserveTargets=true; info.blend.colorWriteMask=15;
     auto pipeline=host.CreateGraphicsPipeline(info); CHECK(pipeline);
-    const std::array<GameTextureBinding,1> textures{{{0,texture}}};
+    const std::array<GameTextureBinding,1> textures{{{3,texture}}};
     GameDrawBindings game; game.constants=constants; game.shared=shared; game.textures=textures;
     game.viewport={0,0,32,32,0,1}; game.scissor={{0,0},{32,32}};
     CHECK(host.DrawIndexed(pipeline,color,depth,vb,ib,3,VK_INDEX_TYPE_UINT16,{0,0,0,1},&game));
@@ -175,13 +175,14 @@ static void NativeGameShaderDrawTest()
     draw.state.words[13048/4]=0x5000; draw.state.words[13044/4]=0x6000;
     draw.vertexShader={0x5000,0,vs.hash,GuestGpu::ShaderReadStatus::Success,0,true,true};
     draw.pixelShader={0x6000,4,ps.hash,GuestGpu::ShaderReadStatus::Success,0,true,true};
+    draw.state.words[12812/4]=0x8000; draw.state.words[12788/4]=0x9000; draw.state.words[12216/4]=0xA000;
     draw.state.words[12792/4]=0x7000; draw.state.words[10460/4]=15;
     for(auto offset:{10552,10584,10588,10592}) draw.state.words[offset/4]=0x10001;
     const std::array<float,6> viewport{0,0,64,64,0,1};
     for(size_t i=0;i<6;++i) draw.state.words[13000/4+i]=std::bit_cast<uint32_t>(viewport[i]);
     draw.state.words[13028/4+2]=64; draw.state.words[13028/4+3]=64;
     draw.resources.captured=true; draw.resources.status=GuestGpu::ConversionResult::Success;
-    GuestGpu::VertexSnapshot vertices; vertices.stride=uint32_t(vs.inputLocations.size())*16;
+    GuestGpu::VertexSnapshot vertices; vertices.resource=0x8000; vertices.stride=uint32_t(vs.inputLocations.size())*16;
     vertices.bytes.resize(vertices.stride*3);
     for(size_t i=0;i<vs.inputLocations.size();++i)
     {
@@ -193,7 +194,7 @@ static void NativeGameShaderDrawTest()
         draw.resources.declaration.push_back({0,uint32_t(i)*16,0x1A23A6,usage,index,0});
     }
     draw.resources.vertices.push_back(std::move(vertices));
-    draw.indices.count=3; draw.indices.stride=2; draw.indices.bytes={0,0,1,0,2,0};
+    draw.indices.resource=0x9000; draw.indices.count=3; draw.indices.stride=2; draw.indices.bytes={0,0,1,0,2,0};
     draw.resources.payloadBytes=draw.resources.vertices[0].bytes.size(); batch.payloadBytes=draw.resources.payloadBytes+6;
     VulkanBackend backend(nullptr,true,true); CHECK(backend.Init(VideoMode{64,64}));
     CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Submitted);

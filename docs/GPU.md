@@ -1,8 +1,9 @@
 # Generations GPU: observation hooks
 
-**NullBackend remains the default. An opt-in Vulkan backend now submits actual
-resource transfers/clears and presents a host clear, not game rendering. A
-separate host graphics profile also executes a pixel-verified indexed test draw.** See
+**NullBackend remains the default. Vulkan supports resource uploads and an
+experimental opt-in direct-frame native draw path: cache shader pipelines,
+address constants, 2D/sampler descriptors and indexed draws. Native target/resolve
+semantics and complete game rendering are not implemented.** See
 [VULKAN.md](VULKAN.md) for host resources, submission, verified guest state
 replacements, build options and tests. The eight observation hooks below retain
 their original pass-through behavior.

@@ -93,10 +93,10 @@ Native resource mutation / in-place creation paths may require additional captur
 hooks if reconstruction no longer matches an original container; the current
 behavior is an explicit missing-hash failure, never arbitrary shader selection.
 
-**Still not connected:** descriptor allocation and writes, reflected vertex
-layouts, game shader pipeline creation, render-target/resolve semantics and guest
-`vkCmdDraw*`. Successful resolution currently returns `ResourcesUploaded`, not
-`Submitted`, and is not evidence of game playability.
+Lookup alone remains an upload-only path (`ResourcesUploaded`). The experimental
+consumer below now creates descriptors/pipelines and can return `Submitted` for
+its supported draw profile. Native render-target/resolve semantics, complete
+vertex/state support and real-game validation are still missing.
 
 ## Direct-frame consumer
 

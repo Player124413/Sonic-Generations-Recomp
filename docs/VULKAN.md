@@ -111,9 +111,10 @@ The uploaded cache now has a bounded Zstd/SMOL-V loader and hash lookup;
 see [SHADER_CACHE_RUNTIME.md](SHADER_CACHE_RUNTIME.md) for actual module counts,
 entry names, observed descriptors and tests. Vulkan initialization loads it.
 Native shader bindings now resolve to stage-checked cache modules (see the
-cache document). Buffer device address features, descriptor indexing/layouts,
-reflection-driven vertex declarations and boolean packing still need wiring.
-Do not pass this cache to the fixture pipeline or claim shaders alone suffice.
+cache document). The direct-frame profile supplies the address constants,
+2D/sampler descriptors, float vertex declarations and packed boolean word.
+Other vertex/texture profiles and native target semantics remain unsupported.
+Do not pass this cache to the descriptor-free fixture pipeline.
 Reference: `tools/XenosRecomp/XenosRecomp/{shader_common.h,shader_recompiler.cpp,main.cpp}`
 in the pinned fork.
 
@@ -203,9 +204,11 @@ xvfb-run -a ./build-vulkan/vulkan_host_tests --wsi
 
 Tests additionally require `glslang-tools` to compile their small original GLSL
 fixtures into build-directory SPIR-V. These shaders never ship in the runtime.
-The initial graphics profile accepts descriptor-free SPIR-V 1.0, one vertex
-stream (float2/float4 attributes), triangle lists, RGBA8 + D32 and no blending.
-Unsupported descriptor/push-constant shaders are refused, not substituted.
+The legacy fixture profile accepts descriptor-free SPIR-V 1.0. A separate
+Vulkan 1.2 fixture exercises the address/descriptor ABI with nonzero heap indices,
+constant tint, texture sampling, color readback and attachment preservation.
+A fabricated native batch also creates a pipeline and draws with actual VS/PS
+modules from the supplied game cache. Unsupported layouts are refused.
 
 The tests execute actual Vulkan calls (including an indexed triangle draw),
 compare buffer, image and rasterized color/depth readbacks,
@@ -225,10 +228,11 @@ CPU-only state tests are not substitutes for the Vulkan execution workflow.
   this accounting. Host handle IDs are not reused, including across re-init.
 - Queue submission/presentation is deliberately serialized. Resize requests are
   consumed by the presentation path; no resources are freed while in flight.
-- Captured native index bytes are uploaded unchanged, with four-byte transfer
-  padding. Xenos index endianness must be resolved before binding them for draws.
-- Float banks are uploaded in explicit little-endian word order, but descriptor
-  ABI, boolean constants and shader bindings are still unresolved.
+- Captured indices are endian-converted before upload, with four-byte transfer
+  padding. Direct draws validate signed base vertex against the captured stream.
+- Float banks are uploaded in explicit little-endian word order. The direct-frame
+  profile supplies the fork's packed boolean word and rejects CTAB booleans
+  outside its supported 16-bit-per-stage range.
 - The native SDK is not entirely bypassed; its existing unfinished Vd paths can
   still prevent reaching draw/present. The backend does not fix those paths by
   returning fabricated success.
@@ -247,3 +251,9 @@ The first execution run passed resource readbacks but synchronization validation
 caught a swapchain acquire/layout-transition write-after-read hazard. The acquire
 wait and initial transition now form a full execution dependency; the subsequent
 resource + WSI run passed with zero validation errors. The tests retain this check.
+
+The native draw integration passed Vulkan execution and WSI checks on lavapipe
+in run `35908943046`, including fixture color readback, real cache shader pipeline
+submission and zero validation errors. GPU CPU tests passed on Linux/Windows in
+`35908943103`; local ASan/UBSan capture tests passed 8/8. These are standalone
+renderer tests, not a complete-runtime or real-game run.
