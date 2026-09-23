@@ -182,6 +182,7 @@ int main(int argc, char* argv[])
     // Preserve diagnostics when stdout is redirected and the guest crashes.
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     os::logger::Init();
+    SDL_SetMainReady();
 
     bool forceInstall = false;
     bool forceCheck = false;

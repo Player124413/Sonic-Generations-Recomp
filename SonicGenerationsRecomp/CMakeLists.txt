@@ -83,7 +83,8 @@ target_link_libraries(SonicGenerationsRecompCore PUBLIC
     SDL2::SDL2)
 
 if (WIN32)
-    target_link_libraries(SonicGenerationsRecompCore PUBLIC winmm ole32 shell32)
+    target_link_libraries(SonicGenerationsRecompCore PUBLIC winmm ole32 shell32 windowsapp)
+    target_compile_definitions(SonicGenerationsRecompCore PUBLIC SDL_MAIN_HANDLED)
 endif()
 
 

@@ -25,21 +25,28 @@
             }
         },
         {
-            "name": "msvc",
-            "displayName": "Windows MSVC Release",
-            "inherits": "default",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Windows"
-            }
-        },
-        {
             "name": "linux-vulkan",
             "displayName": "Linux Clang Vulkan runtime",
             "inherits": "linux-clang",
             "binaryDir": "${sourceDir}/build/linux-vulkan",
             "cacheVariables": {
+                "SONIC_GENERATIONS_ENABLE_VULKAN": "ON"
+            }
+        },
+        {
+            "name": "windows-clang",
+            "generator": "Visual Studio 17 2022",
+            "architecture": "x64",
+            "toolset": "ClangCL",
+            "binaryDir": "${sourceDir}/build/windows-clang",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static",
                 "SONIC_GENERATIONS_ENABLE_VULKAN": "ON"
             }
         }
@@ -54,12 +61,13 @@
             "configurePreset": "linux-clang"
         },
         {
-            "name": "msvc",
-            "configurePreset": "msvc"
-        },
-        {
             "name": "linux-vulkan",
             "configurePreset": "linux-vulkan"
+        },
+        {
+            "name": "windows-clang",
+            "configurePreset": "windows-clang",
+            "configuration": "Release"
         }
     ],
     "testPresets": [
@@ -73,6 +81,14 @@
         {
             "name": "linux-vulkan",
             "configurePreset": "linux-vulkan",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "windows-clang",
+            "configurePreset": "windows-clang",
+            "configuration": "Release",
             "output": {
                 "outputOnFailure": true
             }

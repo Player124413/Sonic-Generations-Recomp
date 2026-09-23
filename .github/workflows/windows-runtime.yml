@@ -1,0 +1,65 @@
+name: Windows x64 runtime
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/windows-runtime.yml'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'SonicGenerationsRecomp/**'
+      - 'SonicGenerationsRecompLib/CMakeLists.txt'
+      - 'tests/*.cpp'
+      - 'tests/CMakeLists.txt'
+      - 'scripts/windows/**'
+      - 'cmake/**'
+concurrency:
+  group: windows-runtime-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch pinned sources
+        run: |
+          git submodule update --init tools/XenonRecomp tools/XenosRecomp tools/ffmpeg-xma
+          git -C tools/XenonRecomp submodule update --init --recursive
+          git -C tools/XenosRecomp submodule update --init thirdparty/smol-v thirdparty/zstd thirdparty/xxHash
+      - name: Install Windows libraries
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install sdl2:x64-windows-static vulkan-headers:x64-windows-static vulkan-loader:x64-windows-static
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure ClangCL runtime
+        run: >-
+          cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64 -T ClangCL
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DCMAKE_CXX_FLAGS_RELEASE="/Od /DNDEBUG"
+          -DCMAKE_C_FLAGS_RELEASE="/Od /DNDEBUG"
+          -DSONIC_GENERATIONS_ENABLE_VULKAN=ON
+      - name: Build executable and tests
+        run: cmake --build build-windows --config Release --parallel 2
+      - name: Runtime tests
+        run: ctest --test-dir build-windows -C Release --output-on-failure --timeout 120
+      - name: Executable smoke test
+        run: |
+          & ./build-windows/SonicGenerationsRecomp/Release/SonicGenerationsRecomp.exe --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package Windows runtime
+        run: |
+          New-Item -ItemType Directory package | Out-Null
+          Copy-Item build-windows/SonicGenerationsRecomp/Release/SonicGenerationsRecomp.exe package/
+          Get-ChildItem build-windows/SonicGenerationsRecomp/Release/*.dll -ErrorAction SilentlyContinue | Copy-Item -Destination package/
+          Copy-Item COPYING,THIRD_PARTY.md,docs/TESTING_WINDOWS.md package/
+          Copy-Item scripts/windows/*.cmd package/
+          git rev-parse HEAD | Set-Content package/revision.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-diagnostic-runtime
+          path: package/
+          if-no-files-found: error
