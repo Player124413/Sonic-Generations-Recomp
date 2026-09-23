@@ -24,7 +24,6 @@ set(SONIC_GENERATIONS_CORE_SOURCES
     "gpu/state_dispatch.cpp"
     "gpu/state_tables.cpp"
     "gpu/state_table_hook.cpp"
-    "gpu/shader_cache.cpp"
     "apu/audio.cpp"
     "apu/xma.cpp"
     "apu/driver/sdl2_driver.cpp"

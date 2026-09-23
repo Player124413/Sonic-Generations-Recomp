@@ -1,0 +1,20 @@
+include_guard(GLOBAL)
+enable_language(C)
+set(_cache_root "${CMAKE_CURRENT_LIST_DIR}/..")
+set(_cache_deps "${_cache_root}/tools/XenosRecomp/thirdparty")
+foreach(_dep smol-v/source/smolv.cpp zstd/lib/zstd.h)
+    if(NOT EXISTS "${_cache_deps}/${_dep}")
+        message(FATAL_ERROR "Shader cache dependency missing: ${_dep}. Initialize XenosRecomp and its smol-v/zstd submodules.")
+    endif()
+endforeach()
+# Decoder only; no DXC, encoder, command-line zstd or assembly required.
+file(GLOB _zstd_sources CONFIGURE_DEPENDS "${_cache_deps}/zstd/lib/common/*.c" "${_cache_deps}/zstd/lib/decompress/*.c")
+add_library(SonicShaderCodecs STATIC ${_zstd_sources} "${_cache_deps}/smol-v/source/smolv.cpp")
+target_compile_definitions(SonicShaderCodecs PRIVATE ZSTD_DISABLE_ASM=1)
+target_include_directories(SonicShaderCodecs PUBLIC "${_cache_deps}/zstd/lib" "${_cache_deps}/smol-v/source")
+add_library(SonicShaderCache STATIC
+    "${_cache_root}/SonicGenerationsRecomp/gpu/shader_cache_data.cpp"
+    "${_cache_root}/SonicGenerationsRecomp/gpu/shader_cache_loader.cpp")
+target_compile_features(SonicShaderCache PUBLIC cxx_std_20)
+target_include_directories(SonicShaderCache PUBLIC "${_cache_root}/SonicGenerationsRecomp")
+target_link_libraries(SonicShaderCache PRIVATE SonicShaderCodecs)

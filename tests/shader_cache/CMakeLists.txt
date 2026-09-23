@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(ShaderCacheTests LANGUAGES C CXX)
+enable_testing()
+include(../../cmake/ShaderCache.cmake)
+add_executable(shader_cache_tests shader_cache_tests.cpp)
+target_link_libraries(shader_cache_tests PRIVATE SonicShaderCache)
+add_test(NAME shader_cache_tests COMMAND shader_cache_tests)
+set_tests_properties(shader_cache_tests PROPERTIES TIMEOUT 180)

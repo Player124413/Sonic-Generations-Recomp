@@ -77,10 +77,10 @@ samplers, and 256/260/264/272 hold packed booleans, swapped texcoords, half-pixe
 offset and alpha threshold. Descriptor heaps are in spaces0..3. The Generations
 patch adds the separate 32-byte hardware boolean bank at b3/space4.
 
-The workflow output is also not raw SPIR-V: its cache contains SMOL-V encoded
-modules in a Zstd-compressed blob indexed by XXH3 hashes. The current cache seam
-and descriptor-free host pipeline do not implement this ABI. Buffer device
-address features, descriptor indexing/layouts, decompression/hash lookup,
+The uploaded cache now has a bounded Zstd/SMOL-V loader and hash lookup;
+see [SHADER_CACHE_RUNTIME.md](SHADER_CACHE_RUNTIME.md) for actual module counts,
+entry names, observed descriptors and tests. Vulkan initialization loads it.
+Buffer device address features, descriptor indexing/layouts, guest hash mapping,
 reflection-driven vertex declarations and boolean packing still need wiring.
 Do not pass this cache to the fixture pipeline or claim shaders alone suffice.
 Reference: `tools/XenosRecomp/XenosRecomp/{shader_common.h,shader_recompiler.cpp,main.cpp}`

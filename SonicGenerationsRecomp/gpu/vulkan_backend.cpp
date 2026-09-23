@@ -18,6 +18,7 @@ bool VulkanBackend::Init(const VideoMode& mode)
 {
     std::lock_guard lock(mutex);
     host.Shutdown(); drawResources.clear(); states.clear(); color = depth = 0;
+    shaderCache = {};
     error.clear(); width = mode.width; height = mode.height; resize = true;
     std::vector<const char*> extensions;
     HostGpu::VulkanConfig config;
@@ -38,6 +39,11 @@ bool VulkanBackend::Init(const VideoMode& mode)
         SDL_Vulkan_GetDrawableSize(window, &w, &h);
         width = uint32_t(std::max(0, w)); height = uint32_t(std::max(0, h));
     }
+    std::string cacheError;
+    if (!shaderCache.Initialize(GuestGpu::GetEmbeddedShaderCache(), cacheError))
+        return Fail("Shader cache initialization failed: " + cacheError);
+    std::fprintf(stderr, "Loaded %zu indexed game shaders (Zstd/SMOL-V); this does not create game pipelines.\n",
+        shaderCache.Entries().size());
     if (!host.Init(config)) { const auto message = host.Error(); host.Shutdown(); return Fail(message); }
     if (width && height && !RecreateTargets()) { host.Shutdown(); return false; }
     std::fprintf(stderr, "Vulkan device: %s. Resources/transfers active; game graphics pipelines are not implemented.\n", host.AdapterName().c_str());
@@ -53,6 +59,7 @@ void VulkanBackend::Shutdown()
     std::lock_guard lock(mutex);
     // Host waits idle before freeing every resource, including exceptional paths.
     host.Shutdown(); drawResources.clear(); states.clear(); color = depth = 0;
+    shaderCache = {};
 }
 bool VulkanBackend::RecreateTargets()
 {

@@ -1,5 +1,6 @@
 #pragma once
 #include <gpu/render_backend.h>
+#include <gpu/shader_cache.h>
 #include <gpu/vulkan_host.h>
 #include <gpu/vulkan_state.h>
 #include <mutex>
@@ -30,6 +31,7 @@ private:
     SDL_Window* window;
     bool validation;
     HostGpu::VulkanHost host;
+    GuestGpu::ShaderCache shaderCache;
     uint32_t width = 0, height = 0;
     bool resize = true;
     HostGpu::Resource color = 0, depth = 0;

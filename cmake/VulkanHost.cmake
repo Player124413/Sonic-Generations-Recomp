@@ -12,3 +12,6 @@ target_link_libraries(SonicVulkanHost PUBLIC Vulkan::Vulkan SDL2::SDL2)
 
 include("${CMAKE_CURRENT_LIST_DIR}/GpuResources.cmake")
 target_link_libraries(SonicVulkanHost PUBLIC SonicGpuResources)
+
+include("${CMAKE_CURRENT_LIST_DIR}/ShaderCache.cmake")
+target_link_libraries(SonicVulkanHost PUBLIC SonicShaderCache)

@@ -1,0 +1,49 @@
+name: Uploaded shader cache validation
+on:
+  push:
+    paths:
+      - 'SonicGenerationsRecomp/gpu/shader_cache*'
+      - 'cmake/ShaderCache.cmake'
+      - 'tests/shader_cache/**'
+      - '.github/workflows/shader-cache-tests.yml'
+  pull_request:
+    paths:
+      - 'SonicGenerationsRecomp/gpu/shader_cache*'
+      - 'cmake/ShaderCache.cmake'
+      - 'tests/shader_cache/**'
+      - '.github/workflows/shader-cache-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  decode:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch pinned decoders only
+        run: |
+          git submodule update --init tools/XenosRecomp
+          git -C tools/XenosRecomp submodule update --init thirdparty/smol-v thirdparty/zstd
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S tests/shader_cache -B build-shader-cache -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        run: cmake -S tests/shader_cache -B build-shader-cache -G 'Visual Studio 17 2022' -A x64 -T ClangCL
+      - name: Build
+        run: cmake --build build-shader-cache --config Release --parallel 2
+      - name: Decode and inspect every uploaded shader
+        run: ctest --test-dir build-shader-cache -C Release --output-on-failure
+      - name: Independently validate SPIR-V
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y spirv-tools
+          ./build-shader-cache/shader_cache_tests build-shader-cache/modules
+          python3 tests/shader_cache/validate_modules.py build-shader-cache/modules
