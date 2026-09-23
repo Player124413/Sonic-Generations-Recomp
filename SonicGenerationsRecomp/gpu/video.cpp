@@ -1,5 +1,6 @@
 #include <stdafx.h>
 #include <gpu/video.h>
+#include <gpu/guest_hooks.h>
 #include <os/logger.h>
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,9 @@ void Video::SetBackend(std::unique_ptr<IRenderBackend> backend)
 
 bool Video::Init()
 {
+    const char* trace = std::getenv("SONIC_GPU_TRACE");
+    GuestGpu::EnableObservation(trace && std::strcmp(trace, "1") == 0);
+
     if (!g_backend)
         g_backend = std::make_unique<NullBackend>();
 
@@ -49,6 +53,20 @@ bool Video::Init()
 
 void Video::Shutdown()
 {
+    GuestGpu::EnableObservation(false);
+    const auto snapshot = GuestGpu::GetSnapshot();
+#define SONIC_GPU_ENTRY(name, symbol) \
+    { \
+        const auto& entry = snapshot.entries[static_cast<size_t>(GuestGpu::Entry::name)]; \
+        if (entry.entered != 0) \
+            LOGFN("GPU observation " #name ": {} entered, {} returned (not rendered)", entry.entered, entry.returned); \
+    }
+#include <gpu/guest_entries.inc>
+#undef SONIC_GPU_ENTRY
+    if (snapshot.failedCreates != 0)
+        LOGFN("GPU observation: {} failed device creation calls", snapshot.failedCreates);
+
+
     if (g_backend)
         g_backend->Shutdown();
 }

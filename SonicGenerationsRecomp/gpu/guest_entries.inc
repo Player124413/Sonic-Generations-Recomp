@@ -1,0 +1,9 @@
+// Generations-only observation boundaries. See docs/GPU.md.
+SONIC_GPU_ENTRY(CreateDevice, sub_82DB11C0)
+SONIC_GPU_ENTRY(ReleaseDevice, sub_82DB0D38)
+SONIC_GPU_ENTRY(SetViewport, sub_82DAB270)
+SONIC_GPU_ENTRY(SetScissor, sub_82DAA888)
+SONIC_GPU_ENTRY(SetRenderTarget, sub_82DAB320)
+SONIC_GPU_ENTRY(DrawVertices, sub_82DA7A48)
+SONIC_GPU_ENTRY(DrawIndexedVertices, sub_82DA7E60)
+SONIC_GPU_ENTRY(SwapHelper, sub_82DC48B0)

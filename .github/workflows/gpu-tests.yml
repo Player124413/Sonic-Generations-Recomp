@@ -1,0 +1,44 @@
+name: GPU observation hook tests
+on:
+  push:
+    paths:
+      - 'SonicGenerationsRecomp/gpu/**'
+      - 'SonicGenerationsRecomp/CMakeLists.txt'
+      - 'ppc/**'
+      - 'tests/gpu/**'
+      - '.github/workflows/gpu-tests.yml'
+  pull_request:
+    paths:
+      - 'SonicGenerationsRecomp/gpu/**'
+      - 'SonicGenerationsRecomp/CMakeLists.txt'
+      - 'ppc/**'
+      - 'tests/gpu/**'
+      - '.github/workflows/gpu-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hooks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch pinned PPC context dependency
+        run: |
+          git submodule update --init tools/XenonRecomp
+          git -C tools/XenonRecomp submodule update --init thirdparty/simde
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        run: cmake -S tests/gpu -B build-gpu -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        run: cmake -S tests/gpu -B build-gpu -G 'Visual Studio 17 2022' -A x64 -T ClangCL
+      - name: Build
+        run: cmake --build build-gpu --config Debug --parallel 2
+      - name: Test
+        run: ctest --test-dir build-gpu -C Debug --output-on-failure
