@@ -41,6 +41,11 @@ jobs:
           -DCMAKE_C_FLAGS_DEBUG='-O0 -g0'
           -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
           -DSONIC_GENERATIONS_ENABLE_VULKAN=ON
+      - name: Compile host runtime first (fail before the large PPC build)
+        run: |
+          ninja -C build-runtime -t targets all | awk '/SonicGenerationsRecompCore.dir.*\.o:|SonicGenerationsRecomp.dir.*\.o:|kernel_tests.dir.*\.o:|import_link_test.dir.*\.o:/ {sub(/:$/, "", $1); print $1}' > runtime-objects.txt
+          test -s runtime-objects.txt
+          xargs -a runtime-objects.txt ninja -C build-runtime -j 2
       - name: Build generated PPC, runtime, executable and kernel tests
         run: cmake --build build-runtime --parallel 2
       - name: Host kernel and import tests (no game assets)

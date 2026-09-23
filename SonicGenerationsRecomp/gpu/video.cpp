@@ -157,7 +157,12 @@ void Video::Present()
             {
                 ++g_stats.rejectedBatches;
                 if (g_stats.rejectedBatches == 1)
+                {
                     LOGN("GPU draws not submitted: pipeline/state/resource coverage is incomplete. Transfer uploads, if any, are counted separately.");
+                    LOGFN("GPU capture rejection: draws={}, invalidMemory={}, overflow={}, allocationFailure={}, resourceLimit={}",
+                        batch.draws.size(), batch.errors.invalidMemory, batch.errors.overflow,
+                        batch.errors.allocationFailure, batch.errors.resourceLimit);
+                }
             }
         }
     }
