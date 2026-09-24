@@ -50,7 +50,7 @@ def function_body(source, name):
 
 
 def inventory(entries):
-    sources = [(p.relative_to(ROOT).as_posix(), p.read_text())
+    sources = [(p.relative_to(ROOT).as_posix(), p.read_text(encoding="utf-8"))
                for p in (ROOT / 'SonicGenerationsRecomp').rglob('*.cpp') if p.name != 'shader_cache.cpp']
     result = []
     for library, ordinal, thunk, name in entries:
@@ -75,14 +75,14 @@ def main():
     args = parser.parse_args()
     tables = {}
     for module, library in [('xboxkrnl', 'xboxkrnl.exe'), ('xam', 'xam.xex')]:
-        text = (args.export_dir / f'{module}_table.inc').read_text()
+        text = (args.export_dir / f'{module}_table.inc').read_text(encoding="utf-8")
         tables[library] = {int(o, 16): (n, kind) for o, n, kind in EXPORT.findall(text)}
-    entries = validate((ROOT / 'ppc/ppc_func_mapping.cpp').read_text(),
-                       (ROOT / 'SonicGenerationsRecomp/kernel/title_function_imports.inc').read_text(),
-                       (ROOT / 'tests/import_link_test.cpp').read_text(), tables)
+    entries = validate((ROOT / 'ppc/ppc_func_mapping.cpp').read_text(encoding="utf-8"),
+                       (ROOT / 'SonicGenerationsRecomp/kernel/title_function_imports.inc').read_text(encoding="utf-8"),
+                       (ROOT / 'tests/import_link_test.cpp').read_text(encoding="utf-8"), tables)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(inventory(entries), indent=2) + '\n')
+        args.output.write_text(json.dumps(inventory(entries), indent=2) + '\n', encoding='utf-8')
     print(f'{len(entries)} function imports match PPC, pinned export types and link coverage.')
     print('Variable requirements and semantic completeness are NOT certified by this check.')
 
