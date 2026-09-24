@@ -6,6 +6,9 @@ on:
       - 'SonicGenerationsRecomp/kernel/title_function_imports.inc'
       - 'scripts/audit_import_inventory.py'
       - 'tests/test_import_inventory.py'
+      - 'tests/test_reference_title_metadata.py'
+      - 'tests/fixtures/reference_title_metadata.json'
+      - 'ppc/**'
       - 'tests/import_link_test.cpp'
       - 'ppc/ppc_func_mapping.cpp'
       - '.github/workflows/import-audit.yml'
@@ -27,6 +30,7 @@ jobs:
       - name: Pinned ordinal/type tables
         run: git submodule update --init tools/XenonRecomp
       - run: python tests/test_import_inventory.py
+      - run: python tests/test_reference_title_metadata.py
       - run: python scripts/audit_import_inventory.py --output import-inventory.json
       - uses: actions/upload-artifact@v4
         with:

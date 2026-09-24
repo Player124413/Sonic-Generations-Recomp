@@ -1,0 +1,37 @@
+{
+  "source": "https://github.com/Player124413/Sonic-Generations-recomp-android-and-pc-edition",
+  "revision": "a163e7d5cb9464056d8e34ab55f84fe38459a979",
+  "scope": "Observed metadata only; no external runtime or generated code copied. Not proof of identical XEX bytes or gameplay.",
+  "image": {
+    "IMAGE_BASE": "0x82000000",
+    "IMAGE_SIZE": "0x1C40000",
+    "CODE_BASE": "0x82480000",
+    "CODE_SIZE": "0x1215200"
+  },
+  "function_import_count": 219,
+  "function_import_sha256": "de5c928f3081c741de8a4c62422d4344d281d5f17fb1b401c9081062d706d5c1",
+  "forced_landings": [
+    "0x830D85CC",
+    "0x830D85D0",
+    "0x830F8158",
+    "0x830FCCC8",
+    "0x8311C21C",
+    "0x8311C258",
+    "0x8313AC68",
+    "0x8313AD84",
+    "0x8314427C",
+    "0x83144280",
+    "0x83144334",
+    "0x83144430",
+    "0x83144434",
+    "0x83148DEC",
+    "0x83165DB0",
+    "0x8319B434",
+    "0x831B0CF0",
+    "0x831B0DD0",
+    "0x831B0FD4",
+    "0x831B16A4",
+    "0x831B19E8",
+    "0x831BB26C"
+  ]
+}

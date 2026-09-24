@@ -25,3 +25,6 @@ add_test(NAME import_inventory_regression COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/test_import_inventory.py")
 add_test(NAME title_function_import_inventory COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/audit_import_inventory.py")
+
+add_test(NAME reference_title_metadata COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_reference_title_metadata.py")
