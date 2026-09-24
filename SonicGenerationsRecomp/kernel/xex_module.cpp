@@ -91,6 +91,9 @@ struct TitleExports
     be<uint32_t> moduleHandle{}, certMonitor{}, debugMonitor{};
     alignas(8) std::array<be<uint32_t>,6> timestamp{};
     std::array<be<uint16_t>,12> name{}; // default.xex + terminator
+    // Guest DWORD exports, not host Vulkan objects. Xenia's xboxkrnl_video.cc
+    // maps the device slots initially to null and the Xenos GPU clock to 500 MHz.
+    be<uint32_t> videoDevice{}, xamVideoDevice{}, gpuClockInMHz{};
 };
 static_assert(offsetof(TitleExports,moduleHandle)==0x64);
 TitleExports* g_exports=nullptr;
@@ -138,6 +141,9 @@ uint32_t xex_module::VariableAddress(uint32_t ordinal)
     case 0x17: return KernelObjects::TypeAddress(KernelObjects::Type::Semaphore);
     case 0x1B: return KernelObjects::TypeAddress(KernelObjects::Type::Thread);
     case 0x193: return g_memory.MapVirtual(&g_exports->moduleHandle);
+    case 0x1BE: return g_memory.MapVirtual(&g_exports->videoDevice);
+    case 0x1BF: return g_memory.MapVirtual(&g_exports->xamVideoDevice);
+    case 0x1C0: return g_memory.MapVirtual(&g_exports->gpuClockInMHz);
     case 0x266: return g_memory.MapVirtual(&g_exports->certMonitor); // disabled, null pointee
     case 0x59: return g_memory.MapVirtual(&g_exports->debugMonitor); // disabled, null pointee
     case 0xAD: return g_memory.MapVirtual(g_exports->timestamp.data());
@@ -241,6 +247,7 @@ bool xex_module::RegisterImage(std::span<const uint8_t> bytes, const Image& imag
         auto* storage=g_userHeap.Alloc(sizeof(TitleExports));
         if(!storage) { g_userHeap.Free(copy); return false; }
         g_exports=new(storage) TitleExports{};
+        g_exports->gpuClockInMHz=500;
         StartTimestampClock();
     }
     const uint32_t handle=ModuleHandle();

@@ -213,6 +213,47 @@ static void TestXexImportBinding()
         CHECK(xex_module::BindImports(bytes,image,error));
         CHECK(guest[2]==xex_module::VariableAddress(ordinal) && guest[2]!=0);
     }
+    // VdGpuClockInMHz is an IAT pointer to a BE DWORD, not an immediate 500
+    // and not a function thunk. The title dereferences it at 0x82DC6B38.
+    raw[2]=0x1C0;
+    CHECK(xex_module::BindImports(bytes,image,error) && error.empty());
+    const uint32_t clockAddress=guest[2];
+    CHECK(clockAddress!=0 && (clockAddress&3)==0);
+    CHECK(clockAddress==xex_module::VariableAddress(0x1C0));
+    if(clockAddress)
+    {
+        const auto* clock=static_cast<const uint8_t*>(g_memory.Translate(clockAddress));
+        CHECK(g_memory.IsInMemoryRange(clock));
+        CHECK(clock[0]==0 && clock[1]==0 && clock[2]==1 && clock[3]==0xF4);
+        CHECK(static_cast<const be<uint32_t>*>(g_memory.Translate(clockAddress))->get()==500);
+    }
+    const uint32_t deviceAddress=xex_module::VariableAddress(0x1BE);
+    const uint32_t xamDeviceAddress=xex_module::VariableAddress(0x1BF);
+    CHECK(deviceAddress && xamDeviceAddress && deviceAddress!=xamDeviceAddress);
+    CHECK(deviceAddress!=clockAddress && xamDeviceAddress!=clockAddress);
+    for(auto ordinal : {0x1BEu,0x1BFu})
+    {
+        raw[2]=ordinal;
+        CHECK(xex_module::BindImports(bytes,image,error) && error.empty());
+        const uint32_t address=guest[2];
+        CHECK(address!=0 && (address&3)==0);
+        CHECK(address==xex_module::VariableAddress(ordinal));
+        if(address)
+        {
+            auto* value=static_cast<be<uint32_t>*>(g_memory.Translate(address));
+            CHECK(g_memory.IsInMemoryRange(value) && value->get()==0);
+            *value=slot; // A guest may publish its device pointer to this slot.
+            CHECK(xex_module::BindImports(bytes,image,error));
+            CHECK(guest[2]==address && value->get()==slot);
+            *value=0;
+        }
+    }
+    CHECK(xex_module::RegisterImage(bytes,image));
+    raw[2]=0x1C0;
+    CHECK(xex_module::BindImports(bytes,image,error));
+    CHECK(guest[2]==clockAddress); // Stable storage across re-registration.
+    if(clockAddress)
+        CHECK(static_cast<const be<uint32_t>*>(g_memory.Translate(clockAddress))->get()==500);
     raw[2]=0xAD;
 
     // Failed plans must not partially patch the first, otherwise valid record.
