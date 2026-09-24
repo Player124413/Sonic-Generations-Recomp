@@ -1,4 +1,7 @@
 #include <stdafx.h>
+#ifdef _WIN32
+#include <ntstatus.h>
+#endif
 #include "xam_objects.h"
 #include "function.h"
 #include "object_imports.h"
