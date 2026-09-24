@@ -132,10 +132,10 @@ uint32_t XamEnumerate(uint32_t handle,uint32_t flags,void* buffer,uint32_t bytes
         }
         return 997; // accepted overlapped operation, result in the completion block
     }
-    if(!count) return 87;
     uint32_t resultCount=0;
     auto result=enumerator->Read(buffer,bytes,resultCount);
-    *count=resultCount; return result;
+    if(count) *count=resultCount;
+    return result;
 }
 uint32_t XamSessionCreateHandle(be<uint32_t>* handle)
 {

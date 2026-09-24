@@ -112,6 +112,11 @@ static void XamUnsupportedObjects()
 
 static void XamOverlappedEnumerationTests()
 {
+    auto* synchronous=CreateKernelObject<XamSnapshotEnumerator>(4,1,std::vector<uint8_t>{1,2,3,4});
+    std::array<uint8_t,4> syncBytes{};
+    CHECK(XamEnumerate(synchronous->handle,0,syncBytes.data(),4,nullptr,nullptr)==0);
+    CHECK(syncBytes[0]==1 && syncBytes[3]==4);
+    CHECK(KernelObjects::Close(synchronous->handle));
     CHECK(MSG_AREA(MSGID(60,7))==60 && MSG_VERSION(MSGID(60,7))==0);
     auto* enumerator=CreateKernelObject<XamSnapshotEnumerator>(4,1,std::vector<uint8_t>{1,2,3,4});
     auto* event=CreateKernelObject<Event>(true,false);
