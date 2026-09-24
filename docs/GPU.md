@@ -2,17 +2,18 @@
 
 **NullBackend remains the default. Vulkan supports resource uploads and an
 experimental opt-in direct-frame native draw path: cache shader pipelines,
-address constants, 2D/sampler descriptors and indexed/non-indexed triangle-list draws. Native target/resolve
-semantics and complete game rendering are not implemented.** See
+address constants, 2D/sampler descriptors and indexed/non-indexed triangle-list draws. A bounded native color-target → resolve → selected
+backbuffer path is implemented; depth/stencil, MSAA and complete game rendering
+are not.** See
 [VULKAN.md](VULKAN.md) for host resources, submission, verified guest state
-replacements, build options and tests. The nine observation hooks below retain
+replacements, build options and tests. The ten observation hooks below retain
 their original pass-through behavior.
 They are a preparatory layer for the static-SDK approach used by UnleashedRecomp,
 not a complete renderer or a demonstration that the game works.
 
 ## Implementation
 
-`gpu/guest_entries.inc` lists nine Generations-specific boundaries.
+`gpu/guest_entries.inc` lists ten Generations-specific boundaries.
 `guest_hooks.cpp` overrides the generated weak public `sub_*` aliases and calls
 the original `__imp__sub_*` bodies exactly once. It forwards the full PPCContext
 without argument marshalling, preserves original return values and memory side
@@ -70,13 +71,13 @@ This is **command preparation, not Vulkan/D3D12 rendering**. It does not replace
 render/sampler dispatch tables. It observes state changes made through setters
 or directly in device memory, but pre-draw snapshots precede SDK lazy fixups.
 Only two draw paths are covered (`NativeBatch::CompleteCoverage == false`).
-UP draws, command-list replay and resolves/clears are not captured. Vulkan now
+UP draws and command-list replay are not captured. Ordered clears, resolves and
+backbuffer selection are now captured (see the native color-chain section below). Vulkan now
 opts into owned vertex and base-level 2D texture capture/conversion, then uploads
 supported resources. Plain trace/capture remains state/index-only. See
 [VULKAN.md](VULKAN.md) for exact formats, limits and unsupported mip/dimension
-profiles. Render-target identities, shader descriptors/declarations and complete
-resource semantics are still missing: do not render these batches as if they
-were complete. `ResourcesUploaded` is not `Submitted`. D3D12 is not added.
+profiles. Supported render-target identities and shader/declaration snapshots
+are captured, but resource semantics and draw coverage remain incomplete. `ResourcesUploaded` is not `Submitted`. D3D12 is not added.
 
 Memory reads check page-zero protection, alignment, 32-bit overflow and view
 bounds. They assume guest pages are accessible as in the original PPC runtime;
@@ -198,9 +199,9 @@ rather than clearing the whole proxy incorrectly. Pixel readback tests exercise
 clear-before-draw preservation and final clear colors; invalid batches expose no
 stale diagnostic frame.
 
-This is **not** native render-target completion: the destination is still the
-single proxy color/depth pair. Clear-only frames, target/EDRAM mapping, resolve,
-backbuffer selection, additional formats and complete draw coverage remain open.
+This initial clear implementation used a single proxy color/depth pair. The
+native color-chain section below supersedes that limitation for its restricted
+profile; the proxy remains for diagnostic batches.
 
 
 ## Vertex input and DrawVertices (906e1f3)
@@ -227,3 +228,44 @@ Verification:
 - Local GPU suite: 8/8 normal and 8/8 ASan/UBSan.
 
 These checks do not execute the title or complete the known renderer/kernel gaps.
+
+## Native color targets, resolve and selected backbuffer (262f253)
+
+`native_resources.cpp` decodes guest surface and texture descriptors;
+`native_commands.cpp` captures immutable clear/draw/resolve records in one
+sequence. Resolve entry `82DC1860` and SwapHelper `82DC48B0` remain pass-through:
+the latter records the actual texture supplied in `r4`, not the last texture
+seen by the renderer. Clear-only, resolve-only and retained-backbuffer batches
+are submitted too.
+
+`native_frame.cpp` preflights target identities/EDRAM overlaps and replays the
+sequence into persistent, separate Vulkan images. Resolves create independent
+GPU copies. Later clearing a source does not alter its earlier resolve. The
+selected resolved image is used for readback/presentation; the native draw
+resource path can reuse these GPU textures instead of stale CPU snapshots.
+Errors invalidate the pending frame and native resource maps.
+
+Supported profile: RT0 RGBA8, no guest depth/stencil or MSAA, full-surface color
+clear, equal-sized full RGBA8 resolve, flags/mip/slice zero and null rect/point.
+Targets must be initialized by a captured clear. Differing overlapping EDRAM
+views, incompatible/overlapping texture storage, MRT and partial operations
+are rejected. The internal D32 attachment is pipeline scaffolding, **not**
+implementation of Xbox D24/D24FS8 surfaces.
+
+Remaining blockers include guest depth/stencil/MSAA, broader clear/resolve
+semantics, CPU resolve writeback/LockRect coherence, GPU-cache invalidation
+after CPU texture writes, and complete draw coverage. Resolved-texture sampling
+still needs a dedicated native-frame fixture; it must not be inferred from the
+clear/copy/present tests.
+
+Verified on commit 262f253:
+- Local GPU tests: 8/8; GPU CI `35957973699`: passed.
+- Vulkan CI `35957973658`: passed, headless and WSI. Pixel tests cover two
+  targets, independent resolve snapshots, retained contents and explicitly
+  selected backbuffer; rejection cases cover overlap, flags and undefined data.
+- Full Windows `35957973638` and Linux `35957973647` builds were still running
+  at the time of this update; no result is assumed.
+
+The additional native indexed-draw fixture exercises attachment binding with
+genuine cache shaders and deliberately degenerate geometry. It is not evidence
+of correct title rasterization. No game launch or level progression is verified.

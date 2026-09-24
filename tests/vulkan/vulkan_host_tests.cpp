@@ -282,9 +282,27 @@ static void NativeGameShaderDrawTest()
     draw.arguments={4,0,2,0}; // not a complete triangle list
     CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
     draw.kind=savedKind; draw.arguments=savedArgs; draw.state.words[12788/4]=savedIndex;
+    // Exercise native replay's draw binding, not only its clear/copy path.
+    // This deliberately degenerate triangle uses the genuine cache shaders;
+    // it checks attachment/pipeline submission, not gameplay rasterization.
+    NativeFrameFixture nativeFixture;
+    CHECK(nativeFixture.Clear(nativeFixture.SurfaceA,{0,1,0,1})==GuestGpu::CaptureResult::Captured);
+    CHECK(nativeFixture.Resolve(nativeFixture.SurfaceA,nativeFixture.TextureA)==GuestGpu::CaptureResult::Captured);
+    auto nativeBatch=nativeFixture.Frame(nativeFixture.TextureA);
+    nativeBatch.resolves[0].sequence=2;
+    auto nativeDraw=draw;
+    nativeDraw.sequence=1; nativeDraw.device=nativeFixture.Device;
+    nativeDraw.targets=nativeBatch.clears[0].targets;
+    nativeDraw.state.words[12792/4]=nativeFixture.SurfaceA;
+    nativeDraw.state.words[10372/4]=0;
+    nativeBatch.draws.push_back(std::move(nativeDraw));
+    CHECK(backend.SubmitGuestBatch(nativeBatch)==GuestGpu::SubmissionResult::Submitted);
+    CHECK(backend.ReadDiagnosticFrame(pixels) && pixels.size()==64*64*4);
+    for(size_t i=0;i<pixels.size();i+=4)
+        CHECK(pixels[i]==0 && pixels[i+1]==255 && pixels[i+2]==0 && pixels[i+3]==255);
     draw.resources.declaration.clear();
     CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
-    CHECK(backend.GetHostStats().indexedDraws==4);
+    CHECK(backend.GetHostStats().indexedDraws==5);
     backend.Shutdown(); CHECK(backend.GetHostStats().validationErrors==0 && backend.GetHostStats().allocatedBytes==0);
     std::puts("Native indexed batch submitted with genuine game cache VS/PS; unsupported declaration rejected");
 }
