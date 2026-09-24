@@ -1,3 +1,4 @@
+#include <atomic>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -166,6 +167,10 @@ static void TestXexRegistry()
     CHECK(!xex_module::ValidateHeader(std::span(bytes).first(16)));
 }
 
+extern void RtlEnterCriticalSection(XRTL_CRITICAL_SECTION*);
+extern void RtlLeaveCriticalSection(XRTL_CRITICAL_SECTION*);
+extern bool RtlTryEnterCriticalSection(XRTL_CRITICAL_SECTION*);
+
 extern uint32_t XexGetModuleHandle(const char*, be<uint32_t>*);
 
 static void TestXexImportBinding()
@@ -256,6 +261,75 @@ static void TestXexImportBinding()
         CHECK(static_cast<const be<uint32_t>*>(g_memory.Translate(clockAddress))->get()==500);
     raw[2]=0xAD;
 
+    // The HSIO export points directly to a real, persistent critical section.
+    raw[2]=0x1C1;
+    CHECK(xex_module::BindImports(bytes,image,error) && error.empty());
+    const uint32_t hsioAddress=guest[2];
+    CHECK(hsioAddress && !(hsioAddress&31));
+    CHECK(hsioAddress==xex_module::VariableAddress(0x1C1));
+    if(hsioAddress)
+    {
+        auto* cs=static_cast<XRTL_CRITICAL_SECTION*>(g_memory.Translate(hsioAddress));
+        CHECK(g_memory.IsInMemoryRange(cs));
+        CHECK(cs->Header.Type==1 && cs->Header.Absolute==40);
+        CHECK(cs->Header.SignalState==0);
+        CHECK(cs->LockCount==-1 && cs->RecursionCount==0 && cs->OwningThread==0);
+        auto* oldContext=g_ppcContext;
+        PPCContext owner{}; owner.r13.u32=0x123400;
+        g_ppcContext=&owner;
+        RtlEnterCriticalSection(cs);
+        RtlEnterCriticalSection(cs);
+        CHECK(cs->RecursionCount==2 && cs->OwningThread==owner.r13.u32);
+        // Registering/rebinding must not reset a held global lock.
+        CHECK(xex_module::RegisterImage(bytes,image));
+        CHECK(xex_module::BindImports(bytes,image,error));
+        CHECK(guest[2]==hsioAddress && cs->RecursionCount==2);
+        bool otherAcquired=false;
+        std::thread contender([&] {
+            PPCContext context{}; context.r13.u32=0x567800;
+            g_ppcContext=&context;
+            otherAcquired=RtlTryEnterCriticalSection(cs);
+            if(otherAcquired) RtlLeaveCriticalSection(cs);
+            g_ppcContext=nullptr;
+        });
+        contender.join();
+        CHECK(!otherAcquired);
+        RtlLeaveCriticalSection(cs);
+        CHECK(cs->RecursionCount==1 && cs->OwningThread==owner.r13.u32);
+        std::atomic<bool> attempting{false}, acquired{false};
+        std::thread waiter([&] {
+            PPCContext context{}; context.r13.u32=0x567800;
+            g_ppcContext=&context;
+            attempting.store(true);
+            RtlEnterCriticalSection(cs);
+            acquired.store(true);
+            RtlLeaveCriticalSection(cs);
+            g_ppcContext=nullptr;
+        });
+        while(!attempting.load()) std::this_thread::yield();
+        CHECK(!acquired.load());
+        RtlLeaveCriticalSection(cs);
+        waiter.join();
+        CHECK(acquired.load() && cs->RecursionCount==0 && cs->OwningThread==0);
+        // Exercise repeated handoff and protected state on two host threads.
+        unsigned protectedCount=0;
+        auto increment=[&](uint32_t id) {
+            PPCContext context{}; context.r13.u32=id; g_ppcContext=&context;
+            for(unsigned i=0;i<2000;++i)
+            {
+                RtlEnterCriticalSection(cs);
+                ++protectedCount;
+                RtlLeaveCriticalSection(cs);
+            }
+            g_ppcContext=nullptr;
+        };
+        std::thread first(increment,0x123400), second(increment,0x567800);
+        first.join(); second.join();
+        CHECK(protectedCount==4000 && cs->RecursionCount==0 && cs->OwningThread==0);
+        g_ppcContext=oldContext;
+    }
+    raw[2]=0xAD;
+
     // Failed plans must not partially patch the first, otherwise valid record.
     guest[0]=guest[1]=guest[2]=0xDEADBEEF;
     raw[2]=0xFFFF;
@@ -263,6 +337,12 @@ static void TestXexImportBinding()
     CHECK(guest[0]==0xDEADBEEF && guest[1]==0xDEADBEEF && guest[2]==0xDEADBEEF);
     raw[2]=0x3E; // file body/type is not implemented yet
     CHECK(!xex_module::BindImports(bytes,image,error));
+    raw[1]=0x156; // another unsupported variable; collect both, no partial writes
+    CHECK(!xex_module::BindImports(bytes,image,error));
+    CHECK(error.find("IoFileObjectType")!=std::string::npos);
+    CHECK(error.find("XboxHardwareInfo")!=std::string::npos);
+    CHECK(guest[0]==0xDEADBEEF && guest[1]==0xDEADBEEF && guest[2]==0xDEADBEEF);
+    raw[1]=0x266;
     raw[2]=0xAD;
     store(0x8C,slot); // duplicate destination
     CHECK(!xex_module::BindImports(bytes,image,error));

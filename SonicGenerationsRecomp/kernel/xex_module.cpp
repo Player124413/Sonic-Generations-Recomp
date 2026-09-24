@@ -11,6 +11,8 @@
 #include <thread>
 #include <chrono>
 
+extern void RtlInitializeCriticalSectionAndSpinCount(XRTL_CRITICAL_SECTION*, uint32_t);
+
 static uint8_t* g_imageHeader = nullptr;
 static std::vector<std::tuple<std::string, uint32_t, uint32_t>> g_sections;
 
@@ -97,6 +99,10 @@ struct TitleExports
 };
 static_assert(offsetof(TitleExports,moduleHandle)==0x64);
 TitleExports* g_exports=nullptr;
+XRTL_CRITICAL_SECTION* g_hsioCalibrationLock=nullptr;
+static_assert(sizeof(XRTL_CRITICAL_SECTION)==28);
+static_assert(offsetof(XRTL_CRITICAL_SECTION,LockCount)==16);
+static_assert(offsetof(XRTL_CRITICAL_SECTION,OwningThread)==24);
 // Constructed after the heap. Stop/join before process-lifetime guest storage
 // is destroyed. Guest reloads do not allocate another timer or invalidate it.
 void StartTimestampClock()
@@ -144,6 +150,7 @@ uint32_t xex_module::VariableAddress(uint32_t ordinal)
     case 0x1BE: return g_memory.MapVirtual(&g_exports->videoDevice);
     case 0x1BF: return g_memory.MapVirtual(&g_exports->xamVideoDevice);
     case 0x1C0: return g_memory.MapVirtual(&g_exports->gpuClockInMHz);
+    case 0x1C1: return g_memory.MapVirtual(g_hsioCalibrationLock);
     case 0x266: return g_memory.MapVirtual(&g_exports->certMonitor); // disabled, null pointee
     case 0x59: return g_memory.MapVirtual(&g_exports->debugMonitor); // disabled, null pointee
     case 0xAD: return g_memory.MapVirtual(g_exports->timestamp.data());
@@ -159,6 +166,7 @@ bool xex_module::BindImports(std::span<const uint8_t> bytes,const Image& image,s
     { error="image or module is not initialized"; return false; }
     if(!ReadImports(bytes,image.base,image.size,libraries,error)) return false;
     std::vector<std::pair<uint32_t,uint32_t>> patches;
+    std::string missingVariables;
     for(const auto& library:libraries)
     {
         std::span<const ExportType> exports;
@@ -182,7 +190,15 @@ bool xex_module::BindImports(std::span<const uint8_t> bytes,const Image& image,s
             if(found->variable)
             {
                 target=library.name=="xboxkrnl.exe" ? VariableAddress(ordinal) : 0;
-                if(!target) return fail("variable export is not implemented");
+                if(!target)
+                {
+                    // Report all missing variables in this image in one run.
+                    // Do not apply any IAT patches unless the entire plan succeeds.
+                    if(!missingVariables.empty()) missingVariables+='\n';
+                    missingVariables+=fmt::format("{} ordinal 0x{:X} ({}) at 0x{:X}: variable export is not implemented",
+                        library.name,ordinal,found->name,address);
+                    continue;
+                }
             }
             else
             {
@@ -198,6 +214,7 @@ bool xex_module::BindImports(std::span<const uint8_t> bytes,const Image& image,s
             patches.emplace_back(address,target);
         }
     }
+    if(!missingVariables.empty()) { error=std::move(missingVariables); return false; }
     for(auto [slot,target]:patches)
         *static_cast<be<uint32_t>*>(g_memory.Translate(slot))=target;
     return true;
@@ -246,6 +263,14 @@ bool xex_module::RegisterImage(std::span<const uint8_t> bytes, const Image& imag
     {
         auto* storage=g_userHeap.Alloc(sizeof(TitleExports));
         if(!storage) { g_userHeap.Free(copy); return false; }
+        // Match the video export's 28-byte body and 32-byte physical alignment.
+        // Use the same native bookkeeping layout as our Unleashed-derived Rtl
+        // hooks, not a host mutex or an uninitialized block of guest memory.
+        auto* lockStorage=g_userHeap.AllocPhysical(sizeof(XRTL_CRITICAL_SECTION),32);
+        if(!lockStorage) { g_userHeap.Free(storage); g_userHeap.Free(copy); return false; }
+        g_hsioCalibrationLock=new(lockStorage) XRTL_CRITICAL_SECTION{};
+        g_hsioCalibrationLock->Header.Type=1; // synchronization event
+        RtlInitializeCriticalSectionAndSpinCount(g_hsioCalibrationLock,10000);
         g_exports=new(storage) TitleExports{};
         g_exports->gpuClockInMHz=500;
         StartTimestampClock();
