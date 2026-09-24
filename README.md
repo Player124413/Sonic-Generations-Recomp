@@ -18,7 +18,7 @@
 **Это незавершённый runtime, не готовый порт для игрового тестирования.**
 Сборка Windows EXE и автоматические проверки проходят, но загрузка уровня,
 правильная графика и прохождение не подтверждены. Известные пробелы включают
-нативный depth/stencil, MSAA, полную синхронизацию GPU-текстур с памятью CPU и
+D24FS8, MSAA/MRT, полную синхронизацию GPU-текстур с памятью CPU и
 неподдержанные типы объектов ядра (например, file/timer/mutant). Для event,
 semaphore и thread реализованы гостевые структуры, HLE-дескрипторы типов и
 учёт ссылок/handles; это ещё не полная совместимость ядра. Ограниченная цветовая связка
@@ -52,7 +52,7 @@ Windows-инструкции и результаты проверок: [TESTING_
 | XMA-декодер | XMAFRAMES → guest PCM ring подключён; проверки и ограничения — [AUDIO.md](docs/AUDIO.md) |
 | Ввод (геймпад/клавиатура → XAMINPUT) | ✅ SDL |
 | Инсталлятор (папка / ISO-XISO + `.xexp` апдейт) | ✅ CLI |
-| GPU (`Vd\*`, present, backend-интерфейс) | 🚧 Vulkan: indexed draws, descriptors, цветовые RT → resolve → texture sampling → Present; native depth/stencil, MSAA и CPU/GPU coherence ещё не завершены — [VULKAN.md](docs/VULKAN.md) |
+| GPU (`Vd\*`, present, backend-интерфейс) | 🚧 Vulkan: indexed draws, descriptors, цветовые RT → resolve → texture sampling → Present; native D24S8 depth/stencil реализован в ограниченном профиле; D24FS8, MSAA/MRT и CPU/GPU coherence ещё не завершены — [VULKAN.md](docs/VULKAN.md) |
 | Шейдеры (XenosRecomp → HLSL → SPIR-V, Vulkan) | 🚧 Все 6404 SPIR-V модуля проверены; поддержка всех игровых Vulkan pipelines ещё не завершена |
 | Патчи игры (FPS, widescreen и пр.) | ⏳ нужны адреса/символы — см. ROADMAP |
 
@@ -122,8 +122,14 @@ XAM/kernel CI `35963266469` прошёл на Windows и Linux: handles, уве�
 событие/опрос. APC-callback пока явно отклоняется без потребления записей;
 это не полная XAM HLE. Полная сборка EXE и игровой прогон — отдельные проверки.
 Дополнительные проверенные изменения:
+- Vulkan D24S8: самостоятельный depth/stencil target, сравнение и запись глубины,
+  stencil операций обеих сторон, reference/read/write masks, полные и частичные
+  clear по отдельным аспектам. Проверено сохранение содержимого при переключении
+  цветовой цели; CI `35966388857` прошёл headless/WSI с validation layer.
+  Это single-sample D24S8 с RT0 того же размера и неперекрывающимися EDRAM views;
+  D24FS8, depth-only passes без RT0 и depth resolve/sampling ещё не поддержаны.
 - Vulkan: частичные цветовые Clear с viewport/scissor и сохранением остальных
-  пикселей (`35964365384`, headless/WSI); это не native depth/stencil или MSAA.
+  пикселей (`35964365384`, headless/WSI); это отдельная проверка цветового пути, не MSAA.
 - XAM ContentClose: завершение event/polling OVERLAPPED, сохранение пользовательского
   completion context, ошибка отсутствующего корня и отказ до изменения корня при
   неподдержанном APC/неверном event handle (`35964593544`, Windows/Linux).

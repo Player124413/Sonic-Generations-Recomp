@@ -7,7 +7,7 @@ rendering. It owns a Vulkan instance/device/graphics queue and implements:
 
 - GPU buffers with bounded allocations, host staging, device-local preference,
   upload/copy/readback, and non-coherent memory flush/invalidate handling.
-- RGBA8 sampled/color-attachment images and D32 depth images, layout transitions,
+- RGBA8 sampled/color-attachment images, D32 proxy and native D24S8 depth/stencil images, layout transitions,
   color/depth clears, texture uploads and byte-verified readback paths.
 - Command pool/buffer recording, `vkQueueSubmit`, fences and completion-before-
   destruction. This reference path is synchronous, not a high-performance queue.
@@ -44,7 +44,7 @@ attributes (float32, float16 and supported 8/16-bit normalized encodings), one c
 contained in the target (including smaller offset viewports), bounded enabled
 scissor and base-level 2D pixel textures. Disabled scissor ignores stale rectangle
 contents; half-pixel constants use viewport rather than target dimensions. It rejects vertex textures,
-3D/cube descriptors, unmapped integer/packed vertex formats, MRT, MSAA, stencil, alpha test,
+3D/cube descriptors, unmapped integer/packed vertex formats, MRT, MSAA, stencil in the legacy D32 proxy path, alpha test,
 constant/dual-source blending and unsupported state bits. These restrictions
 exclude substantial game rendering; they must not be mistaken for compatibility
 with all 6,404 compiled shaders. Vulkan 1.2 BDA, scalar layout, descriptor
@@ -80,7 +80,7 @@ validation enabled). Pixel checks cover fractional viewport bounds, enabled and
 disabled scissor, disjoint/inverted rectangles, retained background and resolve.
 Non-finite viewport and partial-only initialization are rejected before submission.
 
-The bounded native profile rejects guest depth/stencil attachments, MRT, MSAA,
+The bounded native profile supports D24S8 as described below, but rejects D24FS8, MRT, MSAA,
 incompatible overlapping EDRAM views and unsupported resolve formats/operations.
 CPU readback/coherence of guest resolve memory is not implemented: matching GPU
 resolved images currently take precedence without detecting later CPU writes.
@@ -95,6 +95,45 @@ shader hash are rejected without stale frame readback. Normal runtime initializa
 still uses the embedded game cache; there is no fixture or unknown-hash fallback.
 Headless and SDL WSI tests passed in `35962280938` with zero validation errors.
 This proves the tested synthetic path, not a rendered game frame.
+
+## Native D24S8 depth/stencil
+
+Single-sample, same-size RT0 + D24S8 depth/stencil is implemented with an actual
+`VK_FORMAT_D24_UNORM_S8_UINT` image. Depth resources are keyed independently by
+EDRAM tile identity, not owned by one color target: rebinding a different color
+target retains the shared depth/stencil contents. Incompatible/overlapping EDRAM
+views remain rejected, including color/depth aliasing.
+
+The depth-info shadow register is device +10376, verified against
+`sub_82DAB6B0` (`surface +28 -> device +10376`), not +10368 (surface info).
+`RB_DEPTHCONTROL` at +10548 drives the eight depth comparisons, depth writes,
+front/back stencil compare, fail/depth-fail/pass operations and two-sided enable.
+The BE byte setters `82DA8FA8..82DA9060` establish reference/read/write masks at
++10496 (front) and +10492 (back). Structural PPC guards run in the GPU CPU suite.
+
+Full and clipped partial clears independently select depth/stencil aspects and
+preserve the other aspect; empty clipped rectangles do not initialize storage.
+Validity is tracked per aspect. Reading uninitialized depth or stencil is rejected;
+no synthetic guest-depth clear is inserted. Attachment LOAD/STORE preserves both
+aspects between draw and partial clear passes. Vulkan permits aspect-selective
+clears [1](https://docs.vulkan.org/spec/latest/chapters/clears.html).
+
+D24S8 format support is queried, not assumed. Vulkan does not guarantee D24S8 on
+every device [2](https://docs.vulkan.org/guide/latest/depth.html); unsupported
+hardware fails explicitly rather than silently changing precision to D32.
+D24FS8 (20e4 floating point), depth-only passes without RT0, depth resolves and
+depth-texture sampling are **not implemented**. This is not complete EDRAM/MSAA
+or game-pipeline compatibility.
+
+CI `35966388857` passed both lavapipe headless and SDL WSI with synchronization
+validation, including native-batch pixel checks for all depth comparisons, depth
+writes, stencil compare/read/write masks, opposite face selection, aspect-preserving
+full/partial clears, shared depth across color-target switches, independent
+initialization guards, and matching-descriptor D24FS8 rejection. The tests use the
+explicit ABI fixture cache, not a claim that a genuine game frame was rendered.
+Source cross-checks: Xenia `registers.h` / `xenos.h`, the game's generated PPC,
+and UnleashedRecomp `gpu/video.cpp`; Unleashed's title-specific D32 handling is
+not copied as a purported D24FS8 implementation.
 
 ## Native resource upload path
 
