@@ -1125,7 +1125,6 @@ uint32_t XAudioGetVoiceCategoryVolumeChangeMask(uint32_t Driver, be<uint32_t>* M
 // }
 
 GUEST_FUNCTION_HOOK(__imp__XGetVideoMode, VdQueryVideoMode); // XGetVideoMode
-GUEST_FUNCTION_HOOK(__imp__XNotifyGetNext, XNotifyGetNext);
 GUEST_FUNCTION_HOOK(__imp__XGetGameRegion, XGetGameRegion);
 GUEST_FUNCTION_HOOK(__imp__XMsgStartIORequest, XMsgStartIORequest);
 GUEST_FUNCTION_HOOK(__imp__XamUserGetSigninState, XamUserGetSigninState);
@@ -1134,11 +1133,8 @@ GUEST_FUNCTION_HOOK(__imp__XamContentCreateEx, XamContentCreateEx);
 GUEST_FUNCTION_HOOK(__imp__XamContentDelete, XamContentDelete);
 GUEST_FUNCTION_HOOK(__imp__XamContentClose, XamContentClose);
 GUEST_FUNCTION_HOOK(__imp__XamContentGetCreator, XamContentGetCreator);
-GUEST_FUNCTION_HOOK(__imp__XamContentCreateEnumerator, XamContentCreateEnumerator);
 GUEST_FUNCTION_HOOK(__imp__XamContentGetDeviceState, XamContentGetDeviceState);
 GUEST_FUNCTION_HOOK(__imp__XamContentGetDeviceData, XamContentGetDeviceData);
-GUEST_FUNCTION_HOOK(__imp__XamEnumerate, XamEnumerate);
-GUEST_FUNCTION_HOOK(__imp__XamNotifyCreateListener, XamNotifyCreateListener);
 GUEST_FUNCTION_HOOK(__imp__XamUserGetSigninInfo, XamUserGetSigninInfo);
 GUEST_FUNCTION_HOOK(__imp__XamShowSigninUI, XamShowSigninUI);
 GUEST_FUNCTION_HOOK(__imp__XamShowDeviceSelectorUI, XamShowDeviceSelectorUI);

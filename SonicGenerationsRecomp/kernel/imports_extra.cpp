@@ -191,23 +191,6 @@ uint32_t XamReadTileToTexture(uint32_t userIndex, uint64_t xuid, uint32_t pictur
     return 0;
 }
 
-struct SessionObject : KernelObject
-{
-};
-
-uint32_t XamSessionCreateHandle(be<uint32_t>* handle)
-{
-    auto* session = CreateKernelObject<SessionObject>();
-    *handle = GetKernelHandle(session);
-    return 0;
-}
-
-uint32_t XamSessionRefObjByHandle(uint32_t handle, be<uint32_t>* object)
-{
-    *object = handle;
-    return 0;
-}
-
 uint32_t XamShowGamerCardUIForXUID(uint32_t userIndex, uint64_t xuid)
 {
     LOGF_UTILITY("XamShowGamerCardUIForXUID xuid 0x{:016X}", xuid);
@@ -218,18 +201,6 @@ uint32_t XamUserCheckPrivilege(uint32_t userIndex, uint32_t privilege, be<uint32
 {
     if (result)
         *result = 1;
-    return 0;
-}
-
-struct StatsEnumerator : KernelObject
-{
-};
-
-uint32_t XamUserCreateStatsEnumerator(uint32_t userIndex, uint32_t titleId, uint32_t xuidCount,
-    uint64_t* xuids, uint32_t views, uint32_t* spec, uint32_t owner, uint32_t buffer, be<uint32_t>* handle)
-{
-    auto* enumerator = CreateKernelObject<StatsEnumerator>();
-    *handle = GetKernelHandle(enumerator);
     return 0;
 }
 
@@ -300,11 +271,8 @@ GUEST_FUNCTION_HOOK(__imp__XamAlloc, XamAlloc);
 GUEST_FUNCTION_HOOK(__imp__XamFree, XamFree);
 GUEST_FUNCTION_HOOK(__imp__XamParseGamerTileKey, XamParseGamerTileKey);
 GUEST_FUNCTION_HOOK(__imp__XamReadTileToTexture, XamReadTileToTexture);
-GUEST_FUNCTION_HOOK(__imp__XamSessionCreateHandle, XamSessionCreateHandle);
-GUEST_FUNCTION_HOOK(__imp__XamSessionRefObjByHandle, XamSessionRefObjByHandle);
 GUEST_FUNCTION_HOOK(__imp__XamShowGamerCardUIForXUID, XamShowGamerCardUIForXUID);
 GUEST_FUNCTION_HOOK(__imp__XamUserCheckPrivilege, XamUserCheckPrivilege);
-GUEST_FUNCTION_HOOK(__imp__XamUserCreateStatsEnumerator, XamUserCreateStatsEnumerator);
 GUEST_FUNCTION_HOOK(__imp__XamUserGetName, XamUserGetName);
 GUEST_FUNCTION_HOOK(__imp__XamUserGetXUID, XamUserGetXUID);
 GUEST_FUNCTION_HOOK(__imp__XexLoadImage, XexLoadImage);

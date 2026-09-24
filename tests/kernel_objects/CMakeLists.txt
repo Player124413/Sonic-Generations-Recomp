@@ -9,6 +9,8 @@ find_package(Threads REQUIRED)
 set(ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
 add_executable(kernel_object_tests object_tests.cpp
     "${ROOT}/SonicGenerationsRecomp/kernel/object_manager.cpp"
+    "${ROOT}/SonicGenerationsRecomp/kernel/xam_objects.cpp"
+    "${ROOT}/SonicGenerationsRecomp/kernel/xam_content_registry.cpp"
     "${ROOT}/SonicGenerationsRecomp/kernel/object_imports.cpp"
     "${ROOT}/SonicGenerationsRecomp/kernel/xdm.cpp"
     "${ROOT}/SonicGenerationsRecomp/kernel/heap.cpp"

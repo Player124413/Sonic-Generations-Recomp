@@ -19,6 +19,8 @@ set(SONIC_GENERATIONS_CORE_SOURCES
     "kernel/io/file_system.cpp"
     "kernel/io/nt_file.cpp"
     "kernel/xam.cpp"
+    "kernel/xam_objects.cpp"
+    "kernel/xam_content_registry.cpp"
     "gpu/video.cpp"
     "gpu/guest_hooks.cpp"
     "gpu/native_commands.cpp"

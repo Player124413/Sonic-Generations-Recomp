@@ -16,6 +16,7 @@ static std::atomic<int> failures{0};
 #define CHECK(x) do { if(!(x)) { std::printf("FAIL %d: %s\n",__LINE__,#x); ++failures; } } while(0)
 using namespace KernelObjects;
 #include "import_cases.h"
+#include "xam_cases.h"
 static uint32_t Word(uint32_t address)
 { return static_cast<be<uint32_t>*>(g_memory.Translate(address))->get(); }
 static KernelObject* ReturnObject() { return CreateKernelObject<KernelObject>(); }
@@ -180,6 +181,7 @@ int main()
 {
     g_userHeap.Init();
     BodiesAndHandles(); ImportedPointerConversion(); ConcurrentClose(); TimedDispatchers(); Threads(); TestObjectImports();
+    XamArgumentTests(); XamNotificationTests(); XamEnumerationTests(); XamUnsupportedObjects();
     std::printf("Kernel object tests: %d failures\n",failures.load());
     return failures ? 1 : 0;
 }

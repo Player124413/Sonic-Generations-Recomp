@@ -1,5 +1,7 @@
 #pragma once
 #include <xbox.h>
+#include <string>
+#include <string_view>
 
 #define MSGID(Area, Number) (uint32_t)((uint16_t)(Area) << 16 | (uint16_t)(Number))
 #define MSG_AREA(msgid)     (((msgid) >> 16) & 0xFFFF)
@@ -8,10 +10,10 @@
 XCONTENT_DATA XamMakeContent(uint32_t type, const std::string_view& name);
 void XamRegisterContent(const XCONTENT_DATA& data, const std::string_view& root);
 
-std::string_view XamGetRootPath(const std::string_view& root);
+std::string XamGetRootPath(const std::string_view& root);
 void XamRootCreate(const std::string_view& root, const std::string_view& path);
 
-uint32_t XamNotifyCreateListener(uint64_t qwAreas);
+uint32_t XamNotifyCreateListener(uint64_t qwAreas, uint32_t maxVersion=0);
 void XamNotifyEnqueueEvent(uint32_t dwId, uint32_t dwParam); // i made it the fuck up
 bool XNotifyGetNext(uint32_t hNotification, uint32_t dwMsgFilter, be<uint32_t>* pdwId, be<uint32_t>* pParam);
 
