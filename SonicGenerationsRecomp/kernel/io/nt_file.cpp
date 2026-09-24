@@ -631,9 +631,11 @@ uint32_t NtQueryVolumeInformationFile(uint32_t handle, XIO_STATUS_BLOCK* ioStatu
 }
 
 uint32_t NtDuplicateObject(uint32_t sourceHandle, be<uint32_t>* targetHandle,
-    uint32_t desiredAccess, uint32_t handleAttributes, uint32_t options)
+    uint32_t options)
 {
-    if(!targetHandle || (options & ~3u)) return STATUS_INVALID_PARAMETER;
+    // Xbox 360 ABI has three arguments (not desktop NT's five).
+    if(options & ~3u) return STATUS_INVALID_PARAMETER;
+    if(!targetHandle) return (options&1) ? (KernelObjects::Close(sourceHandle) ? 0 : 0xC0000008) : STATUS_INVALID_PARAMETER;
     uint32_t destination=0;
     const auto status=KernelObjects::Duplicate(sourceHandle,destination,(options&1)!=0);
     *targetHandle=destination;

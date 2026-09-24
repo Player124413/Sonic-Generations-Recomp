@@ -34,7 +34,7 @@ uint32_t NtQueryFullAttributesFile(XOBJECT_ATTRIBUTES* attributes, void* fileInf
 
 uint32_t NtQueryVolumeInformationFile(uint32_t handle, XIO_STATUS_BLOCK* ioStatusBlock, void* fsInformation, uint32_t length, uint32_t fsInformationClass);
 
-uint32_t NtDuplicateObject(uint32_t sourceHandle, be<uint32_t>* targetHandle, uint32_t desiredAccess, uint32_t handleAttributes, uint32_t options);
+uint32_t NtDuplicateObject(uint32_t sourceHandle, be<uint32_t>* targetHandle, uint32_t options);
 
 uint32_t NtAllocateVirtualMemory(be<uint32_t>* baseAddress, uint32_t zeroBits, be<uint32_t>* regionSize, uint32_t allocationType, uint32_t protect);
 

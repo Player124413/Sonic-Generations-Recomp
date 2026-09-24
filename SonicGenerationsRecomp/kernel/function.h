@@ -148,12 +148,12 @@ struct ArgTranslator
         const auto v = GetIntegerArgumentValue(ctx, base, idx);
         if (!v)
         {
-            if constexpr (std::is_base_of_v<KernelObject,std::remove_pointer_t<T>>)
+            if constexpr (std::is_convertible_v<T,const KernelObject*>)
                 KernelObjects::InvalidArgument();
             return nullptr;
         }
 
-        if constexpr (std::is_base_of_v<KernelObject,std::remove_pointer_t<T>>)
+        if constexpr (std::is_convertible_v<T,const KernelObject*>)
         {
             auto* object=dynamic_cast<T>(KernelObjects::Pin(static_cast<uint32_t>(v)));
             if(!object) KernelObjects::InvalidArgument();

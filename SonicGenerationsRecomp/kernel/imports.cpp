@@ -952,7 +952,8 @@ void MmQueryAllocationSize()
 
 uint32_t NtClearEvent(Event* handle, uint32_t* previousState)
 {
-    handle->Reset();
+    const auto previous=handle->Reset();
+    if(previousState) *previousState=ByteSwap(uint32_t(previous));
     return 0;
 }
 
@@ -967,7 +968,9 @@ uint32_t NtResumeThread(GuestThreadHandle* hThread, uint32_t* suspendCount)
 
 uint32_t NtSetEvent(Event* handle, uint32_t* previousState)
 {
-    handle->Set();
+    const auto previous=handle->Set();
+    if(previousState) *previousState=ByteSwap(uint32_t(previous));
+    ++g_keSetEventGeneration; g_keSetEventGeneration.notify_all();
     return 0;
 }
 
@@ -981,7 +984,8 @@ uint32_t NtCreateSemaphore(be<uint32_t>* Handle, XOBJECT_ATTRIBUTES* ObjectAttri
 uint32_t NtReleaseSemaphore(Semaphore* Handle, uint32_t ReleaseCount, int32_t* PreviousCount)
 {
     uint32_t previousCount;
-    Handle->Release(ReleaseCount, &previousCount);
+    const auto status=Handle->Release(ReleaseCount, &previousCount);
+    if(status) return status;
 
     if (PreviousCount != nullptr)
         *PreviousCount = ByteSwap(previousCount);
@@ -1183,8 +1187,9 @@ void KfLowerIrql() { }
 uint32_t KeReleaseSemaphore(XKSEMAPHORE* semaphore, uint32_t increment, uint32_t adjustment, uint32_t wait)
 {
     auto* object = QueryKernelObject<Semaphore>(semaphore->Header);
-    object->Release(adjustment, nullptr);
-    return STATUS_SUCCESS;
+    uint32_t previous=0;
+    const auto status=object->Release(adjustment,&previous);
+    return status ? status : previous;
 }
 
 uint32_t XAudioGetVoiceCategoryVolume(uint32_t category, be<float>* volume)

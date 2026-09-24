@@ -46,7 +46,8 @@ static void BodiesAndHandles()
     CHECK(AcquireBody(body).get()==event);
     // Object APIs accept the referenced guest body after all handles are closed.
     { CallScope scope; auto* dispatcher=QueryKernelObject<Event>(*static_cast<XKEVENT*>(g_memory.Translate(body)));
-      CHECK(dispatcher==event); dispatcher->Set(); CHECK(dispatcher->Wait(0)==0); }
+      CHECK(dispatcher==event); dispatcher->Set(); CHECK(Word(body+4)==1); CHECK(dispatcher->Wait(0)==0);
+      CHECK(dispatcher->Reset() && Word(body+4)==0); }
     CHECK(Dereference(body) && AcquireBody(body));
     CHECK(Dereference(body) && !AcquireBody(body));
     CHECK(!Dereference(body));
@@ -59,6 +60,11 @@ static void BodiesAndHandles()
     CHECK(Reference(original,TypeAddress(Type::Semaphore),body)==0);
     CHECK(static_cast<XKSEMAPHORE*>(g_memory.Translate(body))->Header.Type==5);
     CHECK(Word(body+sizeof(XDISPATCHER_HEADER))==2);
+    CHECK(semaphore->Wait(0)==0 && Word(body+4)==0);
+    CHECK(semaphore->Wait(0)==STATUS_TIMEOUT);
+    uint32_t prior=99;
+    CHECK(semaphore->Release(2,&prior)==0 && prior==0 && Word(body+4)==2);
+    CHECK(semaphore->Release(1,&prior)==0xC0000047 && Word(body+4)==2);
     CHECK(Duplicate(original,duplicate,true)==0 && !Acquire(original));
     CHECK(Acquire(duplicate).get()==semaphore);
     CHECK(Close(duplicate) && Dereference(body));

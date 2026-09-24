@@ -75,9 +75,9 @@ static void GuestThreadFunc(GuestThreadHandle* hThread)
     KernelObjects::SetCurrentThread(hThread);
     hThread->suspended.wait(true);
     GuestThread::Start(hThread->params);
-    hThread->completed=true;
     auto* header=static_cast<XDISPATCHER_HEADER*>(g_memory.Translate(hThread->guestBody));
     std::atomic_ref<uint32_t>(header->SignalState.value).store(ByteSwap(uint32_t(1)));
+    hThread->completed=true;
     hThread->completed.notify_all();
     KernelObjects::SetCurrentThread(nullptr);
     KernelObjects::Dereference(hThread->guestBody);
@@ -168,8 +168,8 @@ uint32_t GuestThread::Start(const GuestThreadParams& params)
             ~Cleanup() { KernelObjects::SetCurrentThread(nullptr); KernelObjects::Close(handle); }
         } cleanup{handle};
         const auto result=Start(params);
-        initial->completed=true;
         static_cast<XDISPATCHER_HEADER*>(g_memory.Translate(initial->guestBody))->SignalState=1;
+        initial->completed=true;
         initial->completed.notify_all();
         return result;
     }
