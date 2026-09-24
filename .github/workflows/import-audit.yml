@@ -1,0 +1,34 @@
+name: Title import inventory
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'SonicGenerationsRecomp/kernel/title_function_imports.inc'
+      - 'scripts/audit_import_inventory.py'
+      - 'tests/test_import_inventory.py'
+      - 'tests/import_link_test.cpp'
+      - 'ppc/ppc_func_mapping.cpp'
+      - '.github/workflows/import-audit.yml'
+permissions:
+  contents: read
+jobs:
+  inventory:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pinned ordinal/type tables
+        run: git submodule update --init tools/XenonRecomp
+      - run: python tests/test_import_inventory.py
+      - run: python scripts/audit_import_inventory.py --output import-inventory.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: import-inventory-${{ matrix.os }}
+          path: import-inventory.json

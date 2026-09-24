@@ -67,12 +67,13 @@ $check = Add-Button 'Check installation' 475 178 160
 $play = Add-Button 'Play (Vulkan)' 16 220 170
 $openFiles = Add-Button 'Open game files' 194 220 160
 $openLogs = Add-Button 'Open logs' 362 220 130
+$audit = Add-Button 'Audit imports' 500 220 170
 $status = Add-Label 'Ready. Install an image or a folder before launching the game.' 16 269 748
 $output = New-Object Windows.Forms.TextBox
 $output.SetBounds(16, 303, 748, 220); $output.Multiline = $true; $output.ReadOnly = $true
 $output.ScrollBars = 'Both'; $output.WordWrap = $false
 $output.Anchor = 'Top,Bottom,Left,Right'; $form.Controls.Add($output)
-$script:BusyControls = @($source, $chooseIso, $chooseFolder, $install, $check, $play)
+$script:BusyControls = @($source, $chooseIso, $chooseFolder, $install, $check, $play, $audit)
 
 function Show-Failure([string]$Message) {
     [Windows.Forms.MessageBox]::Show($Message, 'Sonic Generations Recompiled', 'OK', 'Error') | Out-Null
@@ -123,6 +124,7 @@ $install.Add_Click({
 })
 $check.Add_Click({ Start-Runtime 'check' @('--check') })
 $play.Add_Click({ Start-Runtime 'game' @() })
+$audit.Add_Click({ Start-Runtime 'imports' @('--audit-imports') })
 $openFiles.Add_Click({
     try { $path = Get-GameDirectory $script:Root; [IO.Directory]::CreateDirectory($path) | Out-Null; Start-Process explorer.exe -ArgumentList (Quote-NativeArgument $path) }
     catch { Show-Failure $_.Exception.Message }

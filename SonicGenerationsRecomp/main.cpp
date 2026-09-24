@@ -144,6 +144,38 @@ catch(const std::exception& error)
     return 0;
 }
 
+// Metadata-only diagnostic: no mounts, saves, SDL video, audio, or guest threads.
+static int AuditInstalledImports()
+try
+{
+    if(!g_memory.base) { std::fprintf(stderr,"Guest memory allocation failed.\n"); return 1; }
+    const auto bytes=LoadFile(GetGamePath()/"default.xex");
+    if(!xex_module::ValidateHeader(bytes)) { std::fprintf(stderr,"Invalid XEX header.\n"); return 1; }
+    const auto* header=reinterpret_cast<const Xex2Header*>(bytes.data());
+    const auto* security=reinterpret_cast<const Xex2SecurityInfo*>(bytes.data()+header->securityOffset);
+    if(security->loadAddress!=PPC_IMAGE_BASE || security->imageSize!=PPC_IMAGE_SIZE)
+    { std::fprintf(stderr,"XEX layout does not match the compiled title.\n"); return 1; }
+    std::printf("Import audit v1; XEX size=%zu; XXH64 fingerprint=%016llX\n",
+        bytes.size(),static_cast<unsigned long long>(XXH64(bytes.data(),bytes.size(),0)));
+    std::printf("Fingerprint is not a cryptographic identity check. Binding is not gameplay/ABI certification.\n");
+    g_userHeap.Init();
+    const auto image=xex_module::DecodeImage(bytes);
+    if(!image.data || image.base!=PPC_IMAGE_BASE || image.size!=PPC_IMAGE_SIZE ||
+       !xex_module::RegisterImage(bytes,image))
+    { std::fprintf(stderr,"Cannot decode/register XEX for audit.\n"); return 1; }
+    std::string report,error;
+    const bool ok=xex_module::AuditImports(bytes,image,report,error);
+    std::printf("%s",report.c_str());
+    if(!ok) std::fprintf(stderr,"Import audit failed:\n%s\n",error.c_str());
+    std::printf("IMPORT_BINDING_AUDIT=%s\n",ok ? "PASS" : "FAIL");
+    return ok ? 0 : 1;
+}
+catch(const std::exception& error)
+{
+    std::fprintf(stderr,"Import audit failed: %s\n",error.what());
+    return 1;
+}
+
 #ifdef __x86_64__
 __attribute__((constructor(101), target("no-avx,no-avx2"), noinline))
 void init()
@@ -172,6 +204,7 @@ static void PrintUsage()
         "  SonicGenerationsRecomp --install <src> Install game files from a folder or .iso\n"
         "  SonicGenerationsRecomp --update <xexp> Title update to apply with --install\n"
         "  SonicGenerationsRecomp --check          Verify the installation\n"
+        "  SonicGenerationsRecomp --audit-imports Audit installed XEX without launching the game\n"
         "\n"
         "You must own the game. No game data is included with this project.\n");
 }
@@ -189,6 +222,7 @@ int main(int argc, char* argv[])
 
     bool forceInstall = false;
     bool forceCheck = false;
+    bool auditImports = false;
     const char* installSource = nullptr;
     const char* updateSource = nullptr;
     const char* sdlVideoDriver = nullptr;
@@ -203,6 +237,10 @@ int main(int argc, char* argv[])
         else if (strcmp(argv[i], "--update") == 0 && (i + 1) < argc)
         {
             updateSource = argv[++i];
+        }
+        else if (strcmp(argv[i], "--audit-imports") == 0)
+        {
+            auditImports = true;
         }
         else if (strcmp(argv[i], "--check") == 0)
         {
@@ -232,6 +270,13 @@ int main(int argc, char* argv[])
         // Set the current working directory to the executable's path.
         std::error_code ec;
         std::filesystem::current_path(g_executableRoot, ec);
+    }
+
+    if(auditImports)
+    {
+        if(forceInstall || forceCheck || updateSource)
+        { std::fprintf(stderr,"--audit-imports cannot be combined with install/update/check.\n"); return 2; }
+        return AuditInstalledImports();
     }
 
     Config::Load();

@@ -12,6 +12,9 @@ on:
       - 'tests/*.cpp'
       - 'tests/CMakeLists.txt'
       - 'tests/sdl_vulkan/**'
+      - 'tests/test_import_inventory.py'
+      - 'scripts/audit_import_inventory.py'
+      - 'ppc/ppc_func_mapping.cpp'
       - 'scripts/windows/**'
       - 'cmake/**'
 concurrency:
@@ -35,6 +38,12 @@ jobs:
           git submodule update --init tools/XenonRecomp tools/XenosRecomp tools/ffmpeg-xma
           git -C tools/XenonRecomp submodule update --init --recursive
           git -C tools/XenosRecomp submodule update --init thirdparty/smol-v thirdparty/zstd thirdparty/xxHash
+      - name: Complete generated function inventory and checker regressions
+        run: |
+          python tests/test_import_inventory.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/audit_import_inventory.py --output import-inventory.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install Windows libraries
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install "sdl2[vulkan]:x64-windows-static" vulkan-headers:x64-windows-static vulkan-loader:x64-windows-static
@@ -69,7 +78,7 @@ jobs:
           New-Item -ItemType Directory package | Out-Null
           Copy-Item build-windows/SonicGenerationsRecomp/Release/SonicGenerationsRecomp.exe package/
           Get-ChildItem build-windows/SonicGenerationsRecomp/Release/*.dll -ErrorAction SilentlyContinue | Copy-Item -Destination package/
-          Copy-Item COPYING,THIRD_PARTY.md,docs/TESTING_WINDOWS.md package/
+          Copy-Item COPYING,THIRD_PARTY.md,docs/TESTING_WINDOWS.md,import-inventory.json package/
           Copy-Item scripts/windows/*.cmd,scripts/windows/*.ps1 package/
           git rev-parse HEAD | Set-Content package/revision.txt
           New-Item -ItemType Directory package/licenses | Out-Null

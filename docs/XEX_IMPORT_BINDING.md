@@ -133,3 +133,55 @@ The handle migration also updates SDK file wrappers to return opaque IDs rather
 than subtracting guest memory from host C++ pointers. Their Win32 BOOL failure
 paths return false, not a nonzero NTSTATUS. File wrappers now share the same
 FileHandle definition as the NT layer, avoiding conflicting class layouts.
+
+## Whole-title inventory and audit (September 2026)
+
+The current generated mapping contains **219 named function imports**. They are
+recorded in `kernel/title_function_imports.inc`, including module, ordinal,
+name and thunk address. `scripts/audit_import_inventory.py` checks this against
+*every* named entry in `ppc_func_mapping.cpp`, the pinned XenonRecomp ordinal/type
+tables, and link-test references. Missing, extra, duplicate, mistyped or moved
+entries fail the check. CI runs this before the Windows runtime build.
+`docs/title-function-imports.json` records source hooks and heuristic limitation
+markers; every function deliberately remains `semantic_status: not_certified`.
+No marker does **not** mean a correct ABI or complete implementation. CRT
+save/restore helpers in the link test are not XEX kernel/XAM imports.
+
+The runtime checks the actual named function and thunk against this inventory,
+not just whether some compiled code exists at the target address. Kernel tests
+exercise all 219 function bindings and all 11 currently implemented variable
+bindings. Synthetic fixtures cover mixed success/failure reporting, wrong
+function identity, read-only audit and atomic failure of IAT patching.
+`RtlFillMemoryUlong`, formerly a no-argument stub, now accepts the guest buffer,
+byte length and ULONG pattern and stores big-endian words. Its regression calls
+the actual PPC bridge with register arguments and verifies guard bytes.
+
+### Still needed: exact variable requirements from the title XEX
+
+**The whole-XEX audit is not complete yet.** No original XEX or complete import
+manifest is available in this checkout. Generated function mappings cannot
+recover all type-0 variable records. Do not interpret the implemented variable
+set, a passing link test, or a passing synthetic inventory as the required set
+of the real title. Do not mark all functions semantically implemented either.
+
+On the Windows package run **Audit-Imports.cmd** (or **Audit imports** in the
+launcher). This executes `--audit-imports` against `assets/default.xex`, before
+config loading, mounts, save handling, video, audio or guest execution. It uses
+the same decoding/type/ordinal/binding checks as the real loader, collects all
+resolvable records and failures, and does not write the guest IAT. Structurally
+invalid input is rejected before reading any out-of-image records. The report
+contains metadata only, plus a non-cryptographic XXH64 file fingerprint and size;
+no XEX bytes, sections or shader data are exported. It is not an exact supported
+XEX hash allowlist. A PASS certifies binding only, not function semantics.
+
+`Audit-Imports.cmd` saves `diagnostics/imports.log` and
+`diagnostics/imports.exit-code.txt`; GUI audit creates timestamped log files.
+Provide these and `revision.txt`, not the ISO/XEX. The full variable manifest can
+then be reviewed, committed as metadata and covered by a title-specific test.
+Until that evidence exists, full required-import coverage remains **blocked**,
+not green. The audit is not a request to test gameplay after every individual
+missing export.
+
+Added video variables: 0x1BE/0x1BF are separate guest DWORD pointer slots;
+0x1C0 points to BE DWORD 500; 0x1C1 points directly to a persistent initialized
+28-byte critical section. These supplement the earlier variable table above.

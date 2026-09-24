@@ -423,9 +423,11 @@ void HalReturnToFirmware()
     LOG_UTILITY("!!! STUB !!!");
 }
 
-void RtlFillMemoryUlong()
+void RtlFillMemoryUlong(be<uint32_t>* destination, uint32_t length, uint32_t pattern)
 {
-    LOG_UTILITY("!!! STUB !!!");
+    // Xbox ULONG patterns are stored big-endian; length is in bytes.
+    // The SDK requires DWORD alignment; incomplete trailing bytes are untouched.
+    for(uint32_t i=0;i<length/4;++i) destination[i]=pattern;
 }
 
 void KeBugCheckEx()

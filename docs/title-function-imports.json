@@ -1,0 +1,3166 @@
+{
+  "schema": 1,
+  "function_count": 219,
+  "variable_requirements_complete": false,
+  "note": "Source marker scan is heuristic; absence of markers does not prove implementation completeness.",
+  "functions": [
+    {
+      "library": "xam.xex",
+      "ordinal": "0x3D1",
+      "name": "XGetVideoMode",
+      "thunk": "0x8368F7D4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdQueryVideoMode",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x28B",
+      "name": "XNotifyGetNext",
+      "thunk": "0x8368F7E4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xam_objects.cpp",
+          "target": "XNotifyGetNext",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x49E",
+      "name": "XGetVideoCapabilities",
+      "thunk": "0x8368F7F4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XGetVideoCapabilities",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x3CC",
+      "name": "XGetGameRegion",
+      "thunk": "0x8368F804",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XGetGameRegion",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2BC",
+      "name": "XamShowSigninUI",
+      "thunk": "0x8368F814",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamShowSigninUI",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2D5",
+      "name": "XamShowGamerCardUIForXUID",
+      "thunk": "0x8368F824",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XamShowGamerCardUIForXUID",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2CB",
+      "name": "XamShowDeviceSelectorUI",
+      "thunk": "0x8368F834",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamShowDeviceSelectorUI",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2CA",
+      "name": "XamShowMessageBoxUI",
+      "thunk": "0x8368F844",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamShowMessageBoxUI",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2D9",
+      "name": "XamShowDirtyDiscErrorUI",
+      "thunk": "0x8368F854",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamShowDirtyDiscErrorUI",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1F7",
+      "name": "XMsgStartIORequest",
+      "thunk": "0x8368F864",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XMsgStartIORequest",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x20E",
+      "name": "XamUserGetName",
+      "thunk": "0x8368F874",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XamUserGetName",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x210",
+      "name": "XamUserGetSigninState",
+      "thunk": "0x8368F884",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamUserGetSigninState",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x212",
+      "name": "XamUserCheckPrivilege",
+      "thunk": "0x8368F894",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XamUserCheckPrivilege",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x282",
+      "name": "XamGetSystemVersion",
+      "thunk": "0x8368F8A4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamGetSystemVersion",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2F7",
+      "name": "XamUserCreateStatsEnumerator",
+      "thunk": "0x8368F8B4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xam_objects.cpp",
+          "target": "XamUserCreateStatsEnumerator",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2F5",
+      "name": "XamReadTileToTexture",
+      "thunk": "0x8368F8C4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XamReadTileToTexture",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x30A",
+      "name": "XamParseGamerTileKey",
+      "thunk": "0x8368F8D4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XamParseGamerTileKey",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x20A",
+      "name": "XamUserGetXUID",
+      "thunk": "0x8368F8E4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XamUserGetXUID",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x259",
+      "name": "XamContentCreateEx",
+      "thunk": "0x8368F8F4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamContentCreateEx",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x25B",
+      "name": "XamContentDelete",
+      "thunk": "0x8368F904",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamContentDelete",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x25A",
+      "name": "XamContentClose",
+      "thunk": "0x8368F914",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xam_objects.cpp",
+          "target": "XamContentClose",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x262",
+      "name": "XamContentGetCreator",
+      "thunk": "0x8368F924",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamContentGetCreator",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x25C",
+      "name": "XamContentCreateEnumerator",
+      "thunk": "0x8368F934",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xam_content_registry.cpp",
+          "target": "XamContentCreateEnumerator",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x265",
+      "name": "XamContentGetDeviceState",
+      "thunk": "0x8368F944",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamContentGetDeviceState",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x25E",
+      "name": "XamContentGetDeviceData",
+      "thunk": "0x8368F954",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamContentGetDeviceData",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x250",
+      "name": "XamEnumerate",
+      "thunk": "0x8368F964",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xam_objects.cpp",
+          "target": "XamEnumerate",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x227",
+      "name": "XamUserGetSigninInfo",
+      "thunk": "0x8368F974",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamUserGetSigninInfo",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1F8",
+      "name": "XMsgCancelIORequest",
+      "thunk": "0x8368F984",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XMsgCancelIORequest",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1A4",
+      "name": "XamLoaderLaunchTitle",
+      "thunk": "0x8368F994",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamLoaderLaunchTitle",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x28A",
+      "name": "XamNotifyCreateListener",
+      "thunk": "0x8368F9A4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xam_objects.cpp",
+          "target": "XamNotifyCreateListener",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1A0",
+      "name": "XamEnableInactivityProcessing",
+      "thunk": "0x8368F9B4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamEnableInactivityProcessing",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1A1",
+      "name": "XamResetInactivity",
+      "thunk": "0x8368F9C4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamResetInactivity",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2DC",
+      "name": "XamShowMessageBoxUIEx",
+      "thunk": "0x8368F9D4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamShowMessageBoxUIEx",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x3CD",
+      "name": "XGetLanguage",
+      "thunk": "0x8368F9E4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XGetLanguage",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x3CB",
+      "name": "XGetAVPack",
+      "thunk": "0x8368F9F4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XGetAVPack",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1A9",
+      "name": "XamLoaderTerminateTitle",
+      "thunk": "0x8368FA04",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamLoaderTerminateTitle",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x280",
+      "name": "XamGetExecutionId",
+      "thunk": "0x8368FA14",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamGetExecutionId",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1",
+      "name": "DbgBreakPoint",
+      "thunk": "0x8368FA24",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "DbgBreakPoint",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x194",
+      "name": "XexCheckExecutablePrivilege",
+      "thunk": "0x8368FA34",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xex_module.cpp",
+          "target": "XexCheckExecutablePrivilege",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x14E",
+      "name": "vsprintf",
+      "thunk": "0x8368FA44",
+      "hooks": [],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xDF",
+      "name": "NtOpenFile",
+      "thunk": "0x8368FA54",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtOpenFile",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x12C",
+      "name": "RtlInitAnsiString",
+      "thunk": "0x8368FA64",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlInitAnsiString",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xD2",
+      "name": "NtCreateFile",
+      "thunk": "0x8368FA74",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtCreateFile",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x66",
+      "name": "KeGetCurrentProcessType",
+      "thunk": "0x8368FA84",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeGetCurrentProcessType",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xCF",
+      "name": "NtClose",
+      "thunk": "0x8368FA94",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "NtClose",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF7",
+      "name": "NtSetInformationFile",
+      "thunk": "0x8368FAA4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtSetInformationFile",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/io/nt_file.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x21",
+      "name": "FscSetCacheElementCount",
+      "thunk": "0x8368FAB4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "FscSetCacheElementCount",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x28",
+      "name": "HalReturnToFirmware",
+      "thunk": "0x8368FAC4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "HalReturnToFirmware",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xFD",
+      "name": "NtWaitForSingleObjectEx",
+      "thunk": "0x8368FAD4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "NtWaitForSingleObjectEx",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xFF",
+      "name": "NtWriteFile",
+      "thunk": "0x8368FAE4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtWriteFile",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xD1",
+      "name": "NtCreateEvent",
+      "thunk": "0x8368FAF4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "NtCreateEvent",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xBA",
+      "name": "MmAllocatePhysicalMemoryEx",
+      "thunk": "0x8368FB04",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "MmAllocatePhysicalMemoryEx",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xC5",
+      "name": "MmQueryAllocationSize",
+      "thunk": "0x8368FB14",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "MmQueryAllocationSize",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xBD",
+      "name": "MmFreePhysicalMemory",
+      "thunk": "0x8368FB24",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "MmFreePhysicalMemory",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xC4",
+      "name": "MmQueryAddressProtect",
+      "thunk": "0x8368FB34",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "MmQueryAddressProtect",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF6",
+      "name": "NtSetEvent",
+      "thunk": "0x8368FB44",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "NtSetEvent",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x13F",
+      "name": "RtlTimeFieldsToTime",
+      "thunk": "0x8368FB54",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlTimeFieldsToTime",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x140",
+      "name": "RtlTimeToTimeFields",
+      "thunk": "0x8368FB64",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlTimeToTimeFields",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x84",
+      "name": "KeQuerySystemTime",
+      "thunk": "0x8368FB74",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeQuerySystemTime",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x10",
+      "name": "ExGetXConfigSetting",
+      "thunk": "0x8368FB84",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "ExGetXConfigSetting",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1A1",
+      "name": "XexUnloadImage",
+      "thunk": "0x8368FB94",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XexUnloadImage",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x197",
+      "name": "XexGetProcedureAddress",
+      "thunk": "0x8368FBA4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xex_module.cpp",
+          "target": "XexGetProcedureAddress",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x199",
+      "name": "XexLoadImage",
+      "thunk": "0x8368FBB4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XexLoadImage",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x196",
+      "name": "XexGetModuleSection",
+      "thunk": "0x8368FBC4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xex_module.cpp",
+          "target": "XexGetModuleSection",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x3",
+      "name": "DbgPrint",
+      "thunk": "0x8368FBD4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "DbgPrint",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1A5",
+      "name": "__C_specific_handler",
+      "thunk": "0x8368FBE4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "__C_specific_handler_x",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x135",
+      "name": "RtlNtStatusToDosError",
+      "thunk": "0x8368FBF4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlNtStatusToDosError",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF",
+      "name": "ExFreePool",
+      "thunk": "0x8368FC04",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "ExFreePool",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x195",
+      "name": "XexGetModuleHandle",
+      "thunk": "0x8368FC14",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xex_module.cpp",
+          "target": "XexGetModuleHandle",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xE7",
+      "name": "NtQueryFullAttributesFile",
+      "thunk": "0x8368FC24",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtQueryFullAttributesFile",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xE8",
+      "name": "NtQueryInformationFile",
+      "thunk": "0x8368FC34",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtQueryInformationFile",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/io/nt_file.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xEF",
+      "name": "NtQueryVolumeInformationFile",
+      "thunk": "0x8368FC44",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtQueryVolumeInformationFile",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xE4",
+      "name": "NtQueryDirectoryFile",
+      "thunk": "0x8368FC54",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtQueryDirectoryFile",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF1",
+      "name": "NtReadFileScatter",
+      "thunk": "0x8368FC64",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtReadFileScatter",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF0",
+      "name": "NtReadFile",
+      "thunk": "0x8368FC74",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtReadFile",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xDA",
+      "name": "NtDuplicateObject",
+      "thunk": "0x8368FC84",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "NtDuplicateObject",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x143",
+      "name": "RtlUnicodeToMultiByteN",
+      "thunk": "0x8368FC94",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlUnicodeToMultiByteN",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x5A",
+      "name": "KeDelayExecutionThread",
+      "thunk": "0x8368FCA4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeDelayExecutionThread",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x100",
+      "name": "NtWriteFileGather",
+      "thunk": "0x8368FCB4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "NtWriteFileGather",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x105",
+      "name": "ObDereferenceObject",
+      "thunk": "0x8368FCC4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "ObDereferenceObject",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x99",
+      "name": "KeSetBasePriorityThread",
+      "thunk": "0x8368FCD4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeSetBasePriorityThread",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x110",
+      "name": "ObReferenceObjectByHandle",
+      "thunk": "0x8368FCE4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "ObReferenceObjectByHandle",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x81",
+      "name": "KeQueryBasePriorityThread",
+      "thunk": "0x8368FCF4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeQueryBasePriorityThread",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xFC",
+      "name": "NtSuspendThread",
+      "thunk": "0x8368FD04",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "NtSuspendThread",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x97",
+      "name": "KeSetAffinityThread",
+      "thunk": "0x8368FD14",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeSetAffinityThread",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x130",
+      "name": "RtlLeaveCriticalSection",
+      "thunk": "0x8368FD24",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlLeaveCriticalSection",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x125",
+      "name": "RtlEnterCriticalSection",
+      "thunk": "0x8368FD34",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlEnterCriticalSection",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x12B",
+      "name": "RtlImageXexHeaderField",
+      "thunk": "0x8368FD44",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xex_module.cpp",
+          "target": "RtlImageXexHeaderField",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xCC",
+      "name": "NtAllocateVirtualMemory",
+      "thunk": "0x8368FD54",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtAllocateVirtualMemory",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x126",
+      "name": "RtlFillMemoryUlong",
+      "thunk": "0x8368FD64",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlFillMemoryUlong",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x53",
+      "name": "KeBugCheckEx",
+      "thunk": "0x8368FD74",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeBugCheckEx",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xDC",
+      "name": "NtFreeVirtualMemory",
+      "thunk": "0x8368FD84",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtFreeVirtualMemory",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x11B",
+      "name": "RtlCompareMemoryUlong",
+      "thunk": "0x8368FD94",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlCompareMemoryUlong",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x12E",
+      "name": "RtlInitializeCriticalSection",
+      "thunk": "0x8368FDA4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlInitializeCriticalSection",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xEE",
+      "name": "NtQueryVirtualMemory",
+      "thunk": "0x8368FDB4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtQueryVirtualMemory",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x136",
+      "name": "RtlRaiseException",
+      "thunk": "0x8368FDC4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlRaiseException_x",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x13B",
+      "name": "sprintf",
+      "thunk": "0x8368FDD4",
+      "hooks": [],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x89",
+      "name": "KeReleaseSpinLockFromRaisedIrql",
+      "thunk": "0x8368FDE4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeReleaseSpinLockFromRaisedIrql",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x4D",
+      "name": "KeAcquireSpinLockAtRaisedIrql",
+      "thunk": "0x8368FDF4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeAcquireSpinLockAtRaisedIrql",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x9D",
+      "name": "KeSetEvent",
+      "thunk": "0x8368FE04",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "KeSetEvent",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xB4",
+      "name": "KfReleaseSpinLock",
+      "thunk": "0x8368FE14",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KfReleaseSpinLock",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xB1",
+      "name": "KfAcquireSpinLock",
+      "thunk": "0x8368FE24",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KfAcquireSpinLock",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x7B",
+      "name": "KeInsertQueueDpc",
+      "thunk": "0x8368FE34",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "KeInsertQueueDpc",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1DF",
+      "name": "KiApcNormalRoutineNop",
+      "thunk": "0x8368FE44",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KiApcNormalRoutineNop",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1B6",
+      "name": "VdEnableRingBufferRPtrWriteBack",
+      "thunk": "0x8368FE54",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdEnableRingBufferRPtrWriteBack",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C3",
+      "name": "VdInitializeRingBuffer",
+      "thunk": "0x8368FE64",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdInitializeRingBuffer",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xBE",
+      "name": "MmGetPhysicalAddress",
+      "thunk": "0x8368FE74",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "MmGetPhysicalAddress",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1D9",
+      "name": "VdSetSystemCommandBufferGpuIdentifierAddress",
+      "thunk": "0x8368FE84",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdSetSystemCommandBufferGpuIdentifierAddress",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x52",
+      "name": "KeBugCheck",
+      "thunk": "0x8368FE94",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeBugCheck",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1B9",
+      "name": "VdGetCurrentDisplayGamma",
+      "thunk": "0x8368FEA4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdGetCurrentDisplayGamma",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1B4",
+      "name": "VdEnableDisableClockGating",
+      "thunk": "0x8368FEB4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdEnableDisableClockGating",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x14D",
+      "name": "_vsnprintf",
+      "thunk": "0x8368FEC4",
+      "hooks": [],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1CA",
+      "name": "VdQueryVideoMode",
+      "thunk": "0x8368FED4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdQueryVideoMode",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x6B",
+      "name": "KeLockL2",
+      "thunk": "0x8368FEE4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeLockL2",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x6C",
+      "name": "KeUnlockL2",
+      "thunk": "0x8368FEF4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeUnlockL2",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x8F",
+      "name": "KeResetEvent",
+      "thunk": "0x8368FF04",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "KeResetEvent",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xB0",
+      "name": "KeWaitForSingleObject",
+      "thunk": "0x8368FF14",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "KeWaitForSingleObject",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x6F",
+      "name": "KeInitializeDpc",
+      "thunk": "0x8368FF24",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "KeInitializeDpc",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x15",
+      "name": "ExRegisterTitleTerminateNotification",
+      "thunk": "0x8368FF34",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "ExRegisterTitleTerminateNotification",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1B1",
+      "name": "VdCallGraphicsNotificationRoutines",
+      "thunk": "0x8368FF44",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdCallGraphicsNotificationRoutines",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1BA",
+      "name": "VdGetCurrentDisplayInformation",
+      "thunk": "0x8368FF54",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdGetCurrentDisplayInformation",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1D3",
+      "name": "VdSetDisplayMode",
+      "thunk": "0x8368FF64",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdSetDisplayMode",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1D4",
+      "name": "VdSetDisplayModeOverride",
+      "thunk": "0x8368FF74",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "VdSetDisplayModeOverride",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1DC",
+      "name": "VdShutdownEngines",
+      "thunk": "0x8368FF84",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdShutdownEngines",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1D5",
+      "name": "VdSetGraphicsInterruptCallback",
+      "thunk": "0x8368FF94",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdSetGraphicsInterruptCallback",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C2",
+      "name": "VdInitializeEngines",
+      "thunk": "0x8368FFA4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdInitializeEngines",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C6",
+      "name": "VdIsHSIOTrainingSucceeded",
+      "thunk": "0x8368FFB4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdIsHSIOTrainingSucceeded",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x83",
+      "name": "KeQueryPerformanceFrequency",
+      "thunk": "0x8368FFC4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeQueryPerformanceFrequency",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x13A",
+      "name": "_snprintf",
+      "thunk": "0x8368FFD4",
+      "hooks": [],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C7",
+      "name": "VdPersistDisplay",
+      "thunk": "0x8368FFE4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdPersistDisplay",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x25B",
+      "name": "VdSwap",
+      "thunk": "0x8368FFF4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdSwap",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1BD",
+      "name": "VdGetSystemCommandBuffer",
+      "thunk": "0x83690004",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdGetSystemCommandBuffer",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C9",
+      "name": "VdQueryVideoFlags",
+      "thunk": "0x83690014",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdQueryVideoFlags",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C5",
+      "name": "VdInitializeScalerCommandBuffer",
+      "thunk": "0x83690024",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdInitializeScalerCommandBuffer",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x104",
+      "name": "ObDeleteSymbolicLink",
+      "thunk": "0x83690034",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "ObDeleteSymbolicLink",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x103",
+      "name": "ObCreateSymbolicLink",
+      "thunk": "0x83690044",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "ObCreateSymbolicLink",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x9A",
+      "name": "KeSetCurrentProcessType",
+      "thunk": "0x83690054",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "KeSetCurrentProcessType",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x7D",
+      "name": "KeLeaveCriticalRegion",
+      "thunk": "0x83690064",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeLeaveCriticalRegion",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x269",
+      "name": "VdRetrainEDRAM",
+      "thunk": "0x83690074",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdRetrainEDRAM",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x26A",
+      "name": "VdRetrainEDRAMWorker",
+      "thunk": "0x83690084",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "VdRetrainEDRAMWorker",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x5F",
+      "name": "KeEnterCriticalRegion",
+      "thunk": "0x83690094",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeEnterCriticalRegion",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1F4",
+      "name": "XMsgInProcessCall",
+      "thunk": "0x836900A4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XMsgInProcessCall",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1EC",
+      "name": "XamFree",
+      "thunk": "0x836900B4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XamFree",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1EA",
+      "name": "XamAlloc",
+      "thunk": "0x836900C4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XamAlloc",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x219",
+      "name": "XamUserReadProfileSettings",
+      "thunk": "0x836900D4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamUserReadProfileSettings",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x317",
+      "name": "XamSessionRefObjByHandle",
+      "thunk": "0x836900E4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xam_objects.cpp",
+          "target": "XamSessionRefObjByHandle",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x316",
+      "name": "XamSessionCreateHandle",
+      "thunk": "0x836900F4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/xam_objects.cpp",
+          "target": "XamSessionCreateHandle",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1",
+      "name": "NetDll_WSAStartup",
+      "thunk": "0x83690104",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_WSAStartup",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2",
+      "name": "NetDll_WSACleanup",
+      "thunk": "0x83690114",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_WSACleanup",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x3",
+      "name": "NetDll_socket",
+      "thunk": "0x83690124",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_socket",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x4",
+      "name": "NetDll_closesocket",
+      "thunk": "0x83690134",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_closesocket",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x7",
+      "name": "NetDll_setsockopt",
+      "thunk": "0x83690144",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_setsockopt",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0xB",
+      "name": "NetDll_bind",
+      "thunk": "0x83690154",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_bind",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0xC",
+      "name": "NetDll_connect",
+      "thunk": "0x83690164",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_connect",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0xD",
+      "name": "NetDll_listen",
+      "thunk": "0x83690174",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_listen",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0xE",
+      "name": "NetDll_accept",
+      "thunk": "0x83690184",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_accept",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0xF",
+      "name": "NetDll_select",
+      "thunk": "0x83690194",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_select",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x12",
+      "name": "NetDll_recv",
+      "thunk": "0x836901A4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_recv",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x16",
+      "name": "NetDll_send",
+      "thunk": "0x836901B4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_send",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1A",
+      "name": "NetDll_inet_addr",
+      "thunk": "0x836901C4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_inet_addr",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x22",
+      "name": "NetDll___WSAFDIsSet",
+      "thunk": "0x836901D4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll___WSAFDIsSet",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1FC",
+      "name": "XMsgStartIORequestEx",
+      "thunk": "0x836901E4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XMsgStartIORequestEx",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x190",
+      "name": "XamInputGetCapabilities",
+      "thunk": "0x836901F4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamInputGetCapabilities",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x191",
+      "name": "XamInputGetState",
+      "thunk": "0x83690204",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamInputGetState",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x192",
+      "name": "XamInputSetState",
+      "thunk": "0x83690214",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XamInputSetState",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x141",
+      "name": "RtlTryEnterCriticalSection",
+      "thunk": "0x83690224",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlTryEnterCriticalSection",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x152",
+      "name": "KeTlsAlloc",
+      "thunk": "0x83690234",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeTlsAlloc",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x153",
+      "name": "KeTlsFree",
+      "thunk": "0x83690244",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeTlsFree",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x154",
+      "name": "KeTlsGetValue",
+      "thunk": "0x83690254",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeTlsGetValue",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x155",
+      "name": "KeTlsSetValue",
+      "thunk": "0x83690264",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeTlsSetValue",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x2C",
+      "name": "InterlockedPopEntrySList",
+      "thunk": "0x83690274",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "Guest_InterlockedPopEntrySList",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x2B",
+      "name": "InterlockedFlushSList",
+      "thunk": "0x83690284",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "Guest_InterlockedFlushSList",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x12F",
+      "name": "RtlInitializeCriticalSectionAndSpinCount",
+      "thunk": "0x83690294",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlInitializeCriticalSectionAndSpinCount",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x151",
+      "name": "vswprintf",
+      "thunk": "0x836902A4",
+      "hooks": [],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x14F",
+      "name": "_vscwprintf",
+      "thunk": "0x836902B4",
+      "hooks": [],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x13E",
+      "name": "swprintf",
+      "thunk": "0x836902C4",
+      "hooks": [],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x13D",
+      "name": "_snwprintf",
+      "thunk": "0x836902D4",
+      "hooks": [],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x166",
+      "name": "XeCryptBnQwBeSigVerify",
+      "thunk": "0x836902E4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XeCryptBnQwBeSigVerify",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x244",
+      "name": "XeKeysGetKey",
+      "thunk": "0x836902F4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XeKeysGetKey",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x18E",
+      "name": "XeCryptRotSumSha",
+      "thunk": "0x83690304",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XeCryptRotSumSha",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x192",
+      "name": "XeCryptSha",
+      "thunk": "0x83690314",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XeCryptSha",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1F8",
+      "name": "XAudioGetVoiceCategoryVolume",
+      "thunk": "0x83690324",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XAudioGetVoiceCategoryVolume",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xC2",
+      "name": "MmMapIoSpace",
+      "thunk": "0x83690334",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "MmMapIoSpace",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x224",
+      "name": "XMACreateContext",
+      "thunk": "0x83690344",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XMACreateContext",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x226",
+      "name": "XMAReleaseContext",
+      "thunk": "0x83690354",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XMAReleaseContext",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xAF",
+      "name": "KeWaitForMultipleObjects",
+      "thunk": "0x83690364",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "KeWaitForMultipleObjects",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1F5",
+      "name": "XAudioSubmitRenderDriverFrame",
+      "thunk": "0x83690374",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XAudioSubmitRenderDriverFrame",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1F4",
+      "name": "XAudioUnregisterRenderDriverClient",
+      "thunk": "0x83690384",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XAudioUnregisterRenderDriverClient",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1F3",
+      "name": "XAudioRegisterRenderDriverClient",
+      "thunk": "0x83690394",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "XAudioRegisterRenderDriverClient",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1FF",
+      "name": "XAudioGetSpeakerConfig",
+      "thunk": "0x836903A4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports_extra.cpp",
+          "target": "XAudioGetSpeakerConfig",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x147",
+      "name": "RtlUnwind",
+      "thunk": "0x836903B4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlUnwind_x",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x119",
+      "name": "RtlCaptureContext",
+      "thunk": "0x836903C4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlCaptureContext_x",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xCE",
+      "name": "NtClearEvent",
+      "thunk": "0x836903D4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "NtClearEvent",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF5",
+      "name": "NtResumeThread",
+      "thunk": "0x836903E4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "NtResumeThread",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x133",
+      "name": "RtlMultiByteToUnicodeN",
+      "thunk": "0x836903F4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlMultiByteToUnicodeN",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x25A",
+      "name": "StfsControlDevice",
+      "thunk": "0x83690404",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "StfsControlDevice",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x259",
+      "name": "StfsCreateDevice",
+      "thunk": "0x83690414",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "StfsCreateDevice",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xDB",
+      "name": "NtFlushBuffersFile",
+      "thunk": "0x83690424",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NtFlushBuffersFile",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x11D",
+      "name": "RtlCompareStringN",
+      "thunk": "0x83690434",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlCompareStringN",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xD5",
+      "name": "NtCreateSemaphore",
+      "thunk": "0x83690444",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "NtCreateSemaphore",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF3",
+      "name": "NtReleaseSemaphore",
+      "thunk": "0x83690454",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "NtReleaseSemaphore",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x19",
+      "name": "ExTerminateThread",
+      "thunk": "0x83690464",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "ExTerminateThread",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x127",
+      "name": "RtlFreeAnsiString",
+      "thunk": "0x83690474",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlFreeAnsiString",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x142",
+      "name": "RtlUnicodeStringToAnsiString",
+      "thunk": "0x83690484",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlUnicodeStringToAnsiString",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x12D",
+      "name": "RtlInitUnicodeString",
+      "thunk": "0x83690494",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlInitUnicodeString",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xD",
+      "name": "ExCreateThread",
+      "thunk": "0x836904A4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "ExCreateThread",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x41",
+      "name": "IoInvalidDeviceRequest",
+      "thunk": "0x836904B4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "IoInvalidDeviceRequest",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x10F",
+      "name": "ObReferenceObject",
+      "thunk": "0x836904C4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/object_imports.cpp",
+          "target": "ObReferenceObject",
+          "limitation_markers": []
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x37",
+      "name": "IoCreateDevice",
+      "thunk": "0x836904D4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "IoCreateDevice",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x39",
+      "name": "IoDeleteDevice",
+      "thunk": "0x836904E4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "IoDeleteDevice",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xB",
+      "name": "ExAllocatePoolTypeWithTag",
+      "thunk": "0x836904F4",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "ExAllocatePoolTypeWithTag",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x35",
+      "name": "IoCompleteRequest",
+      "thunk": "0x83690504",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "IoCompleteRequest",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x149",
+      "name": "RtlUpcaseUnicodeChar",
+      "thunk": "0x83690514",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "RtlUpcaseUnicodeChar",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x109",
+      "name": "ObIsTitleObject",
+      "thunk": "0x83690524",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "ObIsTitleObject",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x34",
+      "name": "IoCheckShareAccess",
+      "thunk": "0x83690534",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "IoCheckShareAccess",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x47",
+      "name": "IoSetShareAccess",
+      "thunk": "0x83690544",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "IoSetShareAccess",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x45",
+      "name": "IoRemoveShareAccess",
+      "thunk": "0x83690554",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "IoRemoveShareAccess",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x33",
+      "name": "NetDll_XNetStartup",
+      "thunk": "0x83690564",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_XNetStartup",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x49",
+      "name": "NetDll_XNetGetTitleXnAddr",
+      "thunk": "0x83690574",
+      "hooks": [
+        {
+          "source": "SonicGenerationsRecomp/kernel/imports.cpp",
+          "target": "NetDll_XNetGetTitleXnAddr",
+          "limitation_markers": [
+            "SonicGenerationsRecomp/kernel/imports.cpp"
+          ]
+        }
+      ],
+      "semantic_status": "not_certified"
+    }
+  ]
+}

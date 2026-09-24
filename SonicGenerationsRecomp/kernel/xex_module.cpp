@@ -158,21 +158,36 @@ uint32_t xex_module::VariableAddress(uint32_t ordinal)
     }
 }
 
-bool xex_module::BindImports(std::span<const uint8_t> bytes,const Image& image,std::string& error)
+namespace
+{
+struct CompiledImport
+{
+    const char* library;
+    uint32_t ordinal, thunk;
+    const char* name;
+    PPCFunc* function;
+};
+#define SONIC_IMPORT(library, ordinal, thunk, name) {library, ordinal, thunk, #name, &__imp__##name},
+const CompiledImport compiledImports[]={
+#include "title_function_imports.inc"
+};
+#undef SONIC_IMPORT
+
+bool PlanImports(std::span<const uint8_t> bytes,const Image& image,
+                 std::string& error,std::string& report,bool apply)
 {
     error.clear();
+    report="library\tordinal\tkind\tname\tiat\ttarget\tstatus\n";
     std::vector<ImportLibrary> libraries;
     if(!image.data || !g_exports || image.base>UINT32_MAX || image.size>UINT32_MAX-image.base)
     { error="image or module is not initialized"; return false; }
     if(!ReadImports(bytes,image.base,image.size,libraries,error)) return false;
     std::vector<std::pair<uint32_t,uint32_t>> patches;
-    std::string missingVariables;
     for(const auto& library:libraries)
     {
         std::span<const ExportType> exports;
         if(library.name=="xboxkrnl.exe") exports=kernelExports;
         else if(library.name=="xam.xex") exports=xamExports;
-        else { error="unsupported import library: "+library.name; return false; }
         for(size_t i=0;i<library.records.size();++i)
         {
             const auto address=library.records[i];
@@ -180,44 +195,69 @@ bool xex_module::BindImports(std::span<const uint8_t> bytes,const Image& image,s
             const auto ordinal=record&0xFFFF;
             const auto found=std::find_if(exports.begin(),exports.end(),
                 [&](const auto& entry){return entry.ordinal==ordinal;});
-            auto fail=[&](const char* reason) {
-                error=fmt::format("{} ordinal 0x{:X} at 0x{:X}: {}",library.name,ordinal,address,reason);
-                return false;
-            };
-            if(record>>24) return fail("expected type-0 IAT record");
-            if(found==exports.end()) return fail("unknown export ordinal");
+            const char* name=found==exports.end() ? "unknown" : found->name;
+            const char* kind=found==exports.end() ? "unknown" : found->variable ? "variable" : "function";
+            std::string reason;
             uint32_t target=0;
-            if(found->variable)
+            if(record>>24) reason="expected type-0 IAT record";
+            else if(exports.empty()) reason="unsupported import library";
+            else if(found==exports.end()) reason="unknown export ordinal";
+            else if(found->variable)
             {
-                target=library.name=="xboxkrnl.exe" ? VariableAddress(ordinal) : 0;
-                if(!target)
-                {
-                    // Report all missing variables in this image in one run.
-                    // Do not apply any IAT patches unless the entire plan succeeds.
-                    if(!missingVariables.empty()) missingVariables+='\n';
-                    missingVariables+=fmt::format("{} ordinal 0x{:X} ({}) at 0x{:X}: variable export is not implemented",
-                        library.name,ordinal,found->name,address);
-                    continue;
-                }
+                target=library.name=="xboxkrnl.exe" ? xex_module::VariableAddress(ordinal) : 0;
+                if(!target) reason="variable export is not implemented";
             }
+            else if(i+1>=library.records.size()) reason="missing function thunk";
             else
             {
-                if(++i>=library.records.size()) return fail("missing function thunk");
-                target=library.records[i];
-                if(image.size-(target-image.base)<16) return fail("truncated function thunk");
+                target=library.records[i+1];
                 const auto thunk=ReadBE(image.data.get()+target-image.base);
+                // Do not swallow the next IAT entry when a thunk is missing.
                 if((thunk>>24)!=1 || (thunk&0xFFFF)!=ordinal)
-                    return fail("function thunk type or ordinal mismatch");
-                if(target<PPC_CODE_BASE || uint64_t(target)>=uint64_t(PPC_CODE_BASE)+PPC_CODE_SIZE ||
-                   !g_memory.FindFunction(target)) return fail("function thunk has no compiled mapping");
+                    reason="function thunk type or ordinal mismatch";
+                else
+                {
+                    ++i;
+                    if(image.size-(target-image.base)<16) reason="truncated function thunk";
+                    else if(target<PPC_CODE_BASE || uint64_t(target)>=uint64_t(PPC_CODE_BASE)+PPC_CODE_SIZE ||
+                            !g_memory.FindFunction(target)) reason="function thunk has no compiled mapping";
+                    else
+                    {
+                        const auto expected=std::find_if(std::begin(compiledImports),std::end(compiledImports),
+                            [&](const auto& e){return e.library==library.name && e.ordinal==ordinal && e.thunk==target;});
+                        if(expected==std::end(compiledImports) || expected->function!=g_memory.FindFunction(target))
+                            reason="function thunk does not match the compiled title import";
+                    }
+                }
             }
-            patches.emplace_back(address,target);
+            report+=fmt::format("{}\t0x{:X}\t{}\t{}\t0x{:08X}\t0x{:08X}\t{}\n",
+                library.name,ordinal,kind,name,address,target,reason.empty() ? "bound (semantics not certified)" : reason);
+            if(!reason.empty())
+            {
+                if(!error.empty()) error+='\n';
+                error+=fmt::format("{} ordinal 0x{:X} ({}) at 0x{:X}: {}",library.name,ordinal,name,address,reason);
+            }
+            else patches.emplace_back(address,target);
         }
     }
-    if(!missingVariables.empty()) { error=std::move(missingVariables); return false; }
-    for(auto [slot,target]:patches)
-        *static_cast<be<uint32_t>*>(g_memory.Translate(slot))=target;
+    if(!error.empty()) return false;
+    if(apply)
+        for(auto [slot,target]:patches)
+            *static_cast<be<uint32_t>*>(g_memory.Translate(slot))=target;
     return true;
+}
+}
+
+bool xex_module::BindImports(std::span<const uint8_t> bytes,const Image& image,std::string& error)
+{
+    std::string report;
+    return PlanImports(bytes,image,error,report,true);
+}
+
+bool xex_module::AuditImports(std::span<const uint8_t> bytes,const Image& image,
+                              std::string& report,std::string& error)
+{
+    return PlanImports(bytes,image,error,report,false);
 }
 
 bool xex_module::ValidateHeader(std::span<const uint8_t> bytes)

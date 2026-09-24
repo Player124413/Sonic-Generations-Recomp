@@ -357,14 +357,101 @@ static void TestXexImportBinding()
     CHECK(!xex_module::BindImports(bytes,image,error));
     store(0x5C,52);
 
-    // Use a known generated function mapping without executing guest code.
-    raw[1]=1; raw[2]=0x01000001;
-    store(0x8C,uint32_t(PPC_CODE_BASE));
-    *reinterpret_cast<be<uint32_t>*>(image.data.get()+PPC_CODE_BASE-PPC_IMAGE_BASE)=0x01000001;
+    // Bind the actual DbgPrint thunk, not an unrelated compiled function.
+    constexpr uint32_t printThunk=0x8368FBD4;
+    raw[1]=3; raw[2]=0x01000003;
+    store(0x8C,printThunk);
+    auto* thunk=reinterpret_cast<be<uint32_t>*>(image.data.get()+printThunk-PPC_IMAGE_BASE);
+    *thunk=0x01000003;
     CHECK(xex_module::BindImports(bytes,image,error));
-    CHECK(guest[1]==PPC_CODE_BASE);
-    *reinterpret_cast<be<uint32_t>*>(image.data.get()+PPC_CODE_BASE-PPC_IMAGE_BASE)=0x01000002;
+    CHECK(guest[1]==printThunk);
+    *thunk=0x01000002;
     CHECK(!xex_module::BindImports(bytes,image,error));
+    // A present mapping alone is insufficient: reject the wrong named thunk.
+    *thunk=0x01000001; raw[1]=1;
+    CHECK(!xex_module::BindImports(bytes,image,error));
+
+    // Exhaust the generated title's entire known function-import mapping.
+    struct RequiredImport { const char* library; uint32_t ordinal, thunk; };
+#define SONIC_IMPORT(library, ordinal, thunk, name) {library, ordinal, thunk},
+    const RequiredImport required[]={
+#include "../SonicGenerationsRecomp/kernel/title_function_imports.inc"
+    };
+#undef SONIC_IMPORT
+    static_assert(std::size(required)==219);
+    store(0x40,76); store(0x5C,48); bytes[0x83]=2;
+    for(const auto& entry:required)
+    {
+        std::memset(bytes.data()+0x4C,0,16);
+        std::memcpy(bytes.data()+0x4C,entry.library,std::strlen(entry.library));
+        store(0x84,slot); store(0x88,entry.thunk);
+        raw[0]=entry.ordinal;
+        auto* word=reinterpret_cast<be<uint32_t>*>(image.data.get()+entry.thunk-image.base);
+        *word=0x01000000|entry.ordinal;
+        guest[0]=0xDEADBEEF;
+        std::string report;
+        CHECK(xex_module::AuditImports(bytes,image,report,error) && error.empty());
+        CHECK(guest[0]==0xDEADBEEF); // A dry-run never patches the IAT.
+        CHECK(report.find("function")!=std::string::npos);
+        CHECK(xex_module::BindImports(bytes,image,error) && error.empty());
+        CHECK(guest[0]==entry.thunk);
+    }
+    // One transaction containing all eleven currently implemented variables.
+    // This is the implemented set, NOT a claim about all variables in the XEX.
+    constexpr uint32_t variables[]={0xE,0x17,0x1B,0x59,0xAD,0x193,0x1BE,0x1BF,0x1C0,0x1C1,0x266};
+    std::memset(bytes.data()+0x4C,0,16);
+    std::memcpy(bytes.data()+0x4C,"xboxkrnl.exe",13);
+    store(0x40,112); store(0x5C,84); bytes[0x83]=11;
+    for(size_t i=0;i<std::size(variables);++i)
+    {
+        store(0x84+4*i,slot+uint32_t(4*i));
+        raw[i]=variables[i]; guest[i]=0xDEADBEEF;
+    }
+    std::string variableReport;
+    CHECK(xex_module::AuditImports(bytes,image,variableReport,error) && error.empty());
+    for(size_t i=0;i<std::size(variables);++i) CHECK(guest[i]==0xDEADBEEF);
+    CHECK(xex_module::BindImports(bytes,image,error) && error.empty());
+    for(size_t i=0;i<std::size(variables);++i)
+        CHECK(guest[i]!=0 && guest[i]==xex_module::VariableAddress(variables[i]));
+
+    // Mixed valid/missing/unknown records all appear in one dry-run report.
+    std::memset(bytes.data()+0x4C,0,16);
+    std::memcpy(bytes.data()+0x4C,"xboxkrnl.exe",13);
+    store(0x40,80); store(0x5C,52); bytes[0x83]=3;
+    store(0x84,slot); store(0x88,slot+4); store(0x8C,slot+8);
+    raw[0]=0x1C0; raw[1]=0x3E; raw[2]=0xFFFF;
+    guest[0]=guest[1]=guest[2]=0xDEADBEEF;
+    std::string report;
+    CHECK(!xex_module::AuditImports(bytes,image,report,error));
+    CHECK(report.find("VdGpuClockInMHz")!=std::string::npos);
+    CHECK(report.find("IoFileObjectType")!=std::string::npos);
+    CHECK(error.find("0x3E")!=std::string::npos && error.find("0xFFFF")!=std::string::npos);
+    CHECK(guest[0]==0xDEADBEEF && guest[1]==0xDEADBEEF && guest[2]==0xDEADBEEF);
+    CHECK(!xex_module::BindImports(bytes,image,error));
+    CHECK(guest[0]==0xDEADBEEF && guest[1]==0xDEADBEEF && guest[2]==0xDEADBEEF);
+}
+
+static void TestRtlFillMemoryUlongImport()
+{
+    auto* memory=static_cast<uint8_t*>(g_userHeap.Alloc(16));
+    CHECK(memory!=nullptr);
+    if(!memory) return;
+    std::memset(memory,0xA5,16);
+    PPCContext context{};
+    context.r3.u32=g_memory.MapVirtual(memory+4);
+    context.r4.u32=6;
+    context.r5.u32=0x12345678;
+    __imp__RtlFillMemoryUlong(context,g_memory.base);
+    CHECK(memory[4]==0x12 && memory[5]==0x34 && memory[6]==0x56 && memory[7]==0x78);
+    for(size_t i=0;i<16;++i) if(i<4 || i>=8) CHECK(memory[i]==0xA5);
+    context.r4.u32=8;
+    context.r5.u32=0xFFFFFFFF;
+    __imp__RtlFillMemoryUlong(context,g_memory.base);
+    for(size_t i=4;i<12;++i) CHECK(memory[i]==0xFF);
+    CHECK(memory[3]==0xA5 && memory[12]==0xA5);
+    context.r3.u32=0; context.r4.u32=0;
+    __imp__RtlFillMemoryUlong(context,g_memory.base); // zero length must not dereference null
+    g_userHeap.Free(memory);
 }
 
 static void TestRuntimeDecoderImports()
@@ -410,6 +497,7 @@ int main()
     TestXexRegistry();
     TestXexImportBinding();
     TestRuntimeDecoderImports();
+    TestRtlFillMemoryUlongImport();
     TestHeap();
     TestMemoryTranslation();
     TestKernelObjects();

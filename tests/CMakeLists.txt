@@ -20,3 +20,8 @@ add_test(NAME paths_tests COMMAND paths_tests)
 if (WIN32 AND SONIC_GENERATIONS_ENABLE_VULKAN)
     add_subdirectory(sdl_vulkan)
 endif()
+
+add_test(NAME import_inventory_regression COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_import_inventory.py")
+add_test(NAME title_function_import_inventory COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/audit_import_inventory.py")
