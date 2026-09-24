@@ -189,3 +189,20 @@ ConversionResult GuestGpu::ConvertTexture(const TextureLayout& l, std::span<cons
     catch (const std::bad_alloc&) { return ConversionResult::AllocationFailure; }
     return ConversionResult::Success;
 }
+
+GuestGpu::ConversionResult GuestGpu::BuildSequentialIndices(uint32_t first,
+    uint32_t count, uint32_t vertexCount, size_t budget, std::vector<uint8_t>& output) noexcept
+{
+    if(!count || first>INT32_MAX || uint64_t(first)+count>vertexCount)
+        return ConversionResult::InvalidLayout;
+    if(uint64_t(count)*4>budget) return ConversionResult::TooLarge;
+    try
+    {
+        std::vector<uint8_t> indices(size_t(count)*4);
+        for(uint32_t i=0;i<count;++i)
+            for(size_t byte=0;byte<4;++byte) indices[size_t(i)*4+byte]=uint8_t(i>>(byte*8));
+        output=std::move(indices);
+        return ConversionResult::Success;
+    }
+    catch(const std::bad_alloc&) { return ConversionResult::AllocationFailure; }
+}

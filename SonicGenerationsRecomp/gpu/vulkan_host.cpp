@@ -1,3 +1,4 @@
+#include <gpu/vulkan_state.h>
 #include <gpu/vulkan_host.h>
 #include <gpu/shader_cache.h>
 #include <algorithm>
@@ -475,9 +476,11 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     uint32_t locations = 0;
     for (const auto& attribute : input.attributes)
     {
-        const uint32_t bytes = attribute.format == VK_FORMAT_R32_SFLOAT ? 4 : attribute.format == VK_FORMAT_R32G32_SFLOAT ? 8 :
-            attribute.format == VK_FORMAT_R32G32B32_SFLOAT ? 12 : attribute.format == VK_FORMAT_R32G32B32A32_SFLOAT ? 16 : 0;
-        if (!bytes || attribute.binding != 0 || attribute.location >= 32 || (locations & (1u << attribute.location)) ||
+        const uint32_t bytes = VertexFormatSize(attribute.format);
+        if(!bytes) { p.Fail("Unsupported vertex format"); return 0; }
+        VkFormatProperties properties{};
+        vkGetPhysicalDeviceFormatProperties(p.physical,attribute.format,&properties);
+        if (!bytes || !(properties.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT) || attribute.binding != 0 || attribute.location >= 32 || (locations & (1u << attribute.location)) ||
             attribute.offset > input.vertexStride || bytes > input.vertexStride - attribute.offset ||
             attribute.offset > limits.limits.maxVertexInputAttributeOffset)
         { p.Fail("Unsupported vertex attribute in initial graphics profile"); return 0; }

@@ -158,6 +158,7 @@ try
     size_t shaderBytes = 0;
     constexpr size_t MaxDecodedShaderBytes = 64 * 1024 * 1024;
     std::vector<std::vector<uint8_t>> hostIndices(batch.draws.size());
+    std::vector<uint32_t> indexCounts(batch.draws.size()), indexStrides(batch.draws.size());
     // Validate and convert the whole batch before beginning its uploads.
     for (size_t n = 0; n < batch.draws.size(); ++n)
     {
@@ -232,7 +233,25 @@ try
             }
         }
         else if (!draw.resources.vertices.empty() || !draw.resources.textures.empty()) return GuestGpu::SubmissionResult::Incomplete;
-        if (draw.kind != GuestGpu::DrawKind::IndexedVertices) continue;
+        if (draw.kind != GuestGpu::DrawKind::IndexedVertices)
+        {
+            if(draw.kind!=GuestGpu::DrawKind::Vertices) return GuestGpu::SubmissionResult::Incomplete;
+            if(graphics)
+            {
+                if(draw.resources.vertices.size()!=1 || !draw.resources.vertices[0].stride)
+                    return GuestGpu::SubmissionResult::Incomplete;
+                const auto& vertex=draw.resources.vertices[0];
+                const auto status=GuestGpu::BuildSequentialIndices(draw.arguments[1],draw.arguments[2],
+                    uint32_t(vertex.bytes.size()/vertex.stride),
+                    std::min(GuestGpu::IndexSnapshot::MaxBytes,GuestGpu::CommandStream::MaxPayloadBytes-total),hostIndices[n]);
+                if(status!=GuestGpu::ConversionResult::Success)
+                { Fail("DrawVertices range or index budget invalid"); return GuestGpu::SubmissionResult::Incomplete; }
+                indexCounts[n]=draw.arguments[2]; indexStrides[n]=4;
+                total+=hostIndices[n].size();
+            }
+            continue;
+        }
+        indexCounts[n]=draw.indices.count; indexStrides[n]=draw.indices.stride;
         const auto& index = draw.indices;
         if ((index.stride != 2 && index.stride != 4) || index.bytes.size() != uint64_t(index.count) * index.stride ||
             index.bytes.size() > GuestGpu::IndexSnapshot::MaxBytes || index.count != draw.arguments[3] ||
@@ -255,8 +274,8 @@ try
             const auto vs=nextShaders.find(d.vertexShader.hash), ps=nextShaders.find(d.pixelShader.hash);
             const auto targets=d.state.ColorTargets();
             const auto state=HostGpu::DecodeFixedState(d.state);
-            if(d.kind!=GuestGpu::DrawKind::IndexedVertices || d.arguments[0]!=4 || !d.indices.count || d.indices.count%3 ||
-                !d.state.IndexBuffer() || !d.state.words[12812/4] || !d.state.words[12216/4] ||
+            if(d.arguments[0]!=4 || !indexCounts[n] || indexCounts[n]%3 ||
+                (d.kind==GuestGpu::DrawKind::IndexedVertices && !d.state.IndexBuffer()) || !d.state.words[12812/4] || !d.state.words[12216/4] ||
                 vs==nextShaders.end() || ps==nextShaders.end() || !d.resources.captured ||
                 !d.vertexShader.reflectionValid || !d.pixelShader.reflectionValid || d.vertexShader.samplerMask ||
                 !d.vertexShader.packedBooleansSupported || !d.pixelShader.packedBooleansSupported ||
@@ -265,7 +284,7 @@ try
                 d.state.DepthTarget()!=batch.draws.front().state.DepthTarget() ||
                 ((state.depth.depthTestEnable || state.depth.depthWriteEnable) && !d.state.DepthTarget()) || state.requiresStencil || state.requiresAlphaTest || state.requiresAlphaToCoverage ||
                 state.unsupportedRasterBits || state.invalidBlend || d.resources.vertices.size()!=1 || d.resources.vertices[0].stream!=0)
-            { Fail("Draw outside supported profile: indexed triangles, one target, one stream, 2D pixel textures, no stencil/MSAA/alpha test"); return GuestGpu::SubmissionResult::Incomplete; }
+            { Fail("Draw outside supported profile: triangles, one target, one stream, 2D pixel textures, no stencil/MSAA/alpha test"); return GuestGpu::SubmissionResult::Incomplete; }
             for(auto factor:{state.blend[0].srcColorBlendFactor,state.blend[0].dstColorBlendFactor,state.blend[0].srcAlphaBlendFactor,state.blend[0].dstAlphaBlendFactor})
                 if((factor>=VK_BLEND_FACTOR_CONSTANT_COLOR && factor<=VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA) || factor>=VK_BLEND_FACTOR_SRC1_COLOR)
                 { Fail("Constant/dual-source blending unsupported"); return GuestGpu::SubmissionResult::Incomplete; }
@@ -286,15 +305,9 @@ try
                 { if(selected) { Fail("Duplicate vertex declaration semantic"); return GuestGpu::SubmissionResult::Incomplete; } selected=&e; }
                 if(!selected || selected->stream || selected->method)
                 { Fail("Missing or unsupported native vertex declaration input"); return GuestGpu::SubmissionResult::Incomplete; }
-                VkFormat format=VK_FORMAT_UNDEFINED;
-                switch(selected->type)
-                {
-                    case 0x2C83A4: format=VK_FORMAT_R32_SFLOAT; break;
-                    case 0x2C23A5: format=VK_FORMAT_R32G32_SFLOAT; break;
-                    case 0x2A23B9: format=VK_FORMAT_R32G32B32_SFLOAT; break;
-                    case 0x1A23A6: format=VK_FORMAT_R32G32B32A32_SFLOAT; break;
-                    default: Fail("Native vertex format unsupported by current draw profile"); return GuestGpu::SubmissionResult::Incomplete;
-                }
+                const auto format=HostGpu::DecodeVertexFormat(selected->type);
+                if(format==VK_FORMAT_UNDEFINED)
+                { Fail("Integer, packed or unknown vertex input requires an explicit shader ABI mapping"); return GuestGpu::SubmissionResult::Incomplete; }
                 plan.attributes.push_back({loc,0,format,selected->offset});
             }
             if(plan.attributes.empty()) { Fail("Procedural vertex input not supported yet"); return GuestGpu::SubmissionResult::Incomplete; }
@@ -308,9 +321,9 @@ try
             plan.bindings.scissor={{scissor[0],scissor[1]},{uint32_t(scissor[2]-scissor[0]),uint32_t(scissor[3]-scissor[1])}};
             plan.bindings.baseVertex=std::bit_cast<int32_t>(d.arguments[1]);
             const auto& vertices=d.resources.vertices[0];
-            for(size_t i=0;i<hostIndices[n].size();i+=d.indices.stride)
+            for(size_t i=0;i<hostIndices[n].size();i+=indexStrides[n])
             {
-                uint32_t index=0; for(uint32_t b=0;b<d.indices.stride;++b) index|=uint32_t(hostIndices[n][i+b])<<(8*b);
+                uint32_t index=0; for(uint32_t b=0;b<indexStrides[n];++b) index|=uint32_t(hostIndices[n][i+b])<<(8*b);
                 const int64_t vertex=int64_t(index)+plan.bindings.baseVertex;
                 if(vertex<0 || uint64_t(vertex)>=vertices.bytes.size()/vertices.stride)
                 { Fail("Native index references outside captured vertex stream"); return GuestGpu::SubmissionResult::Incomplete; }
@@ -387,7 +400,7 @@ try
             if(!id) { ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
             drawResources.push_back(id); plan.bindings.shared=id;
         }
-        if (draw.kind == GuestGpu::DrawKind::IndexedVertices && !draw.indices.bytes.empty())
+        if (!hostIndices[n].empty())
         {
             id = Upload(hostIndices[n], VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
             indexBuffer=id;
@@ -413,8 +426,8 @@ try
         if(graphics)
         {
             plan.bindings.textures=plan.textures;
-            if(!host.DrawIndexed(pipelines[n],color,depth,vertexBuffer,indexBuffer,draw.indices.count,
-                draw.indices.stride==2 ? VK_INDEX_TYPE_UINT16:VK_INDEX_TYPE_UINT32,{0,0,0,1},&plan.bindings))
+            if(!host.DrawIndexed(pipelines[n],color,depth,vertexBuffer,indexBuffer,indexCounts[n],
+                indexStrides[n]==2 ? VK_INDEX_TYPE_UINT16:VK_INDEX_TYPE_UINT32,{0,0,0,1},&plan.bindings))
             { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
         }
     }

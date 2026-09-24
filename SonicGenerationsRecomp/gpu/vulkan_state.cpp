@@ -86,3 +86,38 @@ VulkanFixedState DecodeFixedState(const GuestGpu::NativeState& native)
     return result;
 }
 }
+
+VkFormat HostGpu::DecodeVertexFormat(uint32_t type) noexcept
+{
+    // Xbox SDK encodings cross-checked with UnleashedRecomp video.h/video.cpp.
+    switch(type)
+    {
+    case 0x2C83A4: return VK_FORMAT_R32_SFLOAT;
+    case 0x2C23A5: return VK_FORMAT_R32G32_SFLOAT;
+    case 0x2A23B9: return VK_FORMAT_R32G32B32_SFLOAT;
+    case 0x1A23A6: return VK_FORMAT_R32G32B32A32_SFLOAT;
+    case 0x182886: return VK_FORMAT_B8G8R8A8_UNORM;
+    case 0x1A2086: case 0x1A2186: return VK_FORMAT_R8G8B8A8_UNORM;
+    case 0x2C2159: return VK_FORMAT_R16G16_SNORM;
+    case 0x1A215A: return VK_FORMAT_R16G16B16A16_SNORM;
+    case 0x2C2059: return VK_FORMAT_R16G16_UNORM;
+    case 0x1A205A: return VK_FORMAT_R16G16B16A16_UNORM;
+    case 0x2C235F: return VK_FORMAT_R16G16_SFLOAT;
+    case 0x1A2360: return VK_FORMAT_R16G16B16A16_SFLOAT;
+    default: return VK_FORMAT_UNDEFINED;
+    }
+}
+uint32_t HostGpu::VertexFormatSize(VkFormat format) noexcept
+{
+    switch(format)
+    {
+    case VK_FORMAT_R32_SFLOAT: case VK_FORMAT_B8G8R8A8_UNORM:
+    case VK_FORMAT_R8G8B8A8_UNORM: case VK_FORMAT_R16G16_SNORM:
+    case VK_FORMAT_R16G16_UNORM: case VK_FORMAT_R16G16_SFLOAT: return 4;
+    case VK_FORMAT_R32G32_SFLOAT: case VK_FORMAT_R16G16B16A16_SNORM:
+    case VK_FORMAT_R16G16B16A16_UNORM: case VK_FORMAT_R16G16B16A16_SFLOAT: return 8;
+    case VK_FORMAT_R32G32B32_SFLOAT: return 12;
+    case VK_FORMAT_R32G32B32A32_SFLOAT: return 16;
+    default: return 0;
+    }
+}

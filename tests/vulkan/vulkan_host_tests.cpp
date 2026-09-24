@@ -110,6 +110,55 @@ static void GraphicsTests(VulkanHost& host)
     CHECK(!host.DrawIndexed(pipeline, color, depth, vb, ib, 3, VK_INDEX_TYPE_UINT16, {0, 0, 0, 1}));
     std::puts("Actual vkCmdDrawIndexed: triangle color/depth readback matches expected pixels");
 }
+static void PackedVertexTests(VulkanHost& host)
+{
+    const auto vs=ReadShader("triangle.vert.spv"), ps=ReadShader("triangle.frag.spv");
+    struct Case { uint32_t type; std::vector<uint8_t> color; };
+    const std::vector<Case> cases={
+        {0x182886,{0,128,255,255}}, // BGRA (D3DCOLOR)
+        {0x1A2086,{255,128,0,255}}, {0x1A2186,{255,128,0,255}},
+        {0x2C2159,{255,127,0,64}}, {0x1A215A,{255,127,0,64,0,0,255,127}},
+        {0x2C2059,{255,255,0,128}}, {0x1A205A,{255,255,0,128,0,0,255,255}},
+        {0x2C235F,{0,60,0,56}}, {0x1A2360,{0,60,0,56,0,0,0,60}}
+    };
+    CHECK(DecodeVertexFormat(0xFFFFFFFF)==VK_FORMAT_UNDEFINED);
+    CHECK(DecodeVertexFormat(0x1A2286)==VK_FORMAT_UNDEFINED); // integer input is not float
+    CHECK(VertexFormatSize(VK_FORMAT_R32_UINT)==0);
+    const auto color=host.CreateImage(32,32,ImageKind::Rgba8);
+    const auto depth=host.CreateImage(32,32,ImageKind::Depth32);
+    const auto ib=host.CreateBuffer(8,VK_BUFFER_USAGE_INDEX_BUFFER_BIT,true);
+    CHECK(color && depth && ib);
+    CHECK(host.WriteBuffer(ib,std::array<uint8_t,8>{0,0,1,0,2,0,0,0}));
+    const std::array<std::array<float,2>,3> positions{{{-0.8f,-0.8f},{0.8f,-0.8f},{0,0.8f}}};
+    for(const auto& test:cases)
+    {
+        const auto format=DecodeVertexFormat(test.type);
+        CHECK(VertexFormatSize(format)==test.color.size());
+        const auto stride=uint32_t(8+test.color.size());
+        std::vector<uint8_t> bytes(stride*3);
+        for(size_t i=0;i<3;++i)
+        {
+            std::memcpy(bytes.data()+i*stride,positions[i].data(),8);
+            std::copy(test.color.begin(),test.color.end(),bytes.begin()+i*stride+8);
+        }
+        const auto vb=host.CreateBuffer(bytes.size(),VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,true);
+        CHECK(vb && host.WriteBuffer(vb,bytes));
+        const std::array<VkVertexInputAttributeDescription,2> attrs{{{0,0,VK_FORMAT_R32G32_SFLOAT,0},{1,0,format,8}}};
+        GraphicsPipelineInfo info; info.vertexShader=vs; info.fragmentShader=ps;
+        info.vertexStride=stride; info.attributes=attrs;
+        info.blend.colorWriteMask=15;
+        const auto pipeline=host.CreateGraphicsPipeline(info); CHECK(pipeline);
+        CHECK(host.DrawIndexed(pipeline,color,depth,vb,ib,3,VK_INDEX_TYPE_UINT16,{0,0,0,1}));
+        std::vector<uint8_t> pixels; CHECK(host.ReadImage(color,pixels));
+        constexpr size_t center=(16*32+16)*4;
+        CHECK(pixels[center]==255 && std::abs(int(pixels[center+1])-128)<=1 &&
+              pixels[center+2]==0 && pixels[center+3]==255);
+        info.vertexStride=8; CHECK(!host.CreateGraphicsPipeline(info)); // attribute exceeds stride
+        CHECK(host.Destroy(pipeline) && host.Destroy(vb));
+    }
+    CHECK(host.Destroy(color) && host.Destroy(depth) && host.Destroy(ib));
+    std::puts("Nine normalized/half-float declaration encodings: actual vertex fetch pixels passed");
+}
 static void GameAbiTests(VulkanHost& host, bool present = false)
 {
     // This is an ABI fixture, not a replacement for any game shader.
@@ -222,9 +271,19 @@ static void NativeGameShaderDrawTest()
     batch.clears[0].state.words[13036/4]=32; // enabled partial scissor
     CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
     batch.clears.clear();
+    const auto savedKind=draw.kind;
+    const auto savedArgs=draw.arguments;
+    const auto savedIndex=draw.state.words[12788/4];
+    draw.kind=GuestGpu::DrawKind::Vertices; draw.arguments={4,0,3,0}; draw.state.words[12788/4]=0;
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Submitted);
+    draw.arguments[1]=1; // only three captured vertices, so start 1 + count 3 is invalid
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
+    draw.arguments={4,0,2,0}; // not a complete triangle list
+    CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
+    draw.kind=savedKind; draw.arguments=savedArgs; draw.state.words[12788/4]=savedIndex;
     draw.resources.declaration.clear();
     CHECK(backend.SubmitGuestBatch(batch)==GuestGpu::SubmissionResult::Incomplete);
-    CHECK(backend.GetHostStats().indexedDraws==3);
+    CHECK(backend.GetHostStats().indexedDraws==4);
     backend.Shutdown(); CHECK(backend.GetHostStats().validationErrors==0 && backend.GetHostStats().allocatedBytes==0);
     std::puts("Native indexed batch submitted with genuine game cache VS/PS; unsupported declaration rejected");
 }
@@ -405,6 +464,7 @@ int main(int argc, char** argv)
     CHECK(!host.ReadBuffer(upload, returned));
     CHECK(host.Destroy(color) && host.Destroy(depth));
     GraphicsTests(host);
+    PackedVertexTests(host);
     GameAbiTests(host);
     CHECK(host.Stats().submissions >= 7 && host.Stats().allocatedBytes == 0);
     host.Shutdown();

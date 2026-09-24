@@ -132,8 +132,20 @@ static void CaptureTests()
     CHECK(bad.draws[0].resources.status==ConversionResult::Unsupported && bad.draws[0].resources.failedTexture);
     CHECK(bad.payloadBytes==0);
 }
+static void SequentialIndexTests()
+{
+    std::vector<uint8_t> bytes{0xAA};
+    CHECK(BuildSequentialIndices(2,3,5,12,bytes)==ConversionResult::Success);
+    CHECK((bytes==std::vector<uint8_t>{0,0,0,0,1,0,0,0,2,0,0,0}));
+    const auto original=bytes;
+    CHECK(BuildSequentialIndices(2,3,4,12,bytes)==ConversionResult::InvalidLayout);
+    CHECK(BuildSequentialIndices(0,0,4,12,bytes)==ConversionResult::InvalidLayout);
+    CHECK(BuildSequentialIndices(UINT32_MAX,2,UINT32_MAX,12,bytes)==ConversionResult::InvalidLayout);
+    CHECK(BuildSequentialIndices(0,4,4,15,bytes)==ConversionResult::TooLarge);
+    CHECK(bytes==original);
+}
 int main()
 {
-    ConversionTests(); CaptureTests();
+    ConversionTests(); CaptureTests(); SequentialIndexTests();
     std::puts("Resource endian, tiled/linear RGBA/BC, bounded native vertex/texture ownership tests passed");
 }

@@ -27,6 +27,11 @@ namespace GuestGpu
     ConversionResult ConvertIndices(std::span<const uint8_t> source, uint32_t flags,
         uint32_t stride, std::vector<uint8_t>& output) noexcept;
 
+    // DrawVertices uses a start vertex and count, not a guest index buffer.
+    // Lower to relative uint32 indices; the start remains Vulkan baseVertex.
+    ConversionResult BuildSequentialIndices(uint32_t first, uint32_t count,
+        uint32_t vertexCount, size_t budget, std::vector<uint8_t>& output) noexcept;
+
     struct TextureLayout
     {
         uint32_t width = 0, height = 0, pitch = 0;

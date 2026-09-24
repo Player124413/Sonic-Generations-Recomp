@@ -17,5 +17,9 @@ namespace HostGpu
         bool requiresAlphaToCoverage = false;
         bool invalidBlend = false;
     };
+    // Float-compatible Xbox declaration types only. Integer/packed types need
+    // shader-interface-aware conversion and are deliberately not reinterpreted.
+    VkFormat DecodeVertexFormat(uint32_t nativeType) noexcept;
+    uint32_t VertexFormatSize(VkFormat format) noexcept;
     VulkanFixedState DecodeFixedState(const GuestGpu::NativeState& native);
 }
