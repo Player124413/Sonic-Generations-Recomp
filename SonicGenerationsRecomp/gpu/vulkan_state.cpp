@@ -43,6 +43,18 @@ namespace
         state.depth.depthCompareOp = compare[(value >> 4) & 7];
         state.depth.minDepthBounds = 0; state.depth.maxDepthBounds = 1;
         state.requiresStencil = (value & 1) != 0;
+        state.depth.stencilTestEnable = state.requiresStencil;
+        // Xenos StencilOp 0..7 matches Vulkan's KEEP..DECREMENT_AND_WRAP.
+        const auto face = [&](unsigned shift) {
+            VkStencilOpState s{};
+            s.compareOp = compare[(value >> shift) & 7];
+            s.failOp = VkStencilOp((value >> (shift+3)) & 7);
+            s.passOp = VkStencilOp((value >> (shift+6)) & 7);
+            s.depthFailOp = VkStencilOp((value >> (shift+9)) & 7);
+            return s;
+        };
+        state.depth.front = face(8);
+        state.depth.back = (value & 128) ? face(20) : state.depth.front;
     }
     void Raster(uint32_t value, VulkanFixedState& state)
     {
@@ -67,6 +79,13 @@ VulkanFixedState DecodeFixedState(const GuestGpu::NativeState& native)
     struct Entry { size_t offset; void (*apply)(uint32_t, VulkanFixedState&); };
     constexpr Entry dispatch[] = {{10548, Depth}, {10556, Color}, {10568, Raster}};
     for (auto entry : dispatch) entry.apply(native.words[entry.offset / 4], result);
+    // Native setters 82DA8FA8..82DA9060 store BE byte lanes of
+    // RB_STENCILREFMASK at +10496 (front), +10492 (back).
+    const auto masks = [](VkStencilOpState& face, uint32_t word) {
+        face.reference=word & 255; face.compareMask=(word >> 8) & 255; face.writeMask=(word >> 16) & 255;
+    };
+    masks(result.depth.front,native.words[10496/4]);
+    masks(result.depth.back,native.words[(native.words[10548/4]&128) ? 10492/4 : 10496/4]);
     constexpr size_t blends[] = {10552, 10584, 10588, 10592};
     for (size_t i = 0; i < std::size(blends); ++i)
     {

@@ -11,6 +11,16 @@
 
 namespace HostGpu
 {
+namespace {
+VkFormat ImageFormat(ImageKind kind) {
+    switch(kind) {
+    case ImageKind::Rgba8: return VK_FORMAT_R8G8B8A8_UNORM;
+    case ImageKind::Depth32: return VK_FORMAT_D32_SFLOAT;
+    case ImageKind::Depth24Stencil8: return VK_FORMAT_D24_UNORM_S8_UINT;
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+}
 struct VulkanHost::Impl
 {
     static constexpr uint64_t MemoryBudget = 256ull * 1024 * 1024;
@@ -36,7 +46,7 @@ struct VulkanHost::Impl
         uint32_t width{}, height{};
         ImageKind kind{};
         VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
-        VkImageAspectFlags Aspect() const { return kind == ImageKind::Rgba8 ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT; }
+        VkImageAspectFlags Aspect() const { return kind == ImageKind::Rgba8 ? VK_IMAGE_ASPECT_COLOR_BIT : (kind == ImageKind::Depth24Stencil8 ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_DEPTH_BIT); }
         ~Image() { if (view) vkDestroyImageView(device, view, nullptr); if (image) vkDestroyImage(device, image, nullptr); if (memory) vkFreeMemory(device, memory, nullptr); }
     };
     struct Pipeline
@@ -47,6 +57,8 @@ struct VulkanHost::Impl
         VkRenderPass pass{};
         uint32_t stride{};
         bool game = false, preserve = false;
+        ImageKind depthKind = ImageKind::Depth32;
+        bool usesDepthStencil = false;
         std::array<VkDescriptorSetLayout, 4> sets{};
         ~Pipeline()
         {
@@ -393,7 +405,7 @@ Resource VulkanHost::CreateImage(uint32_t width, uint32_t height, ImageKind kind
     { p.Fail("Invalid image size or resource limit exceeded"); return 0; }
     auto image = std::make_unique<Impl::Image>();
     image->device = p.device; image->width = width; image->height = height; image->kind = kind;
-    const auto format = kind == ImageKind::Rgba8 ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_D32_SFLOAT;
+    const auto format = ImageFormat(kind);
     VkFormatProperties features;
     vkGetPhysicalDeviceFormatProperties(p.physical, format, &features);
     const VkFormatFeatureFlags required = kind == ImageKind::Rgba8 ? VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT : VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -469,7 +481,7 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
             for (const auto& binding : module->bindings)
                 validShaders &= (binding.set == 0 || binding.set == 3) && binding.binding == 0 && binding.storage == 0;
     }
-    if (!validShaders || !input.vertexStride ||
+    if (input.depthKind == ImageKind::Rgba8 || (input.stencilTest && input.depthKind != ImageKind::Depth24Stencil8) || !validShaders || !input.vertexStride ||
         input.vertexStride > limits.limits.maxVertexInputBindingStride || input.attributes.empty() || input.attributes.size() > 32 ||
         p.buffers.size() + p.images.size() + p.pipelines.size() >= Impl::MaxResources || p.nextId == UINT64_MAX)
     { p.Fail("Invalid/unsupported graphics shader ABI or pipeline input"); return 0; }
@@ -493,6 +505,7 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     shader.codeSize = input.fragmentShader.size_bytes(); shader.pCode = input.fragmentShader.data();
     if (!p.Check(vkCreateShaderModule(p.device, &shader, nullptr, &fragment.module), "vkCreateShaderModule(fragment)")) return 0;
     auto pipeline = std::make_unique<Impl::Pipeline>(); pipeline->device = p.device; pipeline->stride = input.vertexStride;
+    pipeline->depthKind = input.depthKind; pipeline->usesDepthStencil = input.depthTest || input.depthWrite || input.stencilTest;
     pipeline->game = input.generationsAbi; pipeline->preserve = input.preserveTargets;
     if (pipeline->game)
     {
@@ -524,7 +537,11 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     attachments[0].loadOp = input.preserveTargets ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR; attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachments[0].initialLayout = attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    attachments[1] = attachments[0]; attachments[1].format = VK_FORMAT_D32_SFLOAT;
+    attachments[1] = attachments[0]; attachments[1].format = ImageFormat(input.depthKind);
+    if(input.depthKind == ImageKind::Depth24Stencil8) {
+        attachments[1].stencilLoadOp = attachments[1].loadOp;
+        attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+    }
     attachments[1].initialLayout = attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     const VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}, depth{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     VkSubpassDescription subpass{}; subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -554,6 +571,7 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     VkPipelineMultisampleStateCreateInfo samples{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    ds.stencilTestEnable = input.stencilTest; ds.front = input.stencilFront; ds.back = input.stencilBack;
     ds.depthTestEnable = input.depthTest; ds.depthWriteEnable = input.depthWrite; ds.depthCompareOp = input.depthCompare;
     VkPipelineColorBlendAttachmentState blend{}; blend.colorWriteMask = 15;
     if (pipeline->game) blend = input.blend;
@@ -584,13 +602,13 @@ bool VulkanHost::DrawIndexed(Resource pipelineId, Resource colorId, Resource dep
     auto* vertices = p.FindBuffer(verticesId); auto* indices = p.FindBuffer(indicesId);
     if (!color || !depth || !vertices || !indices) return false;
     const uint32_t indexSize = indexType == VK_INDEX_TYPE_UINT16 ? 2 : indexType == VK_INDEX_TYPE_UINT32 ? 4 : 0;
-    if (color->kind != ImageKind::Rgba8 || depth->kind != ImageKind::Depth32 || color->width != depth->width || color->height != depth->height ||
+    if (color->kind != ImageKind::Rgba8 || depth->kind != pipeline.depthKind || color->width != depth->width || color->height != depth->height ||
         !indexSize || !count || count % 3 || uint64_t(count) * indexSize > indices->size || vertices->size < pipeline.stride ||
         !(vertices->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) || !(indices->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) ||
         !std::all_of(clearColor.begin(), clearColor.end(), [](float x) { return std::isfinite(x); }))
         return p.Fail("Invalid indexed draw range, target, or vertex/index resource");
     if (pipeline.game != (game != nullptr)) return p.Fail("Graphics pipeline/bindings ABI mismatch");
-    if (pipeline.preserve && (color->layout == VK_IMAGE_LAYOUT_UNDEFINED || depth->layout == VK_IMAGE_LAYOUT_UNDEFINED))
+    if (pipeline.preserve && (color->layout == VK_IMAGE_LAYOUT_UNDEFINED || (pipeline.usesDepthStencil && depth->layout == VK_IMAGE_LAYOUT_UNDEFINED)))
         return p.Fail("Cannot load undefined render targets");
     struct Descriptors
     {
@@ -817,15 +835,20 @@ bool VulkanHost::ClearColorRegion(Resource id, const std::array<float, 4>& color
     return p.Submit(); // fence-complete before framebuffer/pass destruction
 }
 bool VulkanHost::ClearDepth(Resource id, float depth)
+{ return ClearDepthStencil(id, depth, 0, VK_IMAGE_ASPECT_DEPTH_BIT); }
+bool VulkanHost::ClearDepthStencil(Resource id, float depth, uint32_t stencil, VkImageAspectFlags aspects)
 {
     auto& p = *impl; auto* image = p.FindImage(id);
     if (!image) return false;
-    if (image->kind != ImageKind::Depth32 || !std::isfinite(depth) || depth < 0 || depth > 1)
-        return p.Fail("Invalid depth clear");
+    if (image->kind == ImageKind::Rgba8 || !aspects || (aspects & ~image->Aspect()) ||
+        ((aspects & VK_IMAGE_ASPECT_DEPTH_BIT) && (!std::isfinite(depth) || depth < 0 || depth > 1)))
+        return p.Fail("Invalid depth/stencil clear");
     if (!p.Begin()) return false;
+    // Keep the combined image's layouts together, but clear only requested
+    // aspects so a depth-only clear cannot destroy a retained stencil mask.
     p.Transition(*image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT);
-    const VkClearDepthStencilValue clear{depth, 0};
-    const VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    const VkClearDepthStencilValue clear{(aspects & VK_IMAGE_ASPECT_DEPTH_BIT) ? depth : 0, stencil & 255u};
+    const VkImageSubresourceRange range{aspects, 0, 1, 0, 1};
     vkCmdClearDepthStencilImage(p.command, image->image, image->layout, &clear, 1, &range);
     return p.Submit();
 }
@@ -853,6 +876,7 @@ bool VulkanHost::ReadImage(Resource id, std::vector<uint8_t>& out)
 {
     auto& p = *impl; auto* image = p.FindImage(id);
     if (!image) return false;
+    if (image->kind == ImageKind::Depth24Stencil8) return p.Fail("Combined depth/stencil readback needs an explicit aspect");
     if (image->layout == VK_IMAGE_LAYOUT_UNDEFINED) return p.Fail("Cannot read an uninitialized image");
     std::vector<uint8_t> bytes(size_t(image->width) * image->height * 4);
     const auto staging = CreateBuffer(bytes.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);

@@ -12,7 +12,7 @@
 namespace HostGpu
 {
     using Resource = uint64_t; // monotonically allocated, zero is invalid
-    enum class ImageKind { Rgba8, Depth32 };
+    enum class ImageKind { Rgba8, Depth32, Depth24Stencil8 };
     // One RGBA8 target, D32 depth and one vertex stream. generationsAbi selects
     // the fork's BDA/push-constant + 2D image/sampler layout; otherwise this is
     // a descriptor-free fixture profile. No runtime fallback shaders.
@@ -29,6 +29,9 @@ namespace HostGpu
         uint32_t specialization = 0;
         bool preserveTargets = false;
         VkPipelineColorBlendAttachmentState blend{};
+        ImageKind depthKind = ImageKind::Depth32;
+        bool stencilTest = false;
+        VkStencilOpState stencilFront{}, stencilBack{};
         bool depthTest = false, depthWrite = false;
         VkCompareOp depthCompare = VK_COMPARE_OP_LESS_OR_EQUAL;
     };
@@ -98,6 +101,7 @@ namespace HostGpu
         bool ClearColor(Resource image, const std::array<float, 4>& color);
         bool ClearColorRegion(Resource image, const std::array<float, 4>& color, const VkRect2D& rectangle);
         bool ClearDepth(Resource image, float depth);
+        bool ClearDepthStencil(Resource image, float depth, uint32_t stencil, VkImageAspectFlags aspects);
         bool ReadImage(Resource image, std::vector<uint8_t>& out);
 
         // PresentImage blits a completed host target. It does not implement

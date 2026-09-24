@@ -101,6 +101,87 @@ static void NativeResolvedSamplingTests(SDL_Window* window)
     CHECK(backend.SubmitGuestBatch(clipped)==SubmissionResult::Submitted);
     CHECK(backend.ReadDiagnosticFrame(pixels));
     pixel(24,24,{0,255,0,255}); pixel(40,24,{255,0,0,255});
+    // Native D24S8 is an independent EDRAM allocation, not a D32 proxy tied
+    // to one color target. Test actual depth rejection and stencil preservation.
+    constexpr uint32_t depthResource=0x6080;
+    f.Surface(depthResource,8); f.Word(depthResource+40,22); // D24S8 texture format
+    const auto ds=ReadSurface({f.memory},depthResource);
+    CHECK(ds.status==ConversionResult::Success);
+    auto depthBatch=batch;
+    const auto attach=[&](auto& command) {
+        command.state.words[12808/4]=depthResource;
+        command.state.words[10368/4]=ds.descriptor[1];
+        command.targets.surfaces[4]=ds;
+    };
+    attach(depthBatch.clears.back()); attach(depthBatch.draws[0]); attach(depthBatch.resolves.back());
+    depthBatch.clears.back().flags=0x31;
+    depthBatch.clears.back().depth=0.75f; depthBatch.clears.back().stencil=3;
+    auto& depthState=depthBatch.draws[0].state;
+    const auto render=[&](const NativeBatch& input,std::array<uint8_t,4> expected) {
+        CHECK(backend.SubmitGuestBatch(input)==SubmissionResult::Submitted);
+        CHECK(backend.ReadDiagnosticFrame(pixels)); pixel(32,24,expected);
+        pixel(0,0,{0,255,0,255});
+    };
+    const std::array<bool,8> depthPass{false,true,false,true,false,true,false,true};
+    for(uint32_t compare=0;compare<8;++compare) {
+        depthState.words[10548/4]=2 | (compare<<4);
+        render(depthBatch,depthPass[compare] ? std::array<uint8_t,4>{255,0,0,255} : std::array<uint8_t,4>{0,255,0,255});
+    }
+    // First draw writes 0.5; a second LESS draw at the same depth must fail.
+    depthState.words[10548/4]=2|4|(1<<4);
+    auto twoDraws=depthBatch;
+    twoDraws.draws.push_back(twoDraws.draws[0]); twoDraws.draws.back().sequence=5;
+    twoDraws.resolves.back().sequence=6;
+    twoDraws.draws.back().state.words[(1920+4096)/4]=0; // black instead of red if it passes
+    render(twoDraws,{255,0,0,255});
+    twoDraws.draws.back().state.words[10548/4]=2|(3<<4); // LEQUAL must pass stored depth
+    render(twoDraws,{0,0,0,255});
+    // Stencil equality, compare mask, then write mask and LOAD across draws.
+    depthState.words[10548/4]=1|(2<<8);
+    depthState.words[10496/4]=0x00FFFF03;
+    render(depthBatch,{255,0,0,255});
+    depthState.words[10496/4]=0x00FFFF04;
+    render(depthBatch,{0,255,0,255});
+    depthState.words[10496/4]=0x00FF0F13; // mask hides the high reference bit
+    render(depthBatch,{255,0,0,255});
+    auto stencilBatch=depthBatch;
+    stencilBatch.draws[0].state.words[10548/4]=1|(7<<8)|(2<<14); // ALWAYS, REPLACE on pass
+    stencilBatch.draws[0].state.words[10496/4]=0x000FFF17; // write low nibble only -> 7
+    stencilBatch.draws.push_back(stencilBatch.draws[0]);
+    stencilBatch.draws.back().sequence=5; stencilBatch.resolves.back().sequence=6;
+    stencilBatch.draws.back().state.words[10548/4]=1|(2<<8);
+    stencilBatch.draws.back().state.words[10496/4]=0x0000FF07;
+    stencilBatch.draws.back().state.words[(1920+4096)/4]=0;
+    render(stencilBatch,{0,0,0,255});
+    // Depth-only clear between stencil write and test must retain the stencil.
+    auto depthOnly=stencilBatch.clears.back(); depthOnly.flags=0x10; depthOnly.sequence=5;
+    stencilBatch.clears.push_back(depthOnly);
+    stencilBatch.draws.back().sequence=6; stencilBatch.resolves.back().sequence=7;
+    render(stencilBatch,{0,0,0,255});
+    // The other face has independent compare/masks when two-sided is enabled.
+    for(uint32_t clockwise=0;clockwise<2;++clockwise) {
+        depthState.words[10568/4]=clockwise ? 4 : 0;
+        depthState.words[10548/4]=1|128|(2<<8)|(2<<20);
+        depthState.words[10496/4]=0x00FFFF03;
+        depthState.words[10492/4]=0x00FFFF03;
+        render(depthBatch,{255,0,0,255});
+        depthState.words[10496/4]=0x00FFFF04;
+        depthState.words[10492/4]=0x00FFFF04;
+        render(depthBatch,{0,255,0,255});
+    }
+    auto unsupportedDepth=depthBatch;
+    for(auto* descriptor:{&unsupportedDepth.clears.back().targets.surfaces[4],
+                         &unsupportedDepth.draws[0].targets.surfaces[4],
+                         &unsupportedDepth.resolves.back().targets.surfaces[4]}) {
+        descriptor->format=1; descriptor->descriptor[1]|=1<<16; // D24FS8 is not D24S8
+    }
+    CHECK(backend.SubmitGuestBatch(unsupportedDepth)==SubmissionResult::Incomplete);
+    CHECK(!backend.ReadDiagnosticFrame(pixels));
+    // No synthetic depth initialization after the failed frame invalidates state.
+    auto undefinedDepth=depthBatch; undefinedDepth.clears.back().flags=1;
+    CHECK(backend.SubmitGuestBatch(undefinedDepth)==SubmissionResult::Incomplete);
+    CHECK(!backend.ReadDiagnosticFrame(pixels));
+    std::puts("Native D24S8 depth compares/writes, stencil masks, preserved aspects and two-sided state passed");
     clipped.draws[0].state.words[13008/4]=std::bit_cast<uint32_t>(80.f); // exceeds target
     CHECK(backend.SubmitGuestBatch(clipped)==SubmissionResult::Incomplete);
     CHECK(!backend.ReadDiagnosticFrame(pixels) && pixels.empty());

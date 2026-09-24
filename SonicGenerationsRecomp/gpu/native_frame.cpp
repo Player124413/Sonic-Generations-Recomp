@@ -37,6 +37,8 @@ void VulkanBackend::ResetNativeTargets()
 {
     for(auto& [key,surface]:nativeSurfaces)
     { host.Destroy(surface.color); host.Destroy(surface.depth); }
+    for(auto& [key,depth]:nativeDepths) host.Destroy(depth.image);
+    nativeDepths.clear();
     for(auto& [key,texture]:nativeTextures) host.Destroy(texture.image);
     nativeSurfaces.clear(); nativeTextures.clear(); frameImage=0; frameReady=false;
 }
@@ -66,14 +68,35 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
         std::vector<VkRect2D> clearRectangles(batch.clears.size());
         auto surfacePlan=nativeSurfaces;
         auto texturePlan=nativeTextures;
+        auto depthPlan=nativeDepths;
         auto validate=[&](const NativeTargets& targets,const NativeState& state,uint32_t device) {
             if(!targets.captured || device!=batch.presentDevice) return false;
             const auto& s=targets.surfaces[0];
             if(!s.resource || s.resource!=state.ColorTargets()[0] || s.status!=ConversionResult::Success ||
                (s.descriptor[1]&~4095u) || state.words[10372/4]!=s.descriptor[1] || s.samples || s.format || !s.tileCount || s.baseTile>=2048 || s.tileCount>2048-s.baseTile ||
                !s.width || !s.height || s.width>8192 || s.height>8192) return false;
-            // Do not map D24/D24FS8 to D32 and call it native depth support.
-            if(state.DepthTarget() || targets.surfaces[4].resource) return false;
+            const auto& d=targets.surfaces[4];
+            if(d.resource!=state.DepthTarget()) return false;
+            if(d.resource) {
+                // D24S8 is fixed-point. D24FS8 is 20e4 floating point, not D32.
+                if(d.status!=ConversionResult::Success || d.samples || d.format ||
+                   (d.descriptor[1]&~4095u) || state.words[10368/4]!=d.descriptor[1] ||
+                   !d.tileCount || d.baseTile>=2048 || d.tileCount>2048-d.baseTile ||
+                   d.width!=s.width || d.height!=s.height) return false;
+                for(const auto& [base,entry]:depthPlan) {
+                    const auto& prior=entry.descriptor;
+                    if(d.baseTile<base+prior.tileCount && base<d.baseTile+d.tileCount &&
+                       (base!=d.baseTile || d.descriptor!=prior.descriptor)) return false;
+                }
+                for(const auto& [base,entry]:surfacePlan)
+                    if(d.baseTile<base+entry.descriptor.tileCount && base<d.baseTile+d.tileCount) return false;
+                if(!depthPlan.contains(d.baseTile)) {
+                    if(depthPlan.size()>=32) return false;
+                    depthPlan.emplace(d.baseTile,DepthImage{d});
+                }
+            }
+            for(const auto& [base,entry]:depthPlan)
+                if(s.baseTile<base+entry.descriptor.tileCount && base<s.baseTile+s.tileCount) return false;
             for(size_t i=1;i<4;++i) if(state.ColorTargets()[i] || targets.surfaces[i].resource) return false;
             for(const auto& [base,entry]:surfacePlan)
             {
@@ -97,22 +120,39 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 if(!surfacePlan.at(draw.targets.surfaces[0].baseTile).initialized)
                     return reject("Native draw reads undefined EDRAM contents");
                 const auto fixed=HostGpu::DecodeFixedState(draw.state);
-                if(fixed.depth.depthTestEnable || fixed.depth.depthWriteEnable || fixed.requiresStencil)
-                    return reject("Native depth/stencil surface formats are not implemented");
+                const auto& d=draw.targets.surfaces[4];
+                if(fixed.depth.depthTestEnable || fixed.depth.depthWriteEnable || fixed.requiresStencil) {
+                    if(!d.resource) return reject("Depth/stencil state requires a native attachment");
+                    const auto& planned=depthPlan.at(d.baseTile);
+                    if(((fixed.depth.depthTestEnable || fixed.depth.depthWriteEnable) && !planned.depthInitialized) ||
+                       (fixed.requiresStencil && !planned.stencilInitialized))
+                        return reject("Native draw reads undefined depth/stencil contents");
+                }
             }
             else if(e.kind==1)
             {
                 const auto& clear=batch.clears[e.index]; const auto& s=clear.targets.surfaces[0];
                 auto& rectangle=clearRectangles[e.index];
-                if(!validate(clear.targets,clear.state,clear.device) || clear.flags!=1 ||
+                if(!validate(clear.targets,clear.state,clear.device) || !clear.flags || (clear.flags & ~0x31u) ||
                    !ClearRectangle(clear,s.width,s.height,rectangle) ||
                    std::any_of(clear.color.begin(),clear.color.end(),[](float f){return !std::isfinite(f);}))
                     return reject("Invalid native single-sample color clear");
-                auto& initialized=surfacePlan.at(s.baseTile).initialized;
                 const bool full=FullRectangle(rectangle,s.width,s.height);
-                if(rectangle.extent.width && rectangle.extent.height && !initialized && !full)
-                    return reject("Partial clear cannot initialize the whole native surface");
-                initialized=initialized || full;
+                if(clear.flags & 1) {
+                    auto& initialized=surfacePlan.at(s.baseTile).initialized;
+                    if(rectangle.extent.width && rectangle.extent.height && !initialized && !full)
+                        return reject("Partial clear cannot initialize the whole native surface");
+                    initialized=initialized || full;
+                }
+                if(clear.flags & 0x30) {
+                    const auto& d=clear.targets.surfaces[4];
+                    if(!d.resource || !full || ((clear.flags & 0x10) &&
+                       (!std::isfinite(clear.depth) || clear.depth<0 || clear.depth>1)))
+                        return reject("Depth/stencil clear requires a valid full D24S8 target");
+                    auto& initialized=depthPlan.at(d.baseTile);
+                    if(clear.flags & 0x10) initialized.depthInitialized=true;
+                    if(clear.flags & 0x20) initialized.stencilInitialized=true;
+                }
             }
             else
             {
@@ -168,11 +208,30 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 if(!surface.color || !surface.depth || !host.ClearDepth(surface.depth,1))
                     return reject("Native surface allocation failed");
             }
+            const auto& d=targets.surfaces[4];
+            HostGpu::Resource guestDepth=0;
+            if(d.resource) {
+                auto [di,created]=nativeDepths.try_emplace(d.baseTile,DepthImage{d});
+                if(created) di->second.image=host.CreateImage(d.width,d.height,HostGpu::ImageKind::Depth24Stencil8);
+                guestDepth=di->second.image;
+                if(!guestDepth) return reject("Native D24S8 allocation/format unsupported");
+            }
             if(e.kind==1)
             {
+                const auto& clear=batch.clears[e.index];
                 const auto& rectangle=clearRectangles[e.index];
-                if(!host.ClearColorRegion(surface.color,batch.clears[e.index].color,rectangle)) return reject("Native surface clear failed");
-                surface.initialized=surface.initialized || FullRectangle(rectangle,s.width,s.height);
+                if(clear.flags & 1) {
+                    if(!host.ClearColorRegion(surface.color,clear.color,rectangle)) return reject("Native surface clear failed");
+                    surface.initialized=surface.initialized || FullRectangle(rectangle,s.width,s.height);
+                }
+                if(clear.flags & 0x30) {
+                    const auto aspects=((clear.flags & 0x10) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
+                        ((clear.flags & 0x20) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+                    if(!host.ClearDepthStencil(guestDepth,clear.depth,clear.stencil,aspects)) return reject("Native depth/stencil clear failed");
+                    auto& initialized=nativeDepths.at(d.baseTile);
+                    if(clear.flags & 0x10) initialized.depthInitialized=true;
+                    if(clear.flags & 0x20) initialized.stencilInitialized=true;
+                }
             }
             else if(e.kind==2)
             {
@@ -190,7 +249,7 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                     VulkanBackend& backend; HostGpu::Resource c,d; uint32_t w,h;
                     ~Restore() { backend.color=c; backend.depth=d; backend.width=w; backend.height=h; backend.nativeReplay=false; }
                 } restore{*this,color,depth,width,height};
-                color=surface.color; depth=surface.depth; width=s.width; height=s.height; nativeReplay=true;
+                color=surface.color; depth=guestDepth ? guestDepth : surface.depth; width=s.width; height=s.height; nativeReplay=true;
                 NativeBatch draw; draw.draws.push_back(batch.draws[e.index]); draw.payloadBytes=batch.draws[e.index].resources.payloadBytes;
                 if(SubmitGuestBatch(draw)!=SubmissionResult::Submitted) return reject("Native target draw failed validation/submission");
             }

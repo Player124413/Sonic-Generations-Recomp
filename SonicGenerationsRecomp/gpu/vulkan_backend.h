@@ -36,6 +36,8 @@ private:
     GuestGpu::SubmissionResult SubmitNativeFrame(const GuestGpu::NativeBatch& batch);
     void ResetNativeTargets();
     struct SurfaceImage { GuestGpu::NativeSurface descriptor; HostGpu::Resource color=0, depth=0; bool initialized=false; };
+    struct DepthImage { GuestGpu::NativeSurface descriptor; HostGpu::Resource image=0; bool depthInitialized=false, stencilInitialized=false; };
+    std::map<uint32_t,DepthImage> nativeDepths;
     struct ResolvedImage { GuestGpu::NativeTexture descriptor; HostGpu::Resource image=0; };
     std::map<uint32_t,SurfaceImage> nativeSurfaces;
     std::map<uint32_t,ResolvedImage> nativeTextures; // physical base, not a host/guest object pointer

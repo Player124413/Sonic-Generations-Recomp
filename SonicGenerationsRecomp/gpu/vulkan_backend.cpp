@@ -290,9 +290,9 @@ try
                 !firstTarget || targets[0]!=firstTarget || targets[1] || targets[2] || targets[3] ||
                 ((d.state.words[10372/4]>>16)&15) || ((d.state.words[10368/4]>>16)&3) ||
                 d.state.DepthTarget()!=batch.draws.front().state.DepthTarget() ||
-                ((state.depth.depthTestEnable || state.depth.depthWriteEnable) && !d.state.DepthTarget()) || state.requiresStencil || state.requiresAlphaTest || state.requiresAlphaToCoverage ||
+                ((state.depth.depthTestEnable || state.depth.depthWriteEnable) && !d.state.DepthTarget()) || (state.requiresStencil && (!nativeReplay || !d.state.DepthTarget())) || state.requiresAlphaTest || state.requiresAlphaToCoverage ||
                 state.unsupportedRasterBits || state.invalidBlend || d.resources.vertices.size()!=1 || d.resources.vertices[0].stream!=0)
-            { Fail("Draw outside supported profile: triangles, one target, one stream, 2D pixel textures, no stencil/MSAA/alpha test"); return GuestGpu::SubmissionResult::Incomplete; }
+            { Fail("Draw outside supported profile: triangles, one target, one stream, 2D pixel textures, no unsupported stencil/MSAA/alpha test"); return GuestGpu::SubmissionResult::Incomplete; }
             for(auto factor:{state.blend[0].srcColorBlendFactor,state.blend[0].dstColorBlendFactor,state.blend[0].srcAlphaBlendFactor,state.blend[0].dstAlphaBlendFactor})
                 if((factor>=VK_BLEND_FACTOR_CONSTANT_COLOR && factor<=VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA) || factor>=VK_BLEND_FACTOR_SRC1_COLOR)
                 { Fail("Constant/dual-source blending unsupported"); return GuestGpu::SubmissionResult::Incomplete; }
@@ -357,6 +357,9 @@ try
             plan.pipeline.generationsAbi=true; plan.pipeline.preserveTargets=true; plan.pipeline.vertexStride=vertices.stride;
             plan.pipeline.attributes=plan.attributes; plan.pipeline.cullMode=state.raster.cullMode;
             plan.pipeline.frontFace=state.raster.frontFace; plan.pipeline.depthTest=state.depth.depthTestEnable;
+            plan.pipeline.depthKind=(nativeReplay && d.state.DepthTarget()) ? HostGpu::ImageKind::Depth24Stencil8 : HostGpu::ImageKind::Depth32;
+            plan.pipeline.stencilTest=state.depth.stencilTestEnable;
+            plan.pipeline.stencilFront=state.depth.front; plan.pipeline.stencilBack=state.depth.back;
             plan.pipeline.depthWrite=state.depth.depthWriteEnable; plan.pipeline.depthCompare=state.depth.depthCompareOp;
             plan.pipeline.blend=state.blend[0]; plan.pipeline.blend.colorWriteMask=d.state.words[10460/4]&15;
         }
