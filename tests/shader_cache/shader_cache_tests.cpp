@@ -13,10 +13,18 @@ int main(int argc, char** argv)
     ShaderCache cache;
     CHECK(cache.Initialize(data,error));
     CHECK(cache.Entries().size()==data.entries.size());
+    // The supplied Generations cache has 6,404 modules. Matching its own size
+    // declaration is insufficient: an accidentally truncated/replaced cache
+    // must not silently qualify as complete title coverage.
+    CHECK(data.entries.size()==6404);
+    size_t dxilEntries=0;
+    for(const auto& entry:data.entries) if(entry.dxilSize) ++dxilEntries;
+    std::printf("Cache payloads: %zu SPIR-V, %zu DXIL (DXIL is not the Vulkan runtime path)\n",data.entries.size(),dxilEntries);
     for (size_t i=0;i<data.entries.size();++i)
         CHECK(cache.Entries()[i].specConstantsMask==data.entries[i].specConstantsMask);
     size_t vertices=0, fragments=0, addresses=0;
     std::map<std::pair<uint32_t,uint32_t>,size_t> bindings;
+    std::map<uint32_t,size_t> capabilities;
     if(argc==2) std::filesystem::create_directories(argv[1]);
     for(const auto& entry:cache.Entries())
     {
@@ -30,6 +38,7 @@ int main(int argc, char** argv)
         if (vertices+fragments==0) std::printf("First entry point: %s\n",module.entryPoint.c_str());
         vertices+=module.stage==0; fragments+=module.stage==4;
         addresses+=module.bufferDeviceAddress;
+        for(auto capability:module.capabilities) ++capabilities[capability];
         for(const auto& b:module.bindings) ++bindings[{b.set,b.binding}];
         if(argc==2)
         {
@@ -40,6 +49,7 @@ int main(int argc, char** argv)
         }
     }
     std::printf("%zu shaders: %zu vertex, %zu fragment; %zu physical-address modules\n",cache.Entries().size(),vertices,fragments,addresses);
+    for(const auto& [capability,count]:capabilities) std::printf("SPIR-V capability=%u: %zu modules\n",capability,count);
     for(const auto& [binding,count]:bindings) std::printf("set=%u binding=%u: %zu modules\n",binding.first,binding.second,count);
     ShaderModule untouched; untouched.hash=123;
     CHECK(!cache.Decode(0,untouched,error) && untouched.hash==123);
