@@ -210,12 +210,26 @@ static void NativeResolvedSamplingTests(SDL_Window* window)
                          &unsupportedDepth.resolves.back().targets.surfaces[4]}) {
         descriptor->format=1; descriptor->descriptor[1]|=1<<16; // D24FS8 is not D24S8
     }
+    for(auto* commandState:{&unsupportedDepth.clears.back().state,&unsupportedDepth.draws[0].state,&unsupportedDepth.resolves.back().state})
+        commandState->words[10376/4]|=1<<16;
     CHECK(backend.SubmitGuestBatch(unsupportedDepth)==SubmissionResult::Incomplete);
     CHECK(!backend.ReadDiagnosticFrame(pixels));
     // No synthetic depth initialization after the failed frame invalidates state.
     auto undefinedDepth=depthBatch; undefinedDepth.clears.back().flags=1;
     CHECK(backend.SubmitGuestBatch(undefinedDepth)==SubmissionResult::Incomplete);
     CHECK(!backend.ReadDiagnosticFrame(pixels));
+    undefinedDepth=depthBatch; undefinedDepth.clears.back().flags=0x21; // stencil initialized, depth isn't
+    undefinedDepth.draws[0].state.words[10548/4]=2|(1<<4);
+    CHECK(backend.SubmitGuestBatch(undefinedDepth)==SubmissionResult::Incomplete);
+    undefinedDepth=depthBatch; undefinedDepth.clears.back().flags=0x11; // depth initialized, stencil isn't
+    CHECK(backend.SubmitGuestBatch(undefinedDepth)==SubmissionResult::Incomplete);
+    undefinedDepth=depthBatch; undefinedDepth.clears.back().rectangle={24,16,40,32};
+    // Initialize color separately so this checks the depth/stencil aspect guard.
+    auto colorInit=undefinedDepth.clears.back(); colorInit.flags=1; colorInit.rectangle={0,0,64,64};
+    colorInit.sequence=3; undefinedDepth.clears.back().sequence=4;
+    undefinedDepth.clears.push_back(colorInit);
+    undefinedDepth.draws[0].sequence=5; undefinedDepth.resolves.back().sequence=6;
+    CHECK(backend.SubmitGuestBatch(undefinedDepth)==SubmissionResult::Incomplete);
     std::puts("Native D24S8 depth compares/writes, stencil masks, preserved aspects and two-sided state passed");
     clipped.draws[0].state.words[13008/4]=std::bit_cast<uint32_t>(80.f); // exceeds target
     CHECK(backend.SubmitGuestBatch(clipped)==SubmissionResult::Incomplete);
