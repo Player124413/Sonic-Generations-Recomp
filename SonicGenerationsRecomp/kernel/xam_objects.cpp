@@ -1,6 +1,7 @@
 #include <stdafx.h>
 #include "xam_objects.h"
 #include "function.h"
+#include "object_imports.h"
 #include <condition_variable>
 #include <deque>
 
@@ -32,7 +33,7 @@ struct NotificationListener final : KernelObject
     {
         // Xbox XNotificationKey: local ID[15:0], version[24:16], mask index[30:25].
         // See Xenia kernel/xnotifylistener.h; never shift a signed 32-bit 1.
-        const auto area=(id>>25)&63, version=(id>>16)&511;
+        const auto area=MSG_AREA(id), version=MSG_VERSION(id);
         if(!(mask&(uint64_t{1}<<area)) || version>maxVersion) return;
         { std::lock_guard lock(mutex); queue.emplace_back(id,value); }
         changed.notify_all();
@@ -102,8 +103,32 @@ uint32_t XamEnumerate(uint32_t handle,uint32_t flags,void* buffer,uint32_t bytes
     auto enumerator=std::dynamic_pointer_cast<XamSnapshotEnumerator>(KernelObjects::Acquire(handle));
     if(!enumerator) return 6;
     if(flags) return 87;
-    // Do not consume records or report completion without the event/APC protocol.
-    if(overlapped) return 50;
+    if(overlapped)
+    {
+        // Built-in snapshots complete immediately. Event/polling completion is
+        // supported; an APC must not run on a fabricated or arbitrary thread.
+        if(overlapped->pCompletionRoutine) return 50;
+        std::shared_ptr<Event> event;
+        if(overlapped->hEvent)
+        {
+            event=std::dynamic_pointer_cast<Event>(KernelObjects::Acquire(overlapped->hEvent));
+            if(!event) return 6;
+        }
+        auto* current=KernelObjects::CurrentThread();
+        overlapped->InternalContext=ByteSwap(current ? current->handle : uint32_t(0));
+        std::atomic_ref<uint32_t>(overlapped->Error.value).store(ByteSwap(uint32_t(997)),std::memory_order_release);
+        uint32_t resultCount=0;
+        const auto result=enumerator->Read(buffer,bytes,resultCount);
+        overlapped->Length=resultCount;
+        overlapped->dwExtendedError=result ? (0x80070000u | result) : 0;
+        std::atomic_ref<uint32_t>(overlapped->Error.value).store(ByteSwap(result),std::memory_order_release);
+        if(event)
+        {
+            event->Set();
+            ++g_keSetEventGeneration; g_keSetEventGeneration.notify_all();
+        }
+        return 997; // accepted overlapped operation, result in the completion block
+    }
     if(!count) return 87;
     uint32_t resultCount=0;
     auto result=enumerator->Read(buffer,bytes,resultCount);

@@ -3,8 +3,9 @@
 #include <string>
 #include <string_view>
 
-#define MSGID(Area, Number) (uint32_t)((uint16_t)(Area) << 16 | (uint16_t)(Number))
-#define MSG_AREA(msgid)     (((msgid) >> 16) & 0xFFFF)
+#define MSGID(Area, Number) (((uint32_t(Area) & 63u) << 25) | uint16_t(Number))
+#define MSG_AREA(msgid)     ((uint32_t(msgid) >> 25) & 63u)
+#define MSG_VERSION(msgid)  ((uint32_t(msgid) >> 16) & 511u)
 #define MSG_NUMBER(msgid)   ((msgid) & 0xFFFF)
 
 XCONTENT_DATA XamMakeContent(uint32_t type, const std::string_view& name);

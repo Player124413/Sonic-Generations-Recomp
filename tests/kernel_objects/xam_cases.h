@@ -2,7 +2,7 @@
 #include <kernel/xam_objects.h>
 #include <kernel/xam_content_registry.h>
 #include <set>
-extern PPCFunc __imp__XamNotifyCreateListener, __imp__XNotifyGetNext, __imp__XamContentCreateEnumerator;
+extern PPCFunc __imp__XamNotifyCreateListener, __imp__XNotifyGetNext, __imp__XamContentCreateEnumerator, __imp__XamEnumerate;
 static uint64_t EchoQword(uint64_t value) { return value; }
 static uint64_t EchoStackQword(uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint32_t,uint64_t value) { return value; }
 static void XamArgumentTests()
@@ -73,7 +73,7 @@ static void XamEnumerationTests()
     be<uint32_t> count=9;
     CHECK(XamEnumerate(handle,0,buffer.data(),sizeof(XCONTENT_DATA)-1,&count,nullptr)==122 && count==0);
     CHECK(std::all_of(buffer.begin(),buffer.end(),[](auto v){return v==0xA5;}));
-    XXOVERLAPPED overlapped{};
+    XXOVERLAPPED overlapped{}; overlapped.pCompletionRoutine=0x1000;
     CHECK(XamEnumerate(handle,0,buffer.data(),sizeof(XCONTENT_DATA),&count,&overlapped)==50 && count==0);
     CHECK(XamEnumerate(handle,0,nullptr,0,&count,nullptr)==87 && count==0);
     CHECK(XamEnumerate(handle,0,buffer.data(),sizeof(XCONTENT_DATA),&count,nullptr)==0 && count==1);
@@ -108,4 +108,33 @@ static void XamUnsupportedObjects()
     CHECK(KernelObjects::Close(session));
     CHECK(XamSessionRefObjByHandle(session,&object)==6 && object==0);
     CHECK(XamUserCreateStatsEnumerator(0,0,0,nullptr,0,nullptr,0,0,&object)==50 && object==0);
+}
+
+static void XamOverlappedEnumerationTests()
+{
+    CHECK(MSG_AREA(MSGID(60,7))==60 && MSG_VERSION(MSGID(60,7))==0);
+    auto* enumerator=CreateKernelObject<XamSnapshotEnumerator>(4,1,std::vector<uint8_t>{1,2,3,4});
+    auto* event=CreateKernelObject<Event>(true,false);
+    auto* block=static_cast<uint8_t*>(g_userHeap.Alloc(64)); std::memset(block,0,64);
+    auto* overlapped=reinterpret_cast<XXOVERLAPPED*>(block);
+    overlapped->hEvent=event->handle; overlapped->dwCompletionContext=0x12345678;
+    const auto address=g_memory.MapVirtual(block);
+    const auto call=[&] {
+        PPCContext ctx{}; ctx.r3.u64=enumerator->handle; ctx.r4.u64=0;
+        ctx.r5.u64=address+32; ctx.r6.u64=4; ctx.r7.u64=0; ctx.r8.u64=address;
+        __imp__XamEnumerate(ctx,g_memory.base); return ctx.r3.u32;
+    };
+    overlapped->pCompletionRoutine=0x1000;
+    CHECK(call()==50 && event->Wait(0)==STATUS_TIMEOUT);
+    overlapped->pCompletionRoutine=0; overlapped->hEvent=0xBAD;
+    CHECK(call()==6 && event->Wait(0)==STATUS_TIMEOUT);
+    overlapped->hEvent=event->handle;
+    CHECK(call()==997);
+    CHECK(event->Wait(0)==0 && overlapped->Error==0 && overlapped->Length==1 && overlapped->dwExtendedError==0);
+    CHECK(overlapped->dwCompletionContext==0x12345678);
+    CHECK(block[32]==1 && block[35]==4);
+    event->Reset(); CHECK(call()==997);
+    CHECK(event->Wait(0)==0 && overlapped->Error==18 && overlapped->Length==0 && overlapped->dwExtendedError==0x80070012);
+    CHECK(KernelObjects::Close(enumerator->handle)); CHECK(KernelObjects::Close(event->handle));
+    g_userHeap.Free(block);
 }

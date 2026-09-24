@@ -181,7 +181,7 @@ int main()
 {
     g_userHeap.Init();
     BodiesAndHandles(); ImportedPointerConversion(); ConcurrentClose(); TimedDispatchers(); Threads(); TestObjectImports();
-    XamArgumentTests(); XamNotificationTests(); XamEnumerationTests(); XamUnsupportedObjects();
+    XamArgumentTests(); XamNotificationTests(); XamEnumerationTests(); XamOverlappedEnumerationTests(); XamUnsupportedObjects();
     std::printf("Kernel object tests: %d failures\n",failures.load());
     return failures ? 1 : 0;
 }
