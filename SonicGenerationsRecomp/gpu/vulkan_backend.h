@@ -9,7 +9,7 @@
 struct SDL_Window;
 
 // Vulkan resource/WSI backend with opt-in bounded direct-frame native draws.
-// Native EDRAM/resolve association and complete command coverage remain open.
+// Bounded native color/resolve replay; depth/MSAA and complete coverage remain open.
 class VulkanBackend final : public IRenderBackend
 {
 public:
@@ -17,6 +17,9 @@ public:
     ~VulkanBackend() override;
     const char* GetName() const override { return drawEnabled ? "vulkan-direct-draw" : "vulkan-transfer"; }
     bool Init(const VideoMode& mode) override;
+    // Explicit cache dependency (e.g. a validated external cache or test fixture).
+    // Input buffers are consumed synchronously; there is no shader fallback.
+    bool InitWithShaderCache(const VideoMode& mode,GuestGpu::ShaderCacheData cache);
     void Shutdown() override;
     GuestGpu::SubmissionResult SubmitGuestBatch(const GuestGpu::NativeBatch& batch) override;
     void Present() override;

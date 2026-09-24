@@ -203,6 +203,8 @@ static void GameAbiTests(VulkanHost& host, bool present = false)
     for(auto id:{pipeline,vb,ib,constants,shared,color,depth,texture}) CHECK(host.Destroy(id));
     std::puts("Game ABI: device-address constants, descriptor textures/samplers, push constants and indexed draw pixels passed");
 }
+#include "native_sampling_fixture.h"
+
 static void NativeGameShaderDrawTest()
 {
     GuestGpu::ShaderCache cache; std::string error;
@@ -455,6 +457,7 @@ int main(int argc, char** argv)
         GameAbiTests(host,true); host.Shutdown(); CHECK(host.Stats().validationErrors==0);
         BackendTests(window);
         NativeFrameTests(window);
+        NativeResolvedSamplingTests(window);
         SDL_DestroyWindow(window); SDL_Quit();
         std::puts("Vulkan WSI acquire/clear/submit/present/resize with validation passed");
         return 0;
@@ -537,6 +540,7 @@ int main(int argc, char** argv)
     CHECK(host.Stats().validationErrors == 0);
     BackendTests(nullptr);
     NativeFrameTests(nullptr);
+    NativeResolvedSamplingTests(nullptr);
     NativeGameShaderDrawTest();
     std::puts("Vulkan resources, readback, transfers, state translation and lifecycle with validation passed");
 }

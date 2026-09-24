@@ -19,6 +19,10 @@ bool VulkanBackend::Fail(const std::string& text)
 }
 bool VulkanBackend::Init(const VideoMode& mode)
 {
+    return InitWithShaderCache(mode,GuestGpu::GetEmbeddedShaderCache());
+}
+bool VulkanBackend::InitWithShaderCache(const VideoMode& mode,GuestGpu::ShaderCacheData cache)
+{
     std::lock_guard lock(mutex);
     host.Shutdown(); drawResources.clear(); states.clear(); color = depth = 0;
     nativeSurfaces.clear(); nativeTextures.clear(); frameImage=0;
@@ -46,7 +50,7 @@ bool VulkanBackend::Init(const VideoMode& mode)
         width = uint32_t(std::max(0, w)); height = uint32_t(std::max(0, h));
     }
     std::string cacheError;
-    if (!shaderCache.Initialize(GuestGpu::GetEmbeddedShaderCache(), cacheError))
+    if (!shaderCache.Initialize(cache, cacheError))
         return Fail("Shader cache initialization failed: " + cacheError);
     std::fprintf(stderr, "Loaded %zu indexed game shaders (Zstd/SMOL-V); this does not create game pipelines.\n",
         shaderCache.Entries().size());
@@ -315,12 +319,15 @@ try
                 plan.attributes.push_back({loc,0,format,selected->offset});
             }
             if(plan.attributes.empty()) { Fail("Procedural vertex input not supported yet"); return GuestGpu::SubmissionResult::Incomplete; }
-            const auto viewport=d.state.Viewport(); const auto scissor=d.state.Scissor();
-            if(viewport[0]!=0 || viewport[1]!=0 || viewport[2]!=float(width) || viewport[3]!=float(height) ||
-                !std::isfinite(viewport[4]) || !std::isfinite(viewport[5]) || viewport[4]<0 || viewport[5]>1 || viewport[4]>viewport[5] ||
+            const auto viewport=d.state.Viewport();
+            const auto scissor=d.state.words[12264/4] ? d.state.Scissor() : std::array<int32_t,4>{0,0,int32_t(width),int32_t(height)};
+            if(std::any_of(viewport.begin(),viewport.end(),[](float value){return !std::isfinite(value);}) ||
+                viewport[0]<0 || viewport[1]<0 || viewport[2]<=0 || viewport[3]<=0 ||
+                double(viewport[0])+viewport[2]>width || double(viewport[1])+viewport[3]>height ||
+                viewport[4]<0 || viewport[5]>1 || viewport[4]>viewport[5] ||
                 scissor[0]<0 || scissor[1]<0 || scissor[2]<scissor[0] || scissor[3]<scissor[1] ||
                 uint32_t(scissor[2])>width || uint32_t(scissor[3])>height)
-            { Fail("Native draw requires full-sized viewport and bounded scissor"); return GuestGpu::SubmissionResult::Incomplete; }
+            { Fail("Native draw requires a bounded finite viewport and enabled scissor"); return GuestGpu::SubmissionResult::Incomplete; }
             plan.bindings.viewport={viewport[0],viewport[1],viewport[2],viewport[3],viewport[4],viewport[5]};
             plan.bindings.scissor={{scissor[0],scissor[1]},{uint32_t(scissor[2]-scissor[0]),uint32_t(scissor[3]-scissor[1])}};
             plan.bindings.baseVertex=std::bit_cast<int32_t>(d.arguments[1]);
@@ -344,7 +351,7 @@ try
             const auto write=[&](size_t off,uint32_t value){for(size_t i=0;i<4;++i) plan.shared[off+i]=uint8_t(value>>(8*i));};
             for(uint32_t slot=0;slot<16;++slot) {write(slot*4,slot);write(192+slot*4,slot);}
             write(256,(d.state.words[10112/4]&0xFFFF) | ((d.state.words[(10112+16)/4]&0xFFFF)<<16));
-            write(280,std::bit_cast<uint32_t>(1.0f/float(width))); write(284,std::bit_cast<uint32_t>(-1.0f/float(height)));
+            write(280,std::bit_cast<uint32_t>(1.0f/viewport[2])); write(284,std::bit_cast<uint32_t>(-1.0f/viewport[3]));
             plan.pipeline.vertexShader=vs->second.words; plan.pipeline.fragmentShader=ps->second.words;
             plan.pipeline.vertexEntry=vs->second.entryPoint.c_str(); plan.pipeline.fragmentEntry=ps->second.entryPoint.c_str();
             plan.pipeline.generationsAbi=true; plan.pipeline.preserveTargets=true; plan.pipeline.vertexStride=vertices.stride;

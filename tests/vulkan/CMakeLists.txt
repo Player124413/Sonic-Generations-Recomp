@@ -7,7 +7,7 @@ add_executable(vulkan_host_tests vulkan_host_tests.cpp
     ../../SonicGenerationsRecomp/gpu/native_commands.cpp
     ../../SonicGenerationsRecomp/gpu/native_resources.cpp)
 target_link_libraries(vulkan_host_tests PRIVATE Threads::Threads)
-target_link_libraries(vulkan_host_tests PRIVATE SonicVulkanHost)
+target_link_libraries(vulkan_host_tests PRIVATE SonicVulkanHost SonicShaderCodecs)
 add_test(NAME vulkan_host_tests COMMAND vulkan_host_tests)
 set_tests_properties(vulkan_host_tests PROPERTIES TIMEOUT 120)
 add_test(NAME vulkan_wsi_tests COMMAND vulkan_host_tests --wsi)
