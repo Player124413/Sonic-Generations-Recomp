@@ -36,6 +36,9 @@ jobs:
           python3 - <<'PY'
           import json, os
           results = json.loads(os.environ['RESULTS'])
+          required = {'windows', 'kernel', 'gpu', 'vulkan', 'audio', 'cache', 'shader-tools'}
+          if set(results) != required:
+              raise SystemExit('Required suite list is incomplete or unexpected')
           lines = [
               '# Windows/Vulkan verification',
               f"Revision: `{os.environ['GITHUB_SHA']}`", '',
