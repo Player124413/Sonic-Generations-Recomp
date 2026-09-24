@@ -32,16 +32,18 @@ validation. Without the direct-draw flag, the previous resource-upload-only
 mode remains available and shows a black host clear.
 
 **This is not the complete game renderer or a playability claim.** Direct-frame
-mode treats one full-window native color target as a host RGBA8 working image.
-It does not yet establish the native backbuffer/EDRAM/resolve association. It
-clears that image to black and depth to 1 at the start of the batch; it does not
-replay guest Clear calls. It preserves attachments between draws and presents
+mode has two paths. Legacy batches without captured native targets use a host
+RGBA8 proxy with a D32 depth image; these do not establish a native
+backbuffer/EDRAM association. The proxy starts black with depth 1 and replays
+only supported full-target color/depth clears. It preserves attachments between draws and presents
 the completed image only after successful submission of the batch. Failed or
 unsupported batches are not reported as rendered frames.
 
 The bounded profile accepts indexed triangle lists, a single stream of float
-attributes, one color/depth target identity per batch, a full-window viewport,
-bounded scissor and base-level 2D pixel textures. It rejects vertex textures,
+attributes, one color/depth target identity per proxy batch, a finite viewport
+contained in the target (including smaller offset viewports), bounded enabled
+scissor and base-level 2D pixel textures. Disabled scissor ignores stale rectangle
+contents; half-pixel constants use viewport rather than target dimensions. It rejects vertex textures,
 3D/cube descriptors, packed/half vertex formats, MRT, MSAA, stencil, alpha test,
 constant/dual-source blending and unsupported state bits. These restrictions
 exclude substantial game rendering; they must not be mistaken for compatibility
@@ -57,6 +59,29 @@ Tests separately cover CPU capture/CTAB bounds, colored ABI-fixture pixel
 readback (including descriptors and BDA), target preservation, WSI image blits,
 and native-batch submission with genuine cache modules but **fabricated guest
 state**. Neither fixture proves in-game shader binding or correct game frames.
+
+## Native color-target replay
+
+Batches with captured native targets replay ordered clear/draw/resolve commands
+into owned RGBA8 surfaces and select an explicitly captured guest backbuffer.
+Resolved GPU images can be sampled by later draws, including draws to another
+native target. This is separate from the legacy proxy path above.
+
+The bounded native profile rejects guest depth/stencil attachments, MRT, MSAA,
+incompatible overlapping EDRAM views and unsupported resolve formats/operations.
+CPU readback/coherence of guest resolve memory is not implemented: matching GPU
+resolved images currently take precedence without detecting later CPU writes.
+These are correctness blockers, not merely performance optimizations.
+
+`NativeResolvedSamplingTests` supplies an explicit two-module ABI fixture cache
+through `InitWithShaderCache`, using the normal decoder and backend. A deliberately
+blue CPU texture snapshot must not replace the red GPU-resolved image; pixel
+readback verifies sampling into a second target, offset viewport, disabled and
+enabled scissor, and the final resolved backbuffer. Invalid viewport and unknown
+shader hash are rejected without stale frame readback. Normal runtime initialization
+still uses the embedded game cache; there is no fixture or unknown-hash fallback.
+Headless and SDL WSI tests passed in `35962280938` with zero validation errors.
+This proves the tested synthetic path, not a rendered game frame.
 
 ## Native resource upload path
 

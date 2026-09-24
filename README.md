@@ -33,7 +33,7 @@ Windows-инструкции и результаты проверок: [TESTING_
 |---|---|
 | PPC-код игры (`ppc/`, ~77 000 функций) | ✅ рекомпилирован XenonRecomp, собирается в `SonicGenerationsRecompLib` |
 | Ядро Xbox 360 (`xboxkrnl`: Nt/Ke/Mm/Ex/Io/Ob/Rtl/Hal) | Функциональные символы связаны; переменные и поведение API реализованы частично — [XEX_IMPORT_BINDING.md](docs/XEX_IMPORT_BINDING.md) |
-| XAM (контент, пользователь, уведомления, ввод) | Частичная HLE-реализация; не проверено полным запуском игры |
+| XAM (контент, пользователь, уведомления, ввод) | 🚧 Уведомления, snapshot-enumerators и event/polling OVERLAPPED проверены на Windows/Linux; APC, sessions/stats и остальная HLE ещё не завершены |
 | Файловая система (Nt\* → виртуальные корни `game:`, `update:`, `D:`) | ✅ |
 | Гостевые потоки/CRT (TLS, стеки, `\_\_restgprlr` и т.д.) | ✅ |
 | printf-семейство CRT (sprintf/swprintf/…) | ✅ собственная реализация над гостевой памятью |
@@ -41,8 +41,8 @@ Windows-инструкции и результаты проверок: [TESTING_
 | XMA-декодер | XMAFRAMES → guest PCM ring подключён; проверки и ограничения — [AUDIO.md](docs/AUDIO.md) |
 | Ввод (геймпад/клавиатура → XAMINPUT) | ✅ SDL |
 | Инсталлятор (папка / ISO-XISO + `.xexp` апдейт) | ✅ CLI |
-| GPU (`Vd\*`, present, backend-интерфейс) | 🚧 Опциональный Vulkan: ресурсы, transfer/clear/Present и 3 state-replacement; отрисовка игры ещё не готова — [VULKAN.md](docs/VULKAN.md) |
-| Шейдеры (XenosRecomp → HLSL → DXIL/SPIR-V) | Кэш 6404 модулей подключён; поддержка всех игровых pipelines ещё не завершена |
+| GPU (`Vd\*`, present, backend-интерфейс) | 🚧 Vulkan: indexed draws, descriptors, цветовые RT → resolve → texture sampling → Present; native depth/stencil, MSAA и CPU/GPU coherence ещё не завершены — [VULKAN.md](docs/VULKAN.md) |
+| Шейдеры (XenosRecomp → HLSL → DXIL/SPIR-V) | 🚧 Все 6404 SPIR-V модуля проверены; DXIL в этом кэше отсутствует, поддержка всех игровых pipelines ещё не завершена |
 | Патчи игры (FPS, widescreen и пр.) | ⏳ нужны адреса/символы — см. ROADMAP |
 
 ## Структура
@@ -94,9 +94,21 @@ cmake --build build -j$(nproc)
 ## Шейдеры и фактическая готовность
 
 Предоставленный кэш из 6404 SPIR-V модулей уже подключён и проверен.
+Проверка кэша требует ровно 6404 записи, отдельно считает SPIR-V/DXIL и
+проверяет SPIR-V через SPIRV-Tools; CI `35962411199` прошёл на Windows/Linux.
+Это проверка модулей, а не совместимости всех игровых pipelines.
 Повторно компилировать его для текущего runtime не нужно. Экспериментальный
 Vulkan direct-draw путь создаёт pipelines, дескрипторы и выполняет indexed draws.
-Полные render-target/Clear/resolve семантики и работоспособность игры не проверены.
+Цветовая цепочка native RT → resolve → sampling → второй RT → backbuffer
+проверена с чтением пикселей и validation layer (`35962280938`, lavapipe,
+headless и WSI). Используются тестовые шейдеры в явном fixture-кэше, не игровой
+кадр и не подмена шейдеров в runtime. Полные render-target/Clear/resolve
+семантики и работоспособность игры не подтверждены.
+
+XAM/kernel CI `35963266469` прошёл на Windows и Linux: handles, уведомления,
+64-битные аргументы PPC, snapshot-enumeration и завершение OVERLAPPED через
+событие/опрос. APC-callback пока явно отклоняется без потребления записей;
+это не полная XAM HLE. Полная сборка EXE и игровой прогон — отдельные проверки.
 Наличие всех импортов и успешная сборка **не означают полную реализацию SDK или
 подтверждённую проходимость**. См. [VULKAN.md](docs/VULKAN.md).
 
