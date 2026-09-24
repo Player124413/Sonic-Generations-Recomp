@@ -121,6 +121,17 @@ XAM/kernel CI `35963266469` прошёл на Windows и Linux: handles, уве�
 64-битные аргументы PPC, snapshot-enumeration и завершение OVERLAPPED через
 событие/опрос. APC-callback пока явно отклоняется без потребления записей;
 это не полная XAM HLE. Полная сборка EXE и игровой прогон — отдельные проверки.
+Дополнительные проверенные изменения:
+- Vulkan: частичные цветовые Clear с viewport/scissor и сохранением остальных
+  пикселей (`35964365384`, headless/WSI); это не native depth/stencil или MSAA.
+- XAM ContentClose: завершение event/polling OVERLAPPED, сохранение пользовательского
+  completion context, ошибка отсутствующего корня и отказ до изменения корня при
+  неподдержанном APC/неверном event handle (`35964593544`, Windows/Linux).
+  Это исправление снятия виртуального корня и completion, не полная семантика
+  content packages, закрытия всех открытых файлов пакета или всей XAM HLE.
+- XMA: настоящий сжатый образец через MMIO → FFmpeg → гостевой PCM ring,
+  включая эквивалентность PCM после release/reuse (`35964700653`, Windows/Linux).
+
 Наличие всех импортов и успешная сборка **не означают полную реализацию SDK или
 подтверждённую проходимость**. См. [VULKAN.md](docs/VULKAN.md).
 

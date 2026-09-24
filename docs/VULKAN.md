@@ -39,12 +39,12 @@ only supported full-target color/depth clears. It preserves attachments between 
 the completed image only after successful submission of the batch. Failed or
 unsupported batches are not reported as rendered frames.
 
-The bounded profile accepts indexed triangle lists, a single stream of float
-attributes, one color/depth target identity per proxy batch, a finite viewport
+The bounded profile accepts indexed triangle lists, a single stream of float-compatible
+attributes (float32, float16 and supported 8/16-bit normalized encodings), one color/depth target identity per proxy batch, a finite viewport
 contained in the target (including smaller offset viewports), bounded enabled
 scissor and base-level 2D pixel textures. Disabled scissor ignores stale rectangle
 contents; half-pixel constants use viewport rather than target dimensions. It rejects vertex textures,
-3D/cube descriptors, packed/half vertex formats, MRT, MSAA, stencil, alpha test,
+3D/cube descriptors, unmapped integer/packed vertex formats, MRT, MSAA, stencil, alpha test,
 constant/dual-source blending and unsupported state bits. These restrictions
 exclude substantial game rendering; they must not be mistaken for compatibility
 with all 6,404 compiled shaders. Vulkan 1.2 BDA, scalar layout, descriptor
@@ -66,6 +66,19 @@ Batches with captured native targets replay ordered clear/draw/resolve commands
 into owned RGBA8 surfaces and select an explicitly captured guest backbuffer.
 Resolved GPU images can be sampled by later draws, including draws to another
 native target. This is separate from the legacy proxy path above.
+
+Native color clears now support partial rectangles. The clear helper's PPC
+instructions at `0x82DBF4B8..0x82DBF59C` define intersection with the viewport
+(each component truncated separately) and enabled scissor. Empty intersections
+are no-ops; stale disabled scissor is ignored. Vulkan attachment LOAD/STORE plus
+`vkCmdClearAttachments` preserves pixels outside the clear without CPU image
+replacement. A partial clear does not establish validity of an undefined whole
+surface; the bounded path still requires prior full initialization.
+
+`NativePartialClearTests` passed in `35964365384` (headless and WSI, synchronization
+validation enabled). Pixel checks cover fractional viewport bounds, enabled and
+disabled scissor, disjoint/inverted rectangles, retained background and resolve.
+Non-finite viewport and partial-only initialization are rejected before submission.
 
 The bounded native profile rejects guest depth/stencil attachments, MRT, MSAA,
 incompatible overlapping EDRAM views and unsupported resolve formats/operations.

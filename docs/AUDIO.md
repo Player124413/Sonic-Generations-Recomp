@@ -56,10 +56,16 @@ Windows — ClangCL, Linux — GCC/Clang. Закреплённые конфиг�
 - xma_device_tests: allocator, registers, BE/LE, clear, guest error status.
 - xma_stream_tests: реальный транспорт с управляемым PCM decoder для ring wrap,
   split prefix, delayed input, finite/infinite loop, skip и MMIO-to-PCM пути.
-- xma_sample_test: дополнительное декодирование настоящего RIFF XMA файла
-  (1 stream, 1/2 channels); проверяет завершение и наличие ненулевого PCM.
-  CI использует публичный regression sample FFmpeg, проверяет его MD5,
-  не коммитит и не загружает файл/PCM как artifact.
+- xma_sample_test: настоящий RIFF XMA файл (1 stream, 1/2 channels) проходит
+  через MMIO kick устройства, сборку фреймов, закреплённый FFmpeg и гостевое
+  PCM-кольцо. Проверяются завершение, ненулевой PCM и отсутствие оборванного
+  фрейма. После release/reuse контекста повторный проход должен дать те же
+  количество сэмплов, ненулевых байтов и хеш PCM: состояние декодера не должно
+  переходить в новый контекст.
+  Эта проверка выполняется **на Windows и Linux**, CI `35964700653` прошёл
+  на обеих платформах. Используется публичный regression sample FFmpeg с
+  проверкой MD5; файл и PCM не коммитятся и не загружаются как artifact.
+  Это усиление интеграционной проверки, не изменение алгоритма декодирования.
 
 Эти проверки **не равны проверке всех звуков Sonic Generations**. Нужен тест
 на легальном дампе игры: музыка, речь, эффекты, смена уровней, пауза, длительные
