@@ -27,6 +27,8 @@ static PPC_FUNC(ThreadEntry)
     if(status || Word(ctx.r13.u32+0x100)!=body || Word(body+0x14C)!=GuestThread::GetCurrentThreadId()) std::abort();
     GuestThread::SetLastError(0x1234);
     if(Word(body+0x160)!=0x1234) std::abort();
+    uint32_t alias=0;
+    if(Duplicate(0xFFFFFFFEu,alias,false) || alias==0xFFFFFFFEu || !Close(alias)) std::abort();
     threadBody=body;
     // Leave a guest reference for the caller, independently of thread handles.
     ran.fetch_add(1);

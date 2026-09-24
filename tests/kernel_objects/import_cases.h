@@ -19,6 +19,7 @@ static void TestObjectImports()
     ctx.r3.u64=duplicate; ctx.r4.u64=KernelObjects::TypeAddress(KernelObjects::Type::Event); ctx.r5.u64=address+8;
     __imp__ObReferenceObjectByHandle(ctx,g_memory.base); CHECK(ctx.r3.u32==0);
     const auto body=output[2].get(); CHECK(body && body!=duplicate);
+    ctx.r3.u64=body; ctx.r4.u64=0; __imp__NtSetEvent(ctx,g_memory.base); CHECK(ctx.r3.u32==0xC0000008);
     ctx.r3.u64=duplicate; ctx.r4.u64=0; __imp__NtSetEvent(ctx,g_memory.base); CHECK(ctx.r3.u32==0);
     ctx.r3.u64=duplicate; __imp__NtClose(ctx,g_memory.base); CHECK(ctx.r3.u32==0);
     ctx.r3.u64=body; ctx.r4.u64=0; ctx.r5.u64=0; ctx.r6.u64=0; ctx.r7.u64=address+16;

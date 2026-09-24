@@ -68,23 +68,29 @@ uint32_t NtCreateSemaphore(be<uint32_t>* Handle, XOBJECT_ATTRIBUTES* ObjectAttri
     return STATUS_SUCCESS;
 }
 
-uint32_t NtSetEvent(Event* handle, uint32_t* previousState)
+uint32_t NtSetEvent(uint32_t eventHandle, uint32_t* previousState)
 {
+    auto handle=std::dynamic_pointer_cast<Event>(KernelObjects::Acquire(eventHandle));
+    if(!handle) return 0xC0000008;
     const auto previous=handle->Set();
     if(previousState) *previousState=ByteSwap(uint32_t(previous));
     ++g_keSetEventGeneration; g_keSetEventGeneration.notify_all();
     return 0;
 }
 
-uint32_t NtClearEvent(Event* handle, uint32_t* previousState)
+uint32_t NtClearEvent(uint32_t eventHandle, uint32_t* previousState)
 {
+    auto handle=std::dynamic_pointer_cast<Event>(KernelObjects::Acquire(eventHandle));
+    if(!handle) return 0xC0000008;
     const auto previous=handle->Reset();
     if(previousState) *previousState=ByteSwap(uint32_t(previous));
     return 0;
 }
 
-uint32_t NtReleaseSemaphore(Semaphore* Handle, uint32_t ReleaseCount, int32_t* PreviousCount)
+uint32_t NtReleaseSemaphore(uint32_t semaphoreHandle, uint32_t ReleaseCount, int32_t* PreviousCount)
 {
+    auto Handle=std::dynamic_pointer_cast<Semaphore>(KernelObjects::Acquire(semaphoreHandle));
+    if(!Handle) return 0xC0000008;
     uint32_t previousCount;
     const auto status=Handle->Release(ReleaseCount, &previousCount);
     if(status) return status;
@@ -152,8 +158,10 @@ void KeInitializeSemaphore(XKSEMAPHORE* semaphore, uint32_t count, uint32_t limi
     auto* object = QueryKernelObject<Semaphore>(semaphore->Header);
 }
 
-uint32_t NtResumeThread(GuestThreadHandle* hThread, uint32_t* suspendCount)
+uint32_t NtResumeThread(uint32_t threadHandle, uint32_t* suspendCount)
 {
+    auto hThread=std::dynamic_pointer_cast<GuestThreadHandle>(KernelObjects::Acquire(threadHandle));
+    if(!hThread) return 0xC0000008;
     const auto previous=hThread->suspended.exchange(false);
     if(suspendCount) *suspendCount=ByteSwap(uint32_t(previous));
     hThread->suspended.notify_all();
@@ -168,9 +176,11 @@ uint32_t KeResumeThread(GuestThreadHandle* object)
     return previous;
 }
 
-uint32_t NtSuspendThread(GuestThreadHandle* hThread, uint32_t* suspendCount)
+uint32_t NtSuspendThread(uint32_t threadHandle, uint32_t* suspendCount)
 {
-    if(hThread!=KernelObjects::CurrentThread()) return 0xC0000002; // remote suspension needs a scheduler safepoint
+    auto hThread=std::dynamic_pointer_cast<GuestThreadHandle>(KernelObjects::Acquire(threadHandle));
+    if(!hThread) return 0xC0000008;
+    if(hThread.get()!=KernelObjects::CurrentThread()) return 0xC0000002; // remote suspension needs a scheduler safepoint
 
     hThread->suspended = true;
     hThread->suspended.wait(true);
