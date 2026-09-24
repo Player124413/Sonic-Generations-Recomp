@@ -119,3 +119,17 @@ a host pointer. Object naming/open-by-name, full wait-all/alertable/APC semantic
 remote thread suspension, native descriptor callbacks, dynamic procedure lookup
 and additional user modules remain incomplete. These limits still prevent a
 claim of complete kernel compatibility or title bootability.
+
+Verification for implementation commit `ac6eea7`:
+- Dedicated object/import tests, **Windows ClangCL and Linux Clang**:
+  Actions `35960788890`, both passed.
+- The Linux full-runtime workflow `35960788878` passed compilation of all host
+  runtime and test translation units; generated PPC build/link and full-runtime
+  execution checks were still running when this note was written.
+- Full Windows runtime workflow `35960788914` was still running. Its final EXE
+  and full-suite result are not assumed from the dedicated kernel tests.
+
+The handle migration also updates SDK file wrappers to return opaque IDs rather
+than subtracting guest memory from host C++ pointers. Their Win32 BOOL failure
+paths return false, not a nonzero NTSTATUS. File wrappers now share the same
+FileHandle definition as the NT layer, avoiding conflicting class layouts.
