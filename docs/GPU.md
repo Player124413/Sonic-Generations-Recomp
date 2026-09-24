@@ -259,7 +259,8 @@ still needs a dedicated native-frame fixture; it must not be inferred from the
 clear/copy/present tests.
 
 Verified on commit 262f253:
-- Local GPU tests: 8/8; GPU CI `35957973699`: passed.
+- Local GPU tests: 8/8, including a subsequent ASan/UBSan run; GPU CI
+  `35957973699`: passed.
 - Vulkan CI `35957973658`: passed, headless and WSI. Pixel tests cover two
   targets, independent resolve snapshots, retained contents and explicitly
   selected backbuffer; rejection cases cover overlap, flags and undefined data.
@@ -267,5 +268,6 @@ Verified on commit 262f253:
   at the time of this update; no result is assumed.
 
 The additional native indexed-draw fixture exercises attachment binding with
-genuine cache shaders and deliberately degenerate geometry. It is not evidence
+genuine cache shaders and deliberately degenerate geometry. Vulkan CI
+`35958606187` passed with this fixture on commit `0b3d242`. It is not evidence
 of correct title rasterization. No game launch or level progression is verified.
