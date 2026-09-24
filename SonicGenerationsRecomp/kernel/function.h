@@ -186,7 +186,11 @@ struct ArgTranslator
     template<typename T>
     constexpr static std::enable_if_t<std::is_pointer_v<T>, void> SetValue(PPCContext& ctx, uint8_t* base, size_t idx, T value) noexcept
     {
-        const auto v = g_memory.MapVirtual((void*)value);
+        uint32_t v;
+        if constexpr (std::is_convertible_v<T,const KernelObject*>)
+            v=value==GetInvalidKernelObject<std::remove_pointer_t<T>>() ? GUEST_INVALID_HANDLE_VALUE : GetKernelHandle(value);
+        else
+            v=g_memory.MapVirtual((void*)value);
         if (!v)
         {
             return;
@@ -278,7 +282,7 @@ std::enable_if_t<(I < sizeof...(TArgs)), void> _translate_args_to_guest(PPCConte
     _translate_args_to_guest<I + 1>(ctx, base, tpl);
 }
 
-template<auto Func>
+template<auto Func, uint32_t InvalidResult=0xC0000008>
 PPC_FUNC(HostToGuestFunction)
 {
     using ret_t = decltype(std::apply(Func, function_args(Func)));
@@ -286,7 +290,7 @@ PPC_FUNC(HostToGuestFunction)
     KernelObjects::CallScope objectScope;
     auto args = function_args(Func);
     _translate_args_to_host<Func>(ctx, base, args);
-    if(objectScope.invalid) { ctx.r3.u64=0xC0000008; return; }
+    if(objectScope.invalid) { ctx.r3.u64=InvalidResult; return; }
 
     if constexpr (std::is_same_v<ret_t, void>)
     {
@@ -298,7 +302,11 @@ PPC_FUNC(HostToGuestFunction)
 
         if constexpr (std::is_pointer<ret_t>())
         {
-            if (v != nullptr)
+            if constexpr (std::is_convertible_v<ret_t,const KernelObject*>)
+            {
+                ctx.r3.u64=v==GetInvalidKernelObject<std::remove_pointer_t<ret_t>>() ? GUEST_INVALID_HANDLE_VALUE : GetKernelHandle(v);
+            }
+            else if (v != nullptr)
             {
                 ctx.r3.u64 = static_cast<uint32_t>(reinterpret_cast<size_t>(v) - reinterpret_cast<size_t>(base));
             }
@@ -343,7 +351,12 @@ T GuestToHostFunction(const TFunction& func, TArgs&&... argv)
 
     if constexpr (std::is_pointer_v<T>)
     {
-        return reinterpret_cast<T>((uint64_t)g_memory.Translate(newCtx.r3.u32));
+        if constexpr (std::is_convertible_v<T,const KernelObject*>)
+        {
+            if(newCtx.r3.u32==GUEST_INVALID_HANDLE_VALUE) return GetInvalidKernelObject<std::remove_pointer_t<T>>();
+            return dynamic_cast<T>(KernelObjects::Pin(newCtx.r3.u32));
+        }
+        return newCtx.r3.u32 ? reinterpret_cast<T>(g_memory.Translate(newCtx.r3.u32)) : nullptr;
     }
     else if constexpr (is_precise_v<T>)
     {

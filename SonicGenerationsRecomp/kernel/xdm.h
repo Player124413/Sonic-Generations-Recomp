@@ -126,7 +126,7 @@ inline T* GetKernelObject(uint32_t handle)
     return dynamic_cast<T*>(KernelObjects::Pin(handle));
 }
 
-uint32_t GetKernelHandle(KernelObject* obj);
+uint32_t GetKernelHandle(const KernelObject* obj);
 
 void DestroyKernelObject(KernelObject* obj);
 void DestroyKernelObject(uint32_t handle);

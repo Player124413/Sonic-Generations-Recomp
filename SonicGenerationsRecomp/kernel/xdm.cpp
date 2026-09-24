@@ -9,7 +9,7 @@ void DestroyKernelObject(KernelObject* obj)
     if(obj) KernelObjects::Close(obj->handle);
 }
 
-uint32_t GetKernelHandle(KernelObject* obj)
+uint32_t GetKernelHandle(const KernelObject* obj)
 {
     assert(obj != GetInvalidKernelObject());
     return obj ? obj->handle : 0;

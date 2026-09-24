@@ -1,4 +1,5 @@
 #include "file_system.h"
+#include "file_handle.h"
 
 #include <unordered_map>
 #include <cpu/guest_thread.h>
@@ -9,19 +10,13 @@
 #include <user/config.h>
 #include <stdafx.h>
 
-struct FileHandle : KernelObject
-{
-    std::fstream stream;
-    std::filesystem::path path;
-};
-
-struct FindHandle : KernelObject
+struct DirectorySearchHandle : KernelObject
 {
     std::error_code ec;
     std::unordered_map<std::u8string, std::pair<size_t, bool>> searchResult; // Relative path, file size, is directory
     decltype(searchResult)::iterator iterator;
 
-    FindHandle(const std::string_view& path)
+    DirectorySearchHandle(const std::string_view& path)
     {
         auto addDirectory = [&](const std::filesystem::path& directory)
             {
@@ -248,7 +243,7 @@ uint32_t XSetFilePointerEx(FileHandle* hFile, int32_t lDistanceToMove, LARGE_INT
     return TRUE;
 }
 
-FindHandle* XFindFirstFileA(const char* lpFileName, WIN32_FIND_DATAA* lpFindFileData)
+DirectorySearchHandle* XFindFirstFileA(const char* lpFileName, WIN32_FIND_DATAA* lpFindFileData)
 {
     std::string_view path = lpFileName;
     if (path.find("\\*") == (path.size() - 2) || path.find("/*") == (path.size() - 2))
@@ -264,17 +259,17 @@ FindHandle* XFindFirstFileA(const char* lpFileName, WIN32_FIND_DATAA* lpFindFile
         assert(!std::filesystem::path(path).has_extension() && "Unknown search pattern.");
     }
 
-    FindHandle findHandle(path);
-
-    if (findHandle.searchResult.empty())
-        return GetInvalidKernelObject<FindHandle>();
-
-    findHandle.fillFindData(lpFindFileData);
-
-    return CreateKernelObject<FindHandle>(std::move(findHandle));
+    auto* findHandle=CreateKernelObject<DirectorySearchHandle>(path);
+    if(findHandle->searchResult.empty())
+    {
+        DestroyKernelObject(findHandle);
+        return GetInvalidKernelObject<DirectorySearchHandle>();
+    }
+    findHandle->fillFindData(lpFindFileData);
+    return findHandle;
 }
 
-uint32_t XFindNextFileA(FindHandle* Handle, WIN32_FIND_DATAA* lpFindFileData)
+uint32_t XFindNextFileA(DirectorySearchHandle* Handle, WIN32_FIND_DATAA* lpFindFileData)
 {
     Handle->iterator++;
 
@@ -380,15 +375,22 @@ std::filesystem::path FileSystem::ResolvePath(const std::string_view& path, bool
     return std::u8string_view((const char8_t*)builtPath.c_str());
 }
 
-GUEST_FUNCTION_HOOK(sub_82BD4668, XCreateFileA);
-GUEST_FUNCTION_HOOK(sub_82BD4600, XGetFileSizeA);
-GUEST_FUNCTION_HOOK(sub_82BD5608, XGetFileSizeExA);
-GUEST_FUNCTION_HOOK(sub_82BD4478, XReadFile);
-GUEST_FUNCTION_HOOK(sub_831CD3E8, XSetFilePointer);
-GUEST_FUNCTION_HOOK(sub_831CE888, XSetFilePointerEx);
-GUEST_FUNCTION_HOOK(sub_831CDC58, XFindFirstFileA);
-GUEST_FUNCTION_HOOK(sub_831CDC00, XFindNextFileA);
-GUEST_FUNCTION_HOOK(sub_831CDF40, XReadFileEx);
-GUEST_FUNCTION_HOOK(sub_831CD6E8, XGetFileAttributesA);
-GUEST_FUNCTION_HOOK(sub_831CE3F8, XCreateFileA);
-GUEST_FUNCTION_HOOK(sub_82BD4860, XWriteFile);
+// These SDK wrappers return Win32 BOOL/size values, not NTSTATUS. In
+// particular an invalid BOOL handle must not return a nonzero NT error code.
+#define FILE_FUNCTION_HOOK(symbol,function) \
+    PPC_FUNC(symbol) { HostToGuestFunction<function,0>(ctx,base); }
+#define FILE_SIZE_FUNCTION_HOOK(symbol,function) \
+    PPC_FUNC(symbol) { HostToGuestFunction<function,0xFFFFFFFF>(ctx,base); }
+
+FILE_FUNCTION_HOOK(sub_82BD4668, XCreateFileA);
+FILE_SIZE_FUNCTION_HOOK(sub_82BD4600, XGetFileSizeA);
+FILE_FUNCTION_HOOK(sub_82BD5608, XGetFileSizeExA);
+FILE_FUNCTION_HOOK(sub_82BD4478, XReadFile);
+FILE_SIZE_FUNCTION_HOOK(sub_831CD3E8, XSetFilePointer);
+FILE_FUNCTION_HOOK(sub_831CE888, XSetFilePointerEx);
+FILE_FUNCTION_HOOK(sub_831CDC58, XFindFirstFileA);
+FILE_FUNCTION_HOOK(sub_831CDC00, XFindNextFileA);
+FILE_FUNCTION_HOOK(sub_831CDF40, XReadFileEx);
+FILE_FUNCTION_HOOK(sub_831CD6E8, XGetFileAttributesA);
+FILE_FUNCTION_HOOK(sub_831CE3F8, XCreateFileA);
+FILE_FUNCTION_HOOK(sub_82BD4860, XWriteFile);

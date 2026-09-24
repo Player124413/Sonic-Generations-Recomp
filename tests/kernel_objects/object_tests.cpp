@@ -18,6 +18,8 @@ using namespace KernelObjects;
 #include "import_cases.h"
 static uint32_t Word(uint32_t address)
 { return static_cast<be<uint32_t>*>(g_memory.Translate(address))->get(); }
+static KernelObject* ReturnObject() { return CreateKernelObject<KernelObject>(); }
+static KernelObject* ReturnInvalidObject() { return GetInvalidKernelObject<KernelObject>(); }
 static uint32_t WaitEvent(Event* event) { return event->Wait(0); }
 static std::atomic<uint32_t> ran{0}, threadBody{0};
 static PPC_FUNC(ThreadEntry)
@@ -78,6 +80,18 @@ static void BodiesAndHandles()
 }
 static void ImportedPointerConversion()
 {
+    PPCContext returned{};
+    HostToGuestFunction<ReturnObject>(returned,g_memory.base);
+    CHECK(Acquire(returned.r3.u32)!=nullptr);
+    auto returnedHandle=returned.r3.u32;
+    {
+        auto pinned=Acquire(returnedHandle);
+        ArgTranslator::SetValue<KernelObject*>(returned,g_memory.base,0,pinned.get());
+        CHECK(returned.r3.u32==returnedHandle);
+    }
+    CHECK(Close(returnedHandle));
+    HostToGuestFunction<ReturnInvalidObject>(returned,g_memory.base);
+    CHECK(returned.r3.u32==GUEST_INVALID_HANDLE_VALUE);
     auto* event=CreateKernelObject<Event>(false,true);
     uint32_t alias=0; CHECK(Duplicate(event->handle,alias,false)==0);
     PPCContext ctx{}; ctx.r3.u64=alias;
@@ -93,6 +107,8 @@ static void ImportedPointerConversion()
     auto* sem=CreateKernelObject<Semaphore>(1,1);
     ctx.r3.u64=sem->handle; HostToGuestFunction<WaitEvent>(ctx,g_memory.base);
     CHECK(ctx.r3.u32==0xC0000008); // wrong C++ class is not dereferenced
+    ctx.r3.u64=sem->handle; HostToGuestFunction<WaitEvent,0>(ctx,g_memory.base);
+    CHECK(ctx.r3.u32==0); // Win32 BOOL wrappers need FALSE, not nonzero NTSTATUS
     CHECK(Close(sem->handle)); CHECK(Close(event->handle));
 }
 static void ConcurrentClose()
