@@ -1,5 +1,7 @@
 #include <stdafx.h>
 #include "installer.h"
+#include <algorithm>
+#include <cctype>
 #include "iso_file_system.h"
 #include <os/logger.h>
 #include <xex_patcher.h>
@@ -29,7 +31,10 @@ bool Installer::install(const Input& input, const std::filesystem::path& gameRoo
         return false;
     }
 
-    bool isImage = input.gameSource.extension() == ".iso" || input.gameSource.extension() == ".xiso";
+    auto extension = input.gameSource.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+        [](unsigned char c) { return char(std::tolower(c)); });
+    bool isImage = extension == ".iso" || extension == ".xiso";
 
     if (isImage)
     {

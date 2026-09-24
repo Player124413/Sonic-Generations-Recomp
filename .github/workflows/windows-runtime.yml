@@ -26,6 +26,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Launcher script tests (Windows PowerShell)
+        shell: powershell
+        run: ./scripts/windows/Launcher.ps1 -SelfTest
       - name: Fetch pinned sources
         run: |
           git submodule update --init tools/XenonRecomp tools/XenosRecomp tools/ffmpeg-xma
@@ -58,7 +61,7 @@ jobs:
           Copy-Item build-windows/SonicGenerationsRecomp/Release/SonicGenerationsRecomp.exe package/
           Get-ChildItem build-windows/SonicGenerationsRecomp/Release/*.dll -ErrorAction SilentlyContinue | Copy-Item -Destination package/
           Copy-Item COPYING,THIRD_PARTY.md,docs/TESTING_WINDOWS.md package/
-          Copy-Item scripts/windows/*.cmd package/
+          Copy-Item scripts/windows/*.cmd,scripts/windows/*.ps1 package/
           git rev-parse HEAD | Set-Content package/revision.txt
           New-Item -ItemType Directory package/licenses | Out-Null
           Copy-Item licenses/* package/licenses/
@@ -70,8 +73,27 @@ jobs:
         run: |
           & ./package/SonicGenerationsRecomp.exe --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Packaged launcher tests
+        shell: powershell
+        run: |
+          foreach ($file in @('Launcher.cmd', 'Launcher.ps1', 'Install-Game.cmd', 'Run-Diagnostic.cmd', 'TESTING_WINDOWS.md', 'revision.txt')) {
+            if (!(Test-Path -LiteralPath "package/$file")) { throw "Missing package file: $file" }
+          }
+          ./package/Launcher.ps1 -SelfTest
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64-diagnostic-runtime
           path: package/
           if-no-files-found: error
+      - name: Download and installation instructions
+        run: |
+          @'
+          ## Windows x64 / Vulkan package
+          Download **windows-x64-diagnostic-runtime** from this run's Artifacts section.
+          Extract the entire ZIP, then double-click **Launcher.cmd**.
+          Select your own Xbox 360 ISO/XISO or dump folder and click **Install / extract**.
+          Game files: `%LOCALAPPDATA%\SonicGenerationsRecomp`; saves: `save\SYS-DATA` inside it.
+          For portable storage, create `portable.txt` beside the EXE **before** installation.
+          Generated PPC and the supplied SPIR-V cache are already build inputs; no game upload is needed.
+          Logs: `diagnostics` beside the EXE. This is a diagnostic runtime, not confirmed playable.
+          '@ | Add-Content $env:GITHUB_STEP_SUMMARY
