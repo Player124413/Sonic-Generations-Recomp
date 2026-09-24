@@ -16,3 +16,7 @@ add_test(NAME runtime_launcher_tests COMMAND "${Python3_EXECUTABLE}"
 add_executable(paths_tests "paths_tests.cpp" "../SonicGenerationsRecomp/user/paths.cpp")
 target_compile_features(paths_tests PRIVATE cxx_std_17)
 add_test(NAME paths_tests COMMAND paths_tests)
+
+if (WIN32 AND SONIC_GENERATIONS_ENABLE_VULKAN)
+    add_subdirectory(sdl_vulkan)
+endif()

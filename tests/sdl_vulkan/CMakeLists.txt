@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.20)
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(SdlVulkanRegression LANGUAGES CXX)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    find_package(SDL2 REQUIRED)
+    enable_testing()
+endif()
+
+if (WIN32)
+    add_executable(sdl_vulkan_tests sdl_vulkan_tests.cpp)
+    target_compile_features(sdl_vulkan_tests PRIVATE cxx_std_17)
+    target_link_libraries(sdl_vulkan_tests PRIVATE SDL2::SDL2)
+    add_test(NAME sdl_windows_vulkan_hook COMMAND sdl_vulkan_tests)
+    add_test(NAME sdl_vulkan_rejects_dummy_driver COMMAND sdl_vulkan_tests --dummy)
+    set_tests_properties(sdl_windows_vulkan_hook sdl_vulkan_rejects_dummy_driver
+        PROPERTIES TIMEOUT 30)
+endif()

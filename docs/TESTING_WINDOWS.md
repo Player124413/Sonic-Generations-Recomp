@@ -117,7 +117,7 @@ Visual Studio 2022 с C++ desktop tools, компонентом ClangCL и Windo
 CMake >= 3.21, Git, vcpkg. В PowerShell задайте `VCPKG_ROOT` на каталог vcpkg:
 
 ```powershell
-& "$env:VCPKG_ROOT/vcpkg.exe" install sdl2:x64-windows-static vulkan-headers:x64-windows-static vulkan-loader:x64-windows-static
+& "$env:VCPKG_ROOT/vcpkg.exe" install "sdl2[vulkan]:x64-windows-static" vulkan-headers:x64-windows-static vulkan-loader:x64-windows-static
 git submodule update --init tools/XenonRecomp tools/XenosRecomp tools/ffmpeg-xma
 git -C tools/XenonRecomp submodule update --init --recursive
 git -C tools/XenosRecomp submodule update --init thirdparty/smol-v thirdparty/zstd thirdparty/xxHash
@@ -158,3 +158,22 @@ MSAA/MRT, depth resolve/sampling и CPU/GPU coherence ещё не заверше
 
 Описание границ реализации: [XEX_IMPORT_BINDING.md](XEX_IMPORT_BINDING.md) и
 [GPU.md](GPU.md) в репозитории. Реальная игра в этих проверках не запускалась.
+
+## Ошибка «Vulkan support is either not configured in SDL»
+
+Ранние Windows-пакеты собирались с `sdl2` без опциональной feature `vulkan`.
+Флаг Vulkan у самого рантайма не включает эту feature у зависимости. Workflow
+теперь явно устанавливает `sdl2[vulkan]:x64-windows-static` и проверяет реальный
+Vulkan loader hook Windows-драйвера SDL до сборки большого runtime, а также
+через CTest. Проверка намеренно использует отсутствующую DLL: она различает
+отсутствие Vulkan-кода в SDL и попытку загрузить Vulkan loader, не требуя GPU
+на runner. Контрольный тест с dummy-драйвером проверяет отрицательную ветку.
+Это не проверка создания Vulkan surface, игрового кадра или вашего драйвера.
+
+Скачайте исправленный Windows-пакет, закройте рантайм и замените EXE и скрипты,
+сохранив свою папку `assets` (сначала сделайте резервную копию сохранений).
+SDL статически связан с EXE: подмена `SDL2.dll` рядом со старым EXE не поможет.
+Переустанавливать ISO или перекомпилировать шейдеры из-за этой ошибки не нужно.
+Если новый лог сообщает об отсутствии `vulkan-1.dll` или совместимого GPU,
+потребуется проверить официальный драйвер вашей видеокарты. Не скачивайте
+отдельные DLL с посторонних сайтов. Приложите новый лог и `revision.txt`.

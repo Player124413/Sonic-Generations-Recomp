@@ -3,6 +3,10 @@
 #include <gpu/video.h>
 #ifdef SONIC_GENERATIONS_ENABLE_VULKAN
 #include <SDL_vulkan.h>
+#include <SDL_config.h>
+#if defined(_WIN32) && !defined(SDL_VIDEO_VULKAN)
+#error "Windows Vulkan runtime requires SDL Vulkan support; install sdl2[vulkan] in vcpkg."
+#endif
 #endif
 #include <os/logger.h>
 #include <user/config.h>
@@ -85,6 +89,11 @@ void GameWindow::Init(const char* sdlVideoDriver)
         LOGFN_ERROR("Failed to init SDL video subsystem: {}", SDL_GetError());
         return;
     }
+
+    SDL_version linkedVersion{};
+    SDL_GetVersion(&linkedVersion);
+    LOGFN("SDL {}.{}.{} video driver: {}", linkedVersion.major,
+        linkedVersion.minor, linkedVersion.patch, SDL_GetCurrentVideoDriver());
 
     s_width = Config::WindowWidth;
     s_height = Config::WindowHeight;
