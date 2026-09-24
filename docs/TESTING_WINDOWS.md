@@ -200,7 +200,7 @@ ABI сверено с [Xenia xboxkrnl table](https://github.com/xenia-project/xe
 
 `VdHSIOCalibrationLock` — критическая секция, которую игра получает из IAT
 `0x82000540` и передаёт в `RtlEnterCriticalSection` / `RtlLeaveCriticalSection`
-(`ppc_recomp.274.cpp`, `0x82DC9D34`). Экспорт теперь указывает непосредственно
+(`ppc_recomp.274.cpp`, `0x82DC9D38`). Экспорт теперь указывает непосредственно
 на 28-байтовый объект в гостевой physical heap с выравниванием 32 байта.
 Spin count — 10000 (упакованное значение 40), начальные owner/recursion — нули,
 lock count — -1. Хранилище и состояние не сбрасываются при повторной регистрации
