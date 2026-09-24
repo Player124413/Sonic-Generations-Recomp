@@ -9,7 +9,17 @@ std::atomic<uint32_t> g_keSetEventGeneration;
 
 uint32_t GuestTimeoutToMilliseconds(be<int64_t>* timeout)
 {
-    return timeout ? (*timeout * -1) / 10000 : INFINITE;
+    if(!timeout) return INFINITE;
+    const int64_t value=timeout->get();
+    uint64_t ticks;
+    if(value<=0) ticks=uint64_t(0)-uint64_t(value); // safe even for INT64_MIN
+    else
+    {
+        const uint64_t now=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()/100)+116444736000000000ull;
+        ticks=uint64_t(value)>now ? uint64_t(value)-now : 0;
+    }
+    return uint32_t(std::min<uint64_t>((ticks+9999)/10000,uint64_t(INFINITE)-1));
 }
 
 uint32_t NtClose(uint32_t handle)
@@ -39,7 +49,6 @@ void ObDereferenceObject(uint32_t body)
 uint32_t NtWaitForSingleObjectEx(uint32_t Handle, uint32_t WaitMode, uint32_t Alertable, be<int64_t>* Timeout)
 {
     uint32_t timeout = GuestTimeoutToMilliseconds(Timeout);
-    assert(timeout == 0 || timeout == INFINITE);
 
     auto object=KernelObjects::Acquire(Handle);
     return object ? object->Wait(timeout) : 0xC0000008;

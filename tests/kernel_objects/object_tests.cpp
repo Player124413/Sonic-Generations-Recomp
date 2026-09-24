@@ -4,6 +4,7 @@
 #endif
 #include <kernel/dispatcher_objects.h>
 #include <kernel/function.h>
+#include <kernel/object_imports.h>
 #include <cpu/guest_thread.h>
 #include <atomic>
 #include <barrier>
@@ -113,6 +114,24 @@ static void ConcurrentClose()
     gate.arrive_and_wait(); caller.join(); CHECK(destroyed==1);
     CHECK(!Close(handle));
 }
+static void TimedDispatchers()
+{
+    auto* event=CreateKernelObject<Event>(false,false);
+    CHECK(event->Wait(1)==STATUS_TIMEOUT);
+    std::thread setter([&] { std::this_thread::sleep_for(std::chrono::milliseconds(5)); event->Set(); });
+    CHECK(event->Wait(5000)==0); setter.join();
+    CHECK(event->Wait(0)==STATUS_TIMEOUT);
+    CHECK(Close(event->handle));
+    auto* sem=CreateKernelObject<Semaphore>(0,1);
+    CHECK(sem->Wait(1)==STATUS_TIMEOUT);
+    std::thread releaser([&] { std::this_thread::sleep_for(std::chrono::milliseconds(5)); sem->Release(1,nullptr); });
+    CHECK(sem->Wait(5000)==0); releaser.join(); CHECK(Close(sem->handle));
+    be<int64_t> timeout=-1;
+    CHECK(GuestTimeoutToMilliseconds(&timeout)==1);
+    timeout=INT64_MIN; CHECK(GuestTimeoutToMilliseconds(&timeout)==INFINITE-1);
+    timeout=1; CHECK(GuestTimeoutToMilliseconds(&timeout)==0); // expired absolute deadline
+    CHECK(GuestTimeoutToMilliseconds(nullptr)==INFINITE);
+}
 static void Threads()
 {
     constexpr uint32_t entry=0x90000100;
@@ -142,7 +161,7 @@ static void Threads()
 int main()
 {
     g_userHeap.Init();
-    BodiesAndHandles(); ImportedPointerConversion(); ConcurrentClose(); Threads(); TestObjectImports();
+    BodiesAndHandles(); ImportedPointerConversion(); ConcurrentClose(); TimedDispatchers(); Threads(); TestObjectImports();
     std::printf("Kernel object tests: %d failures\n",failures.load());
     return failures ? 1 : 0;
 }

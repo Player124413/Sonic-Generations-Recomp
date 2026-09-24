@@ -1,30 +1,38 @@
 #pragma once
 #include "xdm.h"
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 
 // SignalState in guest RAM is the authoritative word, not a second host copy.
 // Atomic operations preserve its big-endian encoding and support host waits.
 class DispatcherSignal
 {
     be<uint32_t>* word;
+    mutable std::mutex waitMutex;
+    mutable std::condition_variable changed;
     std::atomic_ref<uint32_t> Atomic() const { return std::atomic_ref<uint32_t>(word->value); }
 public:
     explicit DispatcherSignal(be<uint32_t>& value) : word(&value) {}
     uint32_t load() const { return ByteSwap(Atomic().load()); }
     operator uint32_t() const { return load(); }
-    uint32_t exchange(uint32_t value) { return ByteSwap(Atomic().exchange(ByteSwap(value))); }
-    void operator=(uint32_t value) { Atomic().store(ByteSwap(value)); }
+    uint32_t exchange(uint32_t value) { std::lock_guard lock(waitMutex); return ByteSwap(Atomic().exchange(ByteSwap(value))); }
+    void operator=(uint32_t value) { std::lock_guard lock(waitMutex); Atomic().store(ByteSwap(value)); }
     template<class T> bool compare_exchange_strong(T& expected,T desired)
     {
+        std::lock_guard lock(waitMutex);
         auto raw=ByteSwap(uint32_t(expected));
         const bool success=Atomic().compare_exchange_strong(raw,ByteSwap(uint32_t(desired)));
         expected=T(ByteSwap(raw)); return success;
     }
     template<class T> bool compare_exchange_weak(T& expected,T desired)
     { return compare_exchange_strong(expected,desired); }
-    void wait(uint32_t value) const { Atomic().wait(ByteSwap(value)); }
-    void notify_one() { Atomic().notify_one(); }
-    void notify_all() { Atomic().notify_all(); }
+    void wait(uint32_t value) const
+    { std::unique_lock lock(waitMutex); changed.wait(lock,[&]{return load()!=value;}); }
+    bool wait_until(uint32_t value,std::chrono::steady_clock::time_point deadline) const
+    { std::unique_lock lock(waitMutex); return changed.wait_until(lock,deadline,[&]{return load()!=value;}); }
+    void notify_one() { changed.notify_one(); }
+    void notify_all() { changed.notify_all(); }
 };
 
 struct Event final : KernelObject, HostObject<XKEVENT>
@@ -46,44 +54,19 @@ struct Event final : KernelObject, HostObject<XKEVENT>
 
     uint32_t Wait(uint32_t timeout) override
     {
-        if (timeout == 0)
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(timeout);
+        for(;;)
         {
-            if (manualReset)
-            {
-                if (!signaled)
-                    return STATUS_TIMEOUT;
-            }
+            if(manualReset) { if(signaled.load()) return STATUS_SUCCESS; }
             else
             {
-                bool expected = true;
-                if (!signaled.compare_exchange_strong(expected, false))
-                    return STATUS_TIMEOUT;
+                bool expected=true;
+                if(signaled.compare_exchange_strong(expected,false)) return STATUS_SUCCESS;
             }
+            if(!timeout) return STATUS_TIMEOUT;
+            if(timeout==INFINITE) signaled.wait(0);
+            else if(!signaled.wait_until(0,deadline)) return STATUS_TIMEOUT;
         }
-        else if (timeout == INFINITE)
-        {
-            if (manualReset)
-            {
-                signaled.wait(false);
-            }
-            else
-            {
-                while (true)
-                {
-                    bool expected = true;
-                    if (signaled.compare_exchange_weak(expected, false))
-                        break;
-
-                    signaled.wait(expected);
-                }
-            }
-        }
-        else
-        {
-            return 0xC0000002; // bounded/timed dispatcher scheduling is not implemented
-        }
-
-        return STATUS_SUCCESS;
     }
 
     bool Set()
@@ -125,40 +108,15 @@ struct Semaphore final : KernelObject, HostObject<XKSEMAPHORE>
 
     uint32_t Wait(uint32_t timeout) override
     {
-        if (timeout == 0)
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(timeout);
+        for(;;)
         {
-            uint32_t currentCount = count.load();
-            while (currentCount != 0)
-            {
-                if (count.compare_exchange_strong(currentCount, currentCount - 1))
-                    return STATUS_SUCCESS;
-            }
-
-            return STATUS_TIMEOUT;
-        }
-        else if (timeout == INFINITE)
-        {
-            uint32_t currentCount;
-            while (true)
-            {
-                currentCount = count.load();
-                if (currentCount != 0)
-                {
-                    if (count.compare_exchange_weak(currentCount, currentCount - 1))
-                        return STATUS_SUCCESS;
-                }
-                else
-                {
-                    count.wait(0);
-                }
-            }
-
-            return STATUS_SUCCESS;
-        }
-        else
-        {
-            assert(false && "Unhandled timeout value.");
-            return STATUS_TIMEOUT;
+            auto current=count.load();
+            while(current)
+                if(count.compare_exchange_strong(current,current-1)) return STATUS_SUCCESS;
+            if(!timeout) return STATUS_TIMEOUT;
+            if(timeout==INFINITE) count.wait(0);
+            else if(!count.wait_until(0,deadline)) return STATUS_TIMEOUT;
         }
     }
 
@@ -167,7 +125,8 @@ struct Semaphore final : KernelObject, HostObject<XKSEMAPHORE>
         auto current=count.load();
         for(;;)
         {
-            if(!releaseCount || current>maximumCount || releaseCount>maximumCount-current)
+            if(!releaseCount || releaseCount>INT32_MAX) return 0xC000000D;
+            if(current>maximumCount || releaseCount>maximumCount-current)
                 return 0xC0000047; // STATUS_SEMAPHORE_LIMIT_EXCEEDED
             const auto previous=current;
             if(count.compare_exchange_strong(current,current+releaseCount))

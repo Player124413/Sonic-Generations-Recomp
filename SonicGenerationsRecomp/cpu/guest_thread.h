@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <thread>
+#include <condition_variable>
 #include <ppc/ppc_recomp_shared.h>
 
 // Use pthreads directly on macOS to be able to increase default stack size.
@@ -39,7 +40,10 @@ struct GuestThreadHandle : KernelObject
     GuestThreadParams params;
     std::atomic<bool> suspended;
     std::atomic<bool> completed{false};
+    std::mutex completionMutex;
+    std::condition_variable completionChanged;
     bool external=false;
+    void Complete();
     void OnRegistered() override;
 #ifdef USE_PTHREAD
     pthread_t thread;

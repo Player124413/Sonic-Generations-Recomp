@@ -75,10 +75,7 @@ static void GuestThreadFunc(GuestThreadHandle* hThread)
     KernelObjects::SetCurrentThread(hThread);
     hThread->suspended.wait(true);
     GuestThread::Start(hThread->params);
-    auto* header=static_cast<XDISPATCHER_HEADER*>(g_memory.Translate(hThread->guestBody));
-    std::atomic_ref<uint32_t>(header->SignalState.value).store(ByteSwap(uint32_t(1)));
-    hThread->completed=true;
-    hThread->completed.notify_all();
+    hThread->Complete();
     KernelObjects::SetCurrentThread(nullptr);
     KernelObjects::Dereference(hThread->guestBody);
 #ifdef USE_PTHREAD
@@ -142,12 +139,19 @@ uint32_t GuestThreadHandle::GetThreadId() const
 #endif
 }
 
+void GuestThreadHandle::Complete()
+{
+    auto* header=static_cast<XDISPATCHER_HEADER*>(g_memory.Translate(guestBody));
+    std::atomic_ref<uint32_t>(header->SignalState.value).store(ByteSwap(uint32_t(1)));
+    { std::lock_guard lock(completionMutex); completed=true; }
+    completed.notify_all(); completionChanged.notify_all();
+}
 uint32_t GuestThreadHandle::Wait(uint32_t timeout)
 {
     if(timeout==0) return completed ? STATUS_WAIT_0 : STATUS_TIMEOUT;
-    if(timeout!=INFINITE) return 0xC0000002;
-    completed.wait(false);
-    return STATUS_WAIT_0;
+    if(timeout==INFINITE) { completed.wait(false); return STATUS_WAIT_0; }
+    std::unique_lock lock(completionMutex);
+    return completionChanged.wait_for(lock,std::chrono::milliseconds(timeout),[&]{return completed.load();}) ? STATUS_WAIT_0 : STATUS_TIMEOUT;
 }
 
 uint32_t GuestThread::Start(const GuestThreadParams& params)
@@ -168,9 +172,7 @@ uint32_t GuestThread::Start(const GuestThreadParams& params)
             ~Cleanup() { KernelObjects::SetCurrentThread(nullptr); KernelObjects::Close(handle); }
         } cleanup{handle};
         const auto result=Start(params);
-        static_cast<XDISPATCHER_HEADER*>(g_memory.Translate(initial->guestBody))->SignalState=1;
-        initial->completed=true;
-        initial->completed.notify_all();
+        initial->Complete();
         return result;
     }
     GuestThreadContext ctx(cpuNumber,KernelObjects::CurrentThread()->guestBody);
