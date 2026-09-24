@@ -45,7 +45,9 @@ jobs:
               lines.append(f"| {name} | {result['result']} |")
           lines += ['',
               'All called workflows use this exact revision, not older green runs.',
-              'The Windows executable and revision.txt are in this run\'s artifacts.',
+              ('The Windows executable and revision.txt are in this run\'s artifacts.'
+               if results['windows']['result'] == 'success' else
+               'Windows verification did not succeed; no verified executable is claimed.'),
               'A passed run proves the listed build and synthetic checks only.',
               'It does not certify game boot, correct gameplay or a complete port.',
               'No README readiness flags are changed automatically.',

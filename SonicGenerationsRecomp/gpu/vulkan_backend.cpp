@@ -419,7 +419,7 @@ try
         drawResources.push_back(id);
         auto& plan=prepared[n]; plan.bindings.constants=id;
         plan.vertexBuffers.reserve(plan.vertexBindings.size());
-        HostGpu::Resource vertexBuffer=0,indexBuffer=0;
+        HostGpu::Resource indexBuffer=0;
         if(graphics)
         {
             id=Upload(plan.shared,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
@@ -467,7 +467,7 @@ try
         {
             plan.bindings.textures=plan.textures;
             plan.bindings.vertices=plan.vertexBuffers;
-            if(!host.DrawIndexed(pipelines[n],color,depth,vertexBuffer,indexBuffer,indexCounts[n],
+            if(!host.DrawIndexed(pipelines[n],color,depth,0,indexBuffer,indexCounts[n],
                 indexStrides[n]==2 ? VK_INDEX_TYPE_UINT16:VK_INDEX_TYPE_UINT32,{0,0,0,1},&plan.bindings))
             { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
         }

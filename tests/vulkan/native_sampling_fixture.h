@@ -259,7 +259,7 @@ static void NativeMultiStreamTests(SDL_Window* window)
     auto& draw=batch.draws[0];
     // Sparse binding numbers and deliberately reverse resource order. No stream
     // zero dependency: POSITION is stream 7, TEXCOORD0 is stream 3.
-    draw.resources.declaration={{7,4,0x2C23A5,0,0,0},{3,8,0x2C23A5,0,5,0}};
+    draw.resources.declaration={{7,4,0x2C23A5,0,0,0},{3,8,0x2C23A5,5,0,0}};
     draw.resources.vertices.clear(); draw.state.words[12812/4]=0;
     const auto add=[&](uint32_t stream,uint32_t stride,uint32_t resource,const std::vector<float>& data) {
         VertexSnapshot v; v.stream=stream; v.stride=stride; v.resource=resource;
