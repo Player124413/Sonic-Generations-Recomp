@@ -102,6 +102,15 @@ cmake --build build -j$(nproc)
 **Clang обязателен для полного runtime**; GCC/MSVC не поддерживают используемые Xbox ABI aggregates.
 Диагностическая сборка и сбор логов: [TESTING_RUNTIME.md](docs/TESTING_RUNTIME.md).
 
+## Общая автоматическая проверка
+
+Добавлен workflow **Verify Windows Vulkan runtime**: Windows EXE, kernel/XAM,
+GPU capture, Vulkan, XMA и shader-проверки запускаются на одной ревизии, с единым
+итоговым отчётом. Отсутствующая, пропущенная, отменённая или упавшая проверка
+не считается успехом. Это автоматизация тестирования, не автоматическая
+реализация оставшихся компонентов и не подтверждение готовности игры.
+Подробности — [TESTING_WINDOWS.md](docs/TESTING_WINDOWS.md).
+
 ## Шейдеры и фактическая готовность
 
 Предоставленный кэш из 6404 SPIR-V модулей уже подключён и проверен.
@@ -122,6 +131,10 @@ XAM/kernel CI `35963266469` прошёл на Windows и Linux: handles, уве�
 событие/опрос. APC-callback пока явно отклоняется без потребления записей;
 это не полная XAM HLE. Полная сборка EXE и игровой прогон — отдельные проверки.
 Дополнительные проверенные изменения:
+- Vulkan: несколько vertex streams с независимыми strides/offsets вместо
+  ограничения stream 0. Pixel-тесты headless/WSI прошли (`35989892512`),
+  проверки гостевого capture — на Windows/Linux (`35990034485`). Instancing
+  и stream-frequency semantics не входят в эту реализацию.
 - Vulkan D24S8: самостоятельный depth/stencil target, сравнение и запись глубины,
   stencil операций обеих сторон, reference/read/write masks, полные и частичные
   clear по отдельным аспектам. Проверено сохранение содержимого при переключении

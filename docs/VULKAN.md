@@ -39,7 +39,7 @@ only supported full-target color/depth clears. It preserves attachments between 
 the completed image only after successful submission of the batch. Failed or
 unsupported batches are not reported as rendered frames.
 
-The bounded profile accepts indexed triangle lists, a single stream of float-compatible
+The bounded profile accepts indexed triangle lists, up to 16 per-vertex streams with float-compatible
 attributes (float32, float16 and supported 8/16-bit normalized encodings), one color/depth target identity per proxy batch, a finite viewport
 contained in the target (including smaller offset viewports), bounded enabled
 scissor and base-level 2D pixel textures. Disabled scissor ignores stale rectangle
@@ -95,6 +95,33 @@ shader hash are rejected without stale frame readback. Normal runtime initializa
 still uses the embedded game cache; there is no fixture or unknown-hash fallback.
 Headless and SDL WSI tests passed in `35962280938` with zero validation errors.
 This proves the tested synthetic path, not a rendered game frame.
+
+## Multiple vertex streams
+
+Native declaration inputs now select their actual stream numbers rather than
+forcing stream zero. Each referenced stream has an independent stride and each
+attribute retains its byte offset. Sparse streams are bound individually; resource
+capture order does not determine binding numbers. The legacy host fixture API
+still accepts its single-stream shorthand.
+
+Both indexed draws (including signed base vertex) and lowered non-indexed draws
+validate their effective vertex range against **every referenced stream** before
+upload/submission. A small bound stream that the shader does not reference does
+not restrict the draw. Missing/duplicate streams, invalid attribute ranges and
+unsupported input rates are rejected. This does not implement instancing or
+stream-frequency semantics.
+
+The native multi-stream fixture uses separate POSITION and TEXCOORD streams,
+different strides and nonzero attribute offsets, an oversized triangle and a
+four-color texture to prove vertex fetch via pixel readback. The ordinary cache
+loader consumes an explicit fixture cache; no test shader is a runtime fallback.
+Headless/WSI checks passed in `35989892512`; guest-memory capture checks passed on
+Windows/Linux in `35990034485`, including BE stride byte lanes, bound source
+offsets, endian conversion and snapshot ownership.
+
+Binding numbers and offsets follow Vulkan's vertex-input model
+[1](https://docs.vulkan.org/spec/latest/chapters/fxvertex.html); Xbox declaration
+capture remains based on the generated PPC and is not replaced with PC D3D enums.
 
 ## Native D24S8 depth/stencil
 

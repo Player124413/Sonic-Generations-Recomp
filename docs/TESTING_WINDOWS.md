@@ -4,6 +4,26 @@ Linux и Python для запуска этого пакета не нужны. �
 процессор с AVX и драйвер видеокарты с Vulkan 1.2 и необходимыми renderer features.
 Это незавершённый runtime, не версия с подтверждённой играбельностью.
 
+## Полная автоматическая проверка одной ревизии
+
+Workflow [Verify Windows Vulkan runtime](https://github.com/Player124413/Sonic-Generations-Recomp/actions/workflows/verify-runtime.yml)
+вызывает существующие проверки как reusable workflows на **одном commit SHA**:
+
+- сборка Windows EXE, runtime-тесты, CLI smoke test и упаковка;
+- kernel/XAM и CPU GPU-capture тесты на Windows/Linux;
+- Vulkan headless/WSI с validation layer на Linux/lavapipe;
+- XMA, включая реальный сжатый образец, на Windows/Linux;
+- проверка предоставленного shader cache и безопасности shader tools.
+
+Запуск — `workflow_dispatch` для выбранной ветки; изменения самого общего workflow
+также запускают его автоматически. Итоговая таблица находится в Summary.
+Пропущенная, отменённая, отсутствующая или упавшая обязательная проверка не даёт
+общий успех. Поведение отчёта отдельно проверяется unit-тестами.
+Артефакт Windows остаётся диагностическим: общий зелёный CI **не означает**
+проверку игрового кадра, отсутствие известных ограничений или готовность порта.
+README автоматически не помечается галочками. Старые зелёные запуски других
+ревизий не подставляются в итоговую таблицу.
+
 ## Проверенная сборка
 
 Windows CI [35924240044](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/35924240044)
@@ -53,7 +73,8 @@ CI собирает диагностический вариант без опт�
 `--help` не означают проверку игрового кадра. Ограниченная цветовая связка
 render target → resolve → выбранный backbuffer реализована; её профиль,
 Vulkan-проверки и оставшиеся ограничения перечислены в [GPU.md](GPU.md).
-Гостевой depth/stencil, MSAA и CPU/GPU coherence ещё не завершены.
+Single-sample D24S8 depth/stencil реализован в ограниченном профиле; D24FS8,
+MSAA/MRT, depth resolve/sampling и CPU/GPU coherence ещё не завершены.
 
 Привязаны семь переменных ядра: указатель на модуль, timestamp bundle,
 указатели отключённых debug/cert monitors и HLE-дескрипторы event/semaphore/thread.
