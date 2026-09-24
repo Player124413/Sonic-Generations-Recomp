@@ -132,6 +132,37 @@ static void CaptureTests()
     CHECK(bad.draws[0].resources.status==ConversionResult::Unsupported && bad.draws[0].resources.failedTexture);
     CHECK(bad.payloadBytes==0);
 }
+static void SparseStreamCaptureTests()
+{
+    constexpr uint32_t device=0x1000, declaration=0x5000;
+    std::vector<uint8_t> memory(0xA000);
+    const auto store=[&](uint32_t at,uint32_t value) { for(unsigned b=0;b<4;++b) memory.at(at+b)=uint8_t(value>>(24-b*8)); };
+    store(device+12216,declaration); store(declaration,5); store(declaration+24,2);
+    store(declaration+52,(7<<16)|4); store(declaration+56,0x2C23A5); store(declaration+60,0);
+    store(declaration+64,(3<<16)|8); store(declaration+68,0x2C23A5); store(declaration+72,5<<16);
+    for(uint32_t stream:{3u,7u}) {
+        const uint32_t resource=0x6000+stream*32, data=0x8000+stream*256, stride=stream==3 ? 16 : 12;
+        store(device+12812+stream*4,resource); store(resource+24,data|3); store(resource+28,4*stride|2);
+        store(device+1776+(17-stream)*8,(data+stride)|3);
+        store(device+1780+(17-stream)*8,3*stride|2);
+        store(device+12880+(stream/4)*4,stride/4); // streams 3/7 are the low BE byte lane
+        for(uint32_t word=0;word<stride;++word) store(data+word*4,0x12340000|(stream<<8)|word);
+    }
+    NativeState state; CHECK(NativeState::Read({memory},device,state));
+    auto captured=ReadDrawResources({memory},state,84);
+    CHECK(captured.status==ConversionResult::Success && captured.payloadBytes==84 && captured.vertices.size()==2);
+    CHECK(captured.declaration[0].stream==7 && captured.declaration[0].offset==4 && captured.declaration[0].usage==0);
+    CHECK(captured.declaration[1].stream==3 && captured.declaration[1].offset==8 && captured.declaration[1].usage==5 && captured.declaration[1].method==0);
+    for(const auto& vertex:captured.vertices) {
+        const auto stride=vertex.stream==3 ? 16u : 12u;
+        CHECK(vertex.stride==stride && vertex.bytes.size()==stride*3);
+        CHECK(vertex.bytes[0]==stride/4 && vertex.bytes[1]==vertex.stream && vertex.bytes[2]==0x34 && vertex.bytes[3]==0x12);
+    }
+    const auto saved=captured.vertices[0].bytes;
+    std::fill(memory.begin()+0x8000,memory.end(),0);
+    CHECK(captured.vertices[0].bytes==saved); // capture owns the converted data
+    CHECK(ReadDrawResources({memory},state,83).status==ConversionResult::TooLarge);
+}
 static void SequentialIndexTests()
 {
     std::vector<uint8_t> bytes{0xAA};
@@ -146,6 +177,6 @@ static void SequentialIndexTests()
 }
 int main()
 {
-    ConversionTests(); CaptureTests(); SequentialIndexTests();
+    ConversionTests(); CaptureTests(); SparseStreamCaptureTests(); SequentialIndexTests();
     std::puts("Resource endian, tiled/linear RGBA/BC, bounded native vertex/texture ownership tests passed");
 }

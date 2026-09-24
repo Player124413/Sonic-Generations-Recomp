@@ -8,7 +8,7 @@ permissions:
   contents: read
 concurrency:
   group: verify-runtime-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   windows:
     uses: ./.github/workflows/windows-runtime.yml
