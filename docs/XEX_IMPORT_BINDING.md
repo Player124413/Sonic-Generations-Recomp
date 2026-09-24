@@ -47,3 +47,31 @@ library/ordinal/address in the error. Dynamic procedure lookup and loading
 additional user modules remain unsupported. The timestamp layout follows
 Xenia, not a hardware-verified implementation of every bundle field. This work
 therefore does not establish full kernel compatibility or title bootability.
+
+### Object descriptors: prerequisite audit after the native color-chain work
+
+No additional object-type variables are exported by this change. The existing
+`ObReferenceObjectByHandle` returns the handle verbatim, without type validation
+or retention; `ObReferenceObject` and `ObDereferenceObject` remain stubs.
+Handles point at host C++ objects, whereas a guest object pointer must point at
+a guest ABI body, with its own header/type identity and reference lifetime.
+Thread PCR/TEB storage currently has a separate lifetime from the thread handle.
+Therefore exporting nonzero type addresses alone would hide, not solve, the
+kernel blocker.
+
+Required implementation order:
+1. Separate guest object bodies from host objects; integrate thread bodies with
+   the actual PCR/TEB used by guest execution.
+2. Implement validated typed references and lifetime shared by object references,
+   close and duplicate-handle operations. Audit the current pointer-copy
+   `NtDuplicateObject` implementation, which does not retain an independent handle.
+3. Bind descriptors only with proven Xbox 360 field/callback contracts; test
+   guest indirect calls, type mismatch, invalid handle, close-with-live-reference
+   and final dereference before enabling the corresponding variable exports.
+
+Xenia's `kernel/xobject.h` documents a 24-byte guest header and 28-byte type
+structure, but marks several fields as unknown. Its xboxkrnl object-reference
+implementation also recognizes placeholder type tokens. These are useful
+comparison points, not proof that dummy tokens or zero-filled descriptors are
+correct for this static runtime. Original-Xbox and desktop Windows OBJECT_TYPE
+layouts are not sufficient evidence for Xbox 360 callback ABI compatibility.
