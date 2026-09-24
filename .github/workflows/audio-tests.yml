@@ -43,13 +43,17 @@ jobs:
       - name: Test
         run: ctest --test-dir build-audio -C Debug --output-on-failure
       - name: Decode public FFmpeg regression sample (no artifacts)
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           mkdir -p private/audio-test
           curl --fail --location --retry 3 --max-time 60 'https://samples.ffmpeg.org/game-formats/xma/M02_bvo01_14.xma' -o private/audio-test/sample.xma
           echo 'b6226491dd6e07606e52b7b0c853d0c6  private/audio-test/sample.xma' | md5sum --check
-          ./build-audio/xma_sample_test private/audio-test/sample.xma
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ./build-audio/Debug/xma_sample_test.exe private/audio-test/sample.xma
+          else
+            ./build-audio/xma_sample_test private/audio-test/sample.xma
+          fi
       - name: Remove sample
-        if: always() && runner.os == 'Linux'
+        if: always()
+        shell: bash
         run: rm -rf private/audio-test

@@ -17,6 +17,10 @@ public:
     void SetMemory(Stream::Memory translator) { translate = std::move(translator); }
     void SetDecoderForTests(Stream::DecodeFrame decode) { testDecoder = std::move(decode); }
     const std::string& LastError(uint32_t id) const { return errors.at(id); }
+    bool HasIncompleteFrame(uint32_t id) const {
+        const auto& stream = streams.at(id);
+        return stream && stream->HasIncompleteFrame();
+    }
     void Init(uint32_t guestAddress, std::span<uint8_t> contextMemory) {
         if (!guestAddress || (guestAddress & 255) || contextMemory.size() != ContextBytes ||
             uint64_t(guestAddress) + ContextBytes > (uint64_t(1) << 32))
