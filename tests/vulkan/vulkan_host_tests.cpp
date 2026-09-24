@@ -348,6 +348,55 @@ static void NativeFrameTests(SDL_Window* window)
     backend.Shutdown(); CHECK(backend.GetHostStats().allocatedBytes==0);
     std::puts("Native surfaces -> ordered resolve copies -> selected backbuffer pixels passed");
 }
+static void NativePartialClearTests(SDL_Window* window)
+{
+    using namespace GuestGpu;
+    NativeFrameFixture f;
+    VulkanBackend backend(window,true,true); CHECK(backend.Init(VideoMode{64,64}));
+    CHECK(f.Clear(f.SurfaceA,{0,1,0,1})==CaptureResult::Captured);
+    CHECK(f.Clear(f.SurfaceA,{1,0,0,1})==CaptureResult::Captured);
+    CHECK(f.Resolve(f.SurfaceA,f.TextureA)==CaptureResult::Captured);
+    auto batch=f.Frame(f.TextureA);
+    auto& clear=batch.clears[1];
+    const std::array<float,4> viewport{16.9f,8.9f,32.9f,40.9f};
+    for(size_t i=0;i<4;++i) clear.state.words[13000/4+i]=std::bit_cast<uint32_t>(viewport[i]);
+    clear.rectangle={0,0,40,64};
+    const auto scissor=[&](bool enabled,std::array<int32_t,4> rectangle) {
+        clear.state.words[12264/4]=enabled;
+        for(size_t i=0;i<4;++i) clear.state.words[13028/4+i]=uint32_t(rectangle[i]);
+    };
+    std::vector<uint8_t> pixels;
+    const auto verify=[&](std::array<int32_t,4> red) {
+        CHECK(backend.SubmitGuestBatch(batch)==SubmissionResult::Submitted);
+        CHECK(backend.ReadDiagnosticFrame(pixels) && pixels.size()==64*64*4);
+        for(int y=0;y<64;++y) for(int x=0;x<64;++x)
+        {
+            const bool inside=x>=red[0] && y>=red[1] && x<red[2] && y<red[3];
+            const size_t at=(y*64+x)*4;
+            CHECK(pixels[at]==(inside?255:0) && pixels[at+1]==(inside?0:255));
+            CHECK(pixels[at+2]==0 && pixels[at+3]==255);
+        }
+    };
+    scissor(true,{24,16,60,32}); verify({24,16,40,32});
+    // Native fctiwz truncates each component BEFORE adding origin and extent.
+    scissor(false,{-10,-10,-1,-1}); verify({16,8,40,48});
+    scissor(true,{50,50,60,60}); verify({}); // disjoint -> no-op, no background replacement
+    clear.rectangle={40,40,8,8}; scissor(false,{}); verify({}); // inverted -> no-op
+    clear.rectangle={-100,-100,100,100}; verify({16,8,48,48});
+    if(window) { backend.Present(); CHECK(backend.GetHostStats().presents==1); }
+    const auto submissions=backend.GetHostStats().submissions;
+    clear.state.words[13000/4]=0x7FC00000; // NaN must never reach integer conversion/Vulkan
+    CHECK(backend.SubmitGuestBatch(batch)==SubmissionResult::Incomplete);
+    CHECK(backend.GetHostStats().submissions==submissions);
+    CHECK(!backend.ReadDiagnosticFrame(pixels) && pixels.empty());
+    clear.state.words[13000/4]=std::bit_cast<uint32_t>(viewport[0]);
+    batch.clears.erase(batch.clears.begin()); // only partial initialization of a fresh surface
+    CHECK(backend.SubmitGuestBatch(batch)==SubmissionResult::Incomplete);
+    CHECK(backend.GetHostStats().submissions==submissions);
+    CHECK(backend.GetHostStats().validationErrors==0);
+    backend.Shutdown(); CHECK(backend.GetHostStats().allocatedBytes==0);
+    std::puts("Native partial clear: viewport/scissor intersections, fractional bounds, empty rectangles and preserved pixels passed");
+}
 static void BackendTests(SDL_Window* window)
 {
     VulkanBackend backend(window, true);
@@ -457,6 +506,7 @@ int main(int argc, char** argv)
         GameAbiTests(host,true); host.Shutdown(); CHECK(host.Stats().validationErrors==0);
         BackendTests(window);
         NativeFrameTests(window);
+        NativePartialClearTests(window);
         NativeResolvedSamplingTests(window);
         SDL_DestroyWindow(window); SDL_Quit();
         std::puts("Vulkan WSI acquire/clear/submit/present/resize with validation passed");
@@ -540,6 +590,7 @@ int main(int argc, char** argv)
     CHECK(host.Stats().validationErrors == 0);
     BackendTests(nullptr);
     NativeFrameTests(nullptr);
+    NativePartialClearTests(nullptr);
     NativeResolvedSamplingTests(nullptr);
     NativeGameShaderDrawTest();
     std::puts("Vulkan resources, readback, transfers, state translation and lifecycle with validation passed");

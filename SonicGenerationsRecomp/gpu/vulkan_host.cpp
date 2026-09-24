@@ -165,7 +165,7 @@ struct VulkanHost::Impl
         }
         return true;
     }
-    void Transition(Image& image, VkImageLayout layout, VkAccessFlags access)
+    void Transition(Image& image, VkImageLayout layout, VkAccessFlags access, VkPipelineStageFlags destinationStage = 0)
     {
         VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
         barrier.srcAccessMask = image.layout == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
@@ -175,7 +175,7 @@ struct VulkanHost::Impl
         barrier.image = image.image;
         barrier.subresourceRange = {image.Aspect(), 0, 1, 0, 1};
         vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-            (access & VK_ACCESS_SHADER_READ_BIT) ? VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
+            destinationStage ? destinationStage : ((access & VK_ACCESS_SHADER_READ_BIT) ? VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT),
             0, 0, nullptr, 0, nullptr, 1, &barrier);
         image.layout = layout;
     }
@@ -752,6 +752,69 @@ bool VulkanHost::ClearColor(Resource id, const std::array<float, 4>& color)
     const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     vkCmdClearColorImage(p.command, image->image, image->layout, &clear, 1, &range);
     return p.Submit();
+}
+bool VulkanHost::ClearColorRegion(Resource id, const std::array<float, 4>& color, const VkRect2D& rectangle)
+{
+    auto& p = *impl;
+    if (!p.Usable()) return false;
+    auto* image = p.FindImage(id);
+    if (!image) return false;
+    if (image->kind != ImageKind::Rgba8 || rectangle.offset.x < 0 || rectangle.offset.y < 0 ||
+        uint64_t(rectangle.offset.x) + rectangle.extent.width > image->width ||
+        uint64_t(rectangle.offset.y) + rectangle.extent.height > image->height ||
+        !std::all_of(color.begin(), color.end(), [](float x) { return std::isfinite(x); }))
+        return p.Fail("Invalid color clear rectangle");
+    if (!rectangle.extent.width || !rectangle.extent.height) return true;
+    if (!rectangle.offset.x && !rectangle.offset.y && rectangle.extent.width == image->width && rectangle.extent.height == image->height)
+        return ClearColor(id, color);
+    if (image->layout == VK_IMAGE_LAYOUT_UNDEFINED)
+        return p.Fail("Partial clear cannot preserve undefined image contents");
+
+    // LOAD/STORE preserves pixels outside the rectangle. No shader, CPU
+    // read-modify-write, synthetic background, or guest color-write mask.
+    struct ClearPass
+    {
+        VkDevice device;
+        VkRenderPass pass{};
+        VkFramebuffer framebuffer{};
+        ~ClearPass()
+        {
+            if (framebuffer) vkDestroyFramebuffer(device, framebuffer, nullptr);
+            if (pass) vkDestroyRenderPass(device, pass, nullptr);
+        }
+    } resources{p.device};
+    VkAttachmentDescription attachment{};
+    attachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachment.initialLayout = attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    const VkAttachmentReference reference{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1; subpass.pColorAttachments = &reference;
+    VkRenderPassCreateInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+    pass.attachmentCount = 1; pass.pAttachments = &attachment;
+    pass.subpassCount = 1; pass.pSubpasses = &subpass;
+    if (!p.Check(vkCreateRenderPass(p.device, &pass, nullptr, &resources.pass), "vkCreateRenderPass(clear)")) return false;
+    VkFramebufferCreateInfo framebuffer{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+    framebuffer.renderPass = resources.pass; framebuffer.attachmentCount = 1; framebuffer.pAttachments = &image->view;
+    framebuffer.width = image->width; framebuffer.height = image->height; framebuffer.layers = 1;
+    if (!p.Check(vkCreateFramebuffer(p.device, &framebuffer, nullptr, &resources.framebuffer), "vkCreateFramebuffer(clear)") || !p.Begin()) return false;
+    p.Transition(*image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    begin.renderPass = resources.pass; begin.framebuffer = resources.framebuffer;
+    begin.renderArea.extent = {image->width, image->height};
+    vkCmdBeginRenderPass(p.command, &begin, VK_SUBPASS_CONTENTS_INLINE);
+    VkClearAttachment clear{};
+    clear.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    std::copy(color.begin(), color.end(), clear.clearValue.color.float32);
+    const VkClearRect region{rectangle, 0, 1};
+    vkCmdClearAttachments(p.command, 1, &clear, 1, &region);
+    vkCmdEndRenderPass(p.command);
+    return p.Submit(); // fence-complete before framebuffer/pass destruction
 }
 bool VulkanHost::ClearDepth(Resource id, float depth)
 {

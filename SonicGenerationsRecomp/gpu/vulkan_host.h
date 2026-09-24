@@ -96,6 +96,7 @@ namespace HostGpu
         bool UploadRgba(Resource image, std::span<const uint8_t> data);
         bool CopyImage(Resource source,Resource destination); // equal-size, single-sample resolve/copy
         bool ClearColor(Resource image, const std::array<float, 4>& color);
+        bool ClearColorRegion(Resource image, const std::array<float, 4>& color, const VkRect2D& rectangle);
         bool ClearDepth(Resource image, float depth);
         bool ReadImage(Resource image, std::vector<uint8_t>& out);
 

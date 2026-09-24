@@ -6,6 +6,33 @@
 
 using namespace GuestGpu;
 
+namespace
+{
+// sub_82DBF460, 0x82DBF4B8..0x82DBF59C: truncate viewport components
+// individually, intersect the explicit rectangle with viewport and enabled
+// scissor, then skip empty intersections. Do not apply stale disabled scissor.
+bool ClearRectangle(const NativeClear& clear, uint32_t width, uint32_t height, VkRect2D& out)
+{
+    const auto v = clear.state.Viewport();
+    if (std::any_of(v.begin(), v.begin()+4, [](float f) { return !std::isfinite(f); }) ||
+        v[0] < 0 || v[1] < 0 || v[2] <= 0 || v[3] <= 0 ||
+        double(v[0])+v[2] > width || double(v[1])+v[3] > height) return false;
+    std::array<int32_t,4> r{int32_t(v[0]), int32_t(v[1]), int32_t(v[0])+int32_t(v[2]), int32_t(v[1])+int32_t(v[3])};
+    const auto intersect = [&](const std::array<int32_t,4>& clip) {
+        r[0]=std::max(r[0],clip[0]); r[1]=std::max(r[1],clip[1]);
+        r[2]=std::min(r[2],clip[2]); r[3]=std::min(r[3],clip[3]);
+    };
+    intersect(clear.rectangle);
+    if (clear.state.words[12264/4]) intersect(clear.state.Scissor());
+    if (r[2]<=r[0] || r[3]<=r[1]) { out={}; return true; }
+    out={{r[0],r[1]}, {uint32_t(r[2]-r[0]),uint32_t(r[3]-r[1])}};
+    return true;
+}
+bool FullRectangle(const VkRect2D& r, uint32_t width, uint32_t height)
+{ return !r.offset.x && !r.offset.y && r.extent.width==width && r.extent.height==height; }
+}
+
+
 void VulkanBackend::ResetNativeTargets()
 {
     for(auto& [key,surface]:nativeSurfaces)
@@ -36,6 +63,7 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
         for(size_t i=1;i<events.size();++i)
             if(events[i-1].sequence==events[i].sequence) return reject("Duplicate native command sequence");
         // Validate surfaces and resolve views before executing any commands.
+        std::vector<VkRect2D> clearRectangles(batch.clears.size());
         auto surfacePlan=nativeSurfaces;
         auto texturePlan=nativeTextures;
         auto validate=[&](const NativeTargets& targets,const NativeState& state,uint32_t device) {
@@ -75,15 +103,16 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
             else if(e.kind==1)
             {
                 const auto& clear=batch.clears[e.index]; const auto& s=clear.targets.surfaces[0];
+                auto& rectangle=clearRectangles[e.index];
                 if(!validate(clear.targets,clear.state,clear.device) || clear.flags!=1 ||
-                   clear.rectangle!=std::array<int32_t,4>{0,0,int32_t(s.width),int32_t(s.height)})
-                    return reject("Native clear requires full single-sample color target");
-                const auto viewport=clear.state.Viewport();
-                if(viewport[0]!=0 || viewport[1]!=0 || viewport[2]!=float(s.width) || viewport[3]!=float(s.height) ||
-                   (clear.state.words[12264/4] && clear.state.Scissor()!=clear.rectangle) ||
+                   !ClearRectangle(clear,s.width,s.height,rectangle) ||
                    std::any_of(clear.color.begin(),clear.color.end(),[](float f){return !std::isfinite(f);}))
-                    return reject("Clipped or non-finite native clear");
-                surfacePlan.at(s.baseTile).initialized=true;
+                    return reject("Invalid native single-sample color clear");
+                auto& initialized=surfacePlan.at(s.baseTile).initialized;
+                const bool full=FullRectangle(rectangle,s.width,s.height);
+                if(rectangle.extent.width && rectangle.extent.height && !initialized && !full)
+                    return reject("Partial clear cannot initialize the whole native surface");
+                initialized=initialized || full;
             }
             else
             {
@@ -141,8 +170,9 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
             }
             if(e.kind==1)
             {
-                if(!host.ClearColor(surface.color,batch.clears[e.index].color)) return reject("Native surface clear failed");
-                surface.initialized=true;
+                const auto& rectangle=clearRectangles[e.index];
+                if(!host.ClearColorRegion(surface.color,batch.clears[e.index].color,rectangle)) return reject("Native surface clear failed");
+                surface.initialized=surface.initialized || FullRectangle(rectangle,s.width,s.height);
             }
             else if(e.kind==2)
             {
