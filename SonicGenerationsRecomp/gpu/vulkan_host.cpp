@@ -773,18 +773,36 @@ bool VulkanHost::ClearColor(Resource id, const std::array<float, 4>& color)
 }
 bool VulkanHost::ClearColorRegion(Resource id, const std::array<float, 4>& color, const VkRect2D& rectangle)
 {
+    if(!std::all_of(color.begin(),color.end(),[](float v){return std::isfinite(v);})) return impl->Fail("Invalid color clear value");
+    VkClearValue value{}; std::copy(color.begin(),color.end(),value.color.float32);
+    return ClearAttachmentRegion(id,value,VK_IMAGE_ASPECT_COLOR_BIT,rectangle);
+}
+bool VulkanHost::ClearDepthStencilRegion(Resource id, float depth, uint32_t stencil, VkImageAspectFlags aspects, const VkRect2D& rectangle)
+{
+    if(!aspects || (aspects & ~(VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) ||
+       ((aspects & VK_IMAGE_ASPECT_DEPTH_BIT) && (!std::isfinite(depth) || depth<0 || depth>1)))
+        return impl->Fail("Invalid depth/stencil clear value");
+    VkClearValue value{}; value.depthStencil={(aspects & VK_IMAGE_ASPECT_DEPTH_BIT) ? depth : 0,stencil & 255u};
+    return ClearAttachmentRegion(id,value,aspects,rectangle);
+}
+bool VulkanHost::ClearAttachmentRegion(Resource id, const VkClearValue& value, VkImageAspectFlags aspects, const VkRect2D& rectangle)
+{
     auto& p = *impl;
     if (!p.Usable()) return false;
     auto* image = p.FindImage(id);
     if (!image) return false;
-    if (image->kind != ImageKind::Rgba8 || rectangle.offset.x < 0 || rectangle.offset.y < 0 ||
+    const bool color=aspects == VK_IMAGE_ASPECT_COLOR_BIT;
+    if ((aspects & ~image->Aspect()) || rectangle.offset.x < 0 || rectangle.offset.y < 0 ||
         uint64_t(rectangle.offset.x) + rectangle.extent.width > image->width ||
-        uint64_t(rectangle.offset.y) + rectangle.extent.height > image->height ||
-        !std::all_of(color.begin(), color.end(), [](float x) { return std::isfinite(x); }))
-        return p.Fail("Invalid color clear rectangle");
+        uint64_t(rectangle.offset.y) + rectangle.extent.height > image->height)
+        return p.Fail("Invalid attachment clear rectangle");
     if (!rectangle.extent.width || !rectangle.extent.height) return true;
     if (!rectangle.offset.x && !rectangle.offset.y && rectangle.extent.width == image->width && rectangle.extent.height == image->height)
-        return ClearColor(id, color);
+    {
+        if(!color) return ClearDepthStencil(id,value.depthStencil.depth,value.depthStencil.stencil,aspects);
+        std::array<float,4> rgba{}; std::copy_n(value.color.float32,4,rgba.begin());
+        return ClearColor(id,rgba);
+    }
     if (image->layout == VK_IMAGE_LAYOUT_UNDEFINED)
         return p.Fail("Partial clear cannot preserve undefined image contents");
 
@@ -802,16 +820,17 @@ bool VulkanHost::ClearColorRegion(Resource id, const std::array<float, 4>& color
         }
     } resources{p.device};
     VkAttachmentDescription attachment{};
-    attachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+    attachment.format = ImageFormat(image->kind);
     attachment.samples = VK_SAMPLE_COUNT_1_BIT;
     attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachment.initialLayout = attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    const VkAttachmentReference reference{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachment.initialLayout = attachment.finalLayout = color ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    const VkAttachmentReference reference{0, attachment.initialLayout};
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1; subpass.pColorAttachments = &reference;
+    if(color) { subpass.colorAttachmentCount = 1; subpass.pColorAttachments = &reference; }
+    else subpass.pDepthStencilAttachment = &reference;
     VkRenderPassCreateInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
     pass.attachmentCount = 1; pass.pAttachments = &attachment;
     pass.subpassCount = 1; pass.pSubpasses = &subpass;
@@ -820,15 +839,15 @@ bool VulkanHost::ClearColorRegion(Resource id, const std::array<float, 4>& color
     framebuffer.renderPass = resources.pass; framebuffer.attachmentCount = 1; framebuffer.pAttachments = &image->view;
     framebuffer.width = image->width; framebuffer.height = image->height; framebuffer.layers = 1;
     if (!p.Check(vkCreateFramebuffer(p.device, &framebuffer, nullptr, &resources.framebuffer), "vkCreateFramebuffer(clear)") || !p.Begin()) return false;
-    p.Transition(*image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    p.Transition(*image,attachment.initialLayout,
+        color ? VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        color ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT : VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT);
     VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     begin.renderPass = resources.pass; begin.framebuffer = resources.framebuffer;
     begin.renderArea.extent = {image->width, image->height};
     vkCmdBeginRenderPass(p.command, &begin, VK_SUBPASS_CONTENTS_INLINE);
     VkClearAttachment clear{};
-    clear.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    std::copy(color.begin(), color.end(), clear.clearValue.color.float32);
+    clear.aspectMask = aspects; clear.clearValue = value;
     const VkClearRect region{rectangle, 0, 1};
     vkCmdClearAttachments(p.command, 1, &clear, 1, &region);
     vkCmdEndRenderPass(p.command);

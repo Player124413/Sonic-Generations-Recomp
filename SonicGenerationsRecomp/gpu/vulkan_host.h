@@ -102,6 +102,7 @@ namespace HostGpu
         bool ClearColorRegion(Resource image, const std::array<float, 4>& color, const VkRect2D& rectangle);
         bool ClearDepth(Resource image, float depth);
         bool ClearDepthStencil(Resource image, float depth, uint32_t stencil, VkImageAspectFlags aspects);
+        bool ClearDepthStencilRegion(Resource image, float depth, uint32_t stencil, VkImageAspectFlags aspects, const VkRect2D& rectangle);
         bool ReadImage(Resource image, std::vector<uint8_t>& out);
 
         // PresentImage blits a completed host target. It does not implement
@@ -111,6 +112,7 @@ namespace HostGpu
         bool PresentImage(Resource image);
         bool SwapchainNeedsResize() const;
     private:
+        bool ClearAttachmentRegion(Resource image, const VkClearValue& value, VkImageAspectFlags aspects, const VkRect2D& rectangle);
         bool PresentFrame(Resource image, const std::array<float, 4>& clear);
         struct Impl;
         std::unique_ptr<Impl> impl;

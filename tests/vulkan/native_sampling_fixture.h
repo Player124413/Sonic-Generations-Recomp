@@ -158,6 +158,33 @@ static void NativeResolvedSamplingTests(SDL_Window* window)
     stencilBatch.clears.push_back(depthOnly);
     stencilBatch.draws.back().sequence=6; stencilBatch.resolves.back().sequence=7;
     render(stencilBatch,{0,0,0,255});
+    // Partial depth clear must retain stencil both inside and outside its region.
+    stencilBatch.clears.back().rectangle={24,16,40,32};
+    render(stencilBatch,{0,0,0,255}); pixel(20,24,{0,0,0,255});
+    // Partial stencil clear must preserve the remainder of that same aspect.
+    stencilBatch.clears.back().flags=0x20; stencilBatch.clears.back().stencil=8;
+    stencilBatch.draws.back().state.words[10496/4]=0x0000FF08;
+    render(stencilBatch,{0,0,0,255}); pixel(20,24,{255,0,0,255});
+    // A partial depth-only clear changes the depth test only in its rectangle.
+    auto partialDepth=twoDraws;
+    auto cut=partialDepth.clears.back(); cut.flags=0x10; cut.depth=0.25f;
+    cut.rectangle={24,16,40,32}; cut.sequence=5;
+    partialDepth.clears.push_back(cut);
+    partialDepth.draws.back().sequence=6; partialDepth.resolves.back().sequence=7;
+    render(partialDepth,{255,0,0,255}); pixel(20,24,{0,0,0,255});
+    // The first draw wrote depth while B was bound. Rebinding A must retain it.
+    auto switched=twoDraws;
+    auto& second=switched.draws.back();
+    second.state.words[10548/4]=2|(1<<4);
+    second.targets.surfaces[0]=switched.clears[0].targets.surfaces[0];
+    second.state.words[12792/4]=f.SurfaceA;
+    second.state.words[10372/4]=second.targets.surfaces[0].descriptor[1];
+    switched.resolves.back().targets=second.targets;
+    switched.resolves.back().state=second.state;
+    switched.resolves.back().destination=ReadTexture({f.memory},f.TextureA);
+    switched.backbuffer=switched.resolves.back().destination;
+    CHECK(backend.SubmitGuestBatch(switched)==SubmissionResult::Submitted);
+    CHECK(backend.ReadDiagnosticFrame(pixels)); pixel(32,24,{0,0,255,255});
     // The other face has independent compare/masks when two-sided is enabled.
     for(uint32_t clockwise=0;clockwise<2;++clockwise) {
         depthState.words[10568/4]=clockwise ? 4 : 0;
@@ -169,6 +196,14 @@ static void NativeResolvedSamplingTests(SDL_Window* window)
         depthState.words[10492/4]=0x00FFFF04;
         render(depthBatch,{0,255,0,255});
     }
+    depthState.words[10496/4]=0x00FFFF03;
+    depthState.words[10492/4]=0x00FFFF04;
+    depthState.words[10568/4]=0;
+    CHECK(backend.SubmitGuestBatch(depthBatch)==SubmissionResult::Submitted);
+    CHECK(backend.ReadDiagnosticFrame(pixels)); const auto frontRed=pixels[(24*64+32)*4];
+    depthState.words[10568/4]=4;
+    CHECK(backend.SubmitGuestBatch(depthBatch)==SubmissionResult::Submitted);
+    CHECK(backend.ReadDiagnosticFrame(pixels)); CHECK(pixels[(24*64+32)*4]==255-frontRed);
     auto unsupportedDepth=depthBatch;
     for(auto* descriptor:{&unsupportedDepth.clears.back().targets.surfaces[4],
                          &unsupportedDepth.draws[0].targets.surfaces[4],

@@ -135,7 +135,7 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 auto& rectangle=clearRectangles[e.index];
                 if(!validate(clear.targets,clear.state,clear.device) || !clear.flags || (clear.flags & ~0x31u) ||
                    !ClearRectangle(clear,s.width,s.height,rectangle) ||
-                   std::any_of(clear.color.begin(),clear.color.end(),[](float f){return !std::isfinite(f);}))
+                   ((clear.flags & 1) && std::any_of(clear.color.begin(),clear.color.end(),[](float f){return !std::isfinite(f); })))
                     return reject("Invalid native single-sample color clear");
                 const bool full=FullRectangle(rectangle,s.width,s.height);
                 if(clear.flags & 1) {
@@ -146,12 +146,16 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 }
                 if(clear.flags & 0x30) {
                     const auto& d=clear.targets.surfaces[4];
-                    if(!d.resource || !full || ((clear.flags & 0x10) &&
+                    if(!d.resource || ((clear.flags & 0x10) &&
                        (!std::isfinite(clear.depth) || clear.depth<0 || clear.depth>1)))
-                        return reject("Depth/stencil clear requires a valid full D24S8 target");
+                        return reject("Depth/stencil clear requires a valid D24S8 target");
                     auto& initialized=depthPlan.at(d.baseTile);
-                    if(clear.flags & 0x10) initialized.depthInitialized=true;
-                    if(clear.flags & 0x20) initialized.stencilInitialized=true;
+                    const bool nonempty=rectangle.extent.width && rectangle.extent.height;
+                    if(nonempty && !full && (((clear.flags & 0x10) && !initialized.depthInitialized) ||
+                       ((clear.flags & 0x20) && !initialized.stencilInitialized)))
+                        return reject("Partial clear cannot initialize an undefined depth/stencil aspect");
+                    if(clear.flags & 0x10) initialized.depthInitialized|=full;
+                    if(clear.flags & 0x20) initialized.stencilInitialized|=full;
                 }
             }
             else
@@ -227,10 +231,10 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 if(clear.flags & 0x30) {
                     const auto aspects=((clear.flags & 0x10) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
                         ((clear.flags & 0x20) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
-                    if(!host.ClearDepthStencil(guestDepth,clear.depth,clear.stencil,aspects)) return reject("Native depth/stencil clear failed");
+                    if(!host.ClearDepthStencilRegion(guestDepth,clear.depth,clear.stencil,aspects,rectangle)) return reject("Native depth/stencil clear failed");
                     auto& initialized=nativeDepths.at(d.baseTile);
-                    if(clear.flags & 0x10) initialized.depthInitialized=true;
-                    if(clear.flags & 0x20) initialized.stencilInitialized=true;
+                    if(clear.flags & 0x10) initialized.depthInitialized|=FullRectangle(rectangle,s.width,s.height);
+                    if(clear.flags & 0x20) initialized.stencilInitialized|=FullRectangle(rectangle,s.width,s.height);
                 }
             }
             else if(e.kind==2)

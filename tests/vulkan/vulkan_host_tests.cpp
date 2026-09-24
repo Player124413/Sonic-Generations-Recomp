@@ -43,6 +43,21 @@ static void StateTests()
     state = DecodeFixedState(input);
     CHECK(state.invalidBlend && state.requiresStencil && state.requiresAlphaTest && state.requiresAlphaToCoverage);
     CHECK(state.unsupportedRasterBits == (1 << 15));
+    input.words[10496/4]=0x0055AA12; input.words[10492/4]=0x0066BB34;
+    for(uint32_t op=0;op<8;++op) {
+        input.words[10548/4]=1|128|(op<<8)|(op<<11)|(op<<14)|(op<<17)|
+            ((7-op)<<20)|((7-op)<<23)|((7-op)<<26)|((7-op)<<29);
+        state=DecodeFixedState(input);
+        CHECK(state.depth.stencilTestEnable);
+        CHECK(state.depth.front.compareOp==VkCompareOp(op) && state.depth.back.compareOp==VkCompareOp(7-op));
+        CHECK(state.depth.front.failOp==VkStencilOp(op) && state.depth.front.passOp==VkStencilOp(op) && state.depth.front.depthFailOp==VkStencilOp(op));
+        CHECK(state.depth.back.failOp==VkStencilOp(7-op) && state.depth.back.passOp==VkStencilOp(7-op) && state.depth.back.depthFailOp==VkStencilOp(7-op));
+        CHECK(state.depth.front.reference==0x12 && state.depth.front.compareMask==0xAA && state.depth.front.writeMask==0x55);
+        CHECK(state.depth.back.reference==0x34 && state.depth.back.compareMask==0xBB && state.depth.back.writeMask==0x66);
+    }
+    input.words[10548/4]&=~128u; state=DecodeFixedState(input);
+    CHECK(state.depth.back.reference==state.depth.front.reference && state.depth.back.compareOp==state.depth.front.compareOp);
+
 }
 static std::vector<uint32_t> ReadShader(const char* name)
 {
