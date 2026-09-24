@@ -2,17 +2,17 @@
 
 **NullBackend remains the default. Vulkan supports resource uploads and an
 experimental opt-in direct-frame native draw path: cache shader pipelines,
-address constants, 2D/sampler descriptors and indexed draws. Native target/resolve
+address constants, 2D/sampler descriptors and indexed/non-indexed triangle-list draws. Native target/resolve
 semantics and complete game rendering are not implemented.** See
 [VULKAN.md](VULKAN.md) for host resources, submission, verified guest state
-replacements, build options and tests. The eight observation hooks below retain
+replacements, build options and tests. The nine observation hooks below retain
 their original pass-through behavior.
 They are a preparatory layer for the static-SDK approach used by UnleashedRecomp,
 not a complete renderer or a demonstration that the game works.
 
 ## Implementation
 
-`gpu/guest_entries.inc` lists eight Generations-specific boundaries.
+`gpu/guest_entries.inc` lists nine Generations-specific boundaries.
 `guest_hooks.cpp` overrides the generated weak public `sub_*` aliases and calls
 the original `__imp__sub_*` bodies exactly once. It forwards the full PPCContext
 without argument marshalling, preserves original return values and memory side
@@ -201,3 +201,29 @@ stale diagnostic frame.
 This is **not** native render-target completion: the destination is still the
 single proxy color/depth pair. Clear-only frames, target/EDRAM mapping, resolve,
 backbuffer selection, additional formats and complete draw coverage remain open.
+
+
+## Vertex input and DrawVertices (906e1f3)
+
+The float-compatible declaration subset now also maps D3DCOLOR, UBYTE4N (both
+encodings), SHORT2N/4N, USHORT2N/4N and FLOAT16_2/4. These SDK codes were checked
+against UnleashedRecomp's `video.h`/`video.cpp`; the host queries Vulkan vertex
+format support before creating a pipeline. Integer and packed declaration types
+still fail explicitly; they are not reinterpreted as normalized float inputs.
+Nine newly accepted encodings have real triangle pixel readback tests, including
+BGRA channel order, normalization, half-floats and missing-component defaults.
+
+DrawVertices triangle lists now lower to bounded sequential uint32 indices with
+the native start vertex as baseVertex. No guest index buffer is required. Vertex
+range, signed base-vertex limit, complete-triangle count and upload budget are
+validated before GPU submissions. This does not add strips, fans, UP draws,
+instancing, multiple streams or native target/resolve semantics.
+
+Verification:
+- GPU Windows/Linux: Actions `35955937874`, passed.
+- Vulkan validation and pixel tests: Actions `35955938096`, passed.
+- Full Windows runtime/tests/packaged EXE: Actions `35955937914`, passed.
+- Full Linux runtime regression: Actions `35955937915`, passed.
+- Local GPU suite: 8/8 normal and 8/8 ASan/UBSan.
+
+These checks do not execute the title or complete the known renderer/kernel gaps.
