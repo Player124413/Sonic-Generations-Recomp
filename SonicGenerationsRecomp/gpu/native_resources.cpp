@@ -97,6 +97,7 @@ GuestGpu::DrawResources GuestGpu::ReadDrawResources(MemoryView memory, const Nat
             TextureSnapshot texture;
             texture.slot = slot; texture.resource = resource;
             texture.width = layout.width; texture.height = layout.height;
+            texture.physical=fetch[1]&~4095u; texture.fetch=fetch;
             status = ConvertTexture(layout, source, budget - result.payloadBytes, texture.rgba);
             if (status != ConversionResult::Success) return fail(status);
             result.payloadBytes += texture.rgba.size();
@@ -107,4 +108,65 @@ GuestGpu::DrawResources GuestGpu::ReadDrawResources(MemoryView memory, const Nat
     result.status = ConversionResult::Success;
     result.failedSlot = 0; result.failedTexture = false;
     return result;
+}
+
+GuestGpu::NativeSurface GuestGpu::ReadSurface(MemoryView memory,uint32_t resource) noexcept
+{
+    NativeSurface surface; surface.resource=resource;
+    if(!resource) return surface;
+    std::array<uint8_t,48> bytes{};
+    if((resource&3) || !memory.Copy(resource,bytes))
+    { surface.status=ConversionResult::Truncated; return surface; }
+    if((Word(bytes.data())&15)!=4 || (Word(bytes.data())&0x40000000))
+    { surface.status=ConversionResult::Unsupported; return surface; }
+    for(size_t i=0;i<6;++i) surface.descriptor[i]=Word(bytes.data()+24+i*4);
+    // Constructor 82DA6488 and GetSurfaceDesc 82DA6C98.
+    surface.samples=(surface.descriptor[0]>>16)&3;
+    surface.width=(surface.descriptor[3]>>18)+1;
+    surface.height=((surface.descriptor[3]>>3)&32767)+1;
+    surface.format=(surface.descriptor[1]>>16)&15;
+    surface.baseTile=surface.descriptor[1]&4095;
+    surface.tileCount=surface.descriptor[5]/5120;
+    if(!surface.tileCount || surface.descriptor[5]%5120 || surface.baseTile>=2048 ||
+       surface.tileCount>2048-surface.baseTile || surface.width>8192 || surface.height>8192)
+        surface.status=ConversionResult::InvalidLayout;
+    return surface;
+}
+GuestGpu::NativeTargets GuestGpu::ReadTargets(MemoryView memory,const NativeState& state) noexcept
+{
+    NativeTargets targets; targets.captured=true;
+    auto colors=state.ColorTargets();
+    for(size_t i=0;i<4;++i) targets.surfaces[i]=ReadSurface(memory,colors[i]);
+    targets.surfaces[4]=ReadSurface(memory,state.DepthTarget());
+    return targets;
+}
+GuestGpu::NativeTexture GuestGpu::ReadTexture(MemoryView memory,uint32_t resource) noexcept
+{
+    NativeTexture texture; texture.resource=resource;
+    std::array<uint8_t,52> bytes{};
+    if(!resource || (resource&3) || !memory.Copy(resource,bytes))
+    { texture.status=ConversionResult::Truncated; return texture; }
+    if((Word(bytes.data())&15)!=3) return texture;
+    for(size_t i=0;i<6;++i) texture.fetch[i]=Word(bytes.data()+28+i*4);
+    // Texture header keeps a CPU alias in the fetch address. Device binding
+    // translates it to a GPU physical address (82DA6DC0).
+    auto& address=texture.fetch[1];
+    texture.physical=GpuAddress(address&~4095u);
+    address=texture.physical|(address&4095);
+    TextureLayout layout;
+    texture.status=TextureLayout::Decode(texture.fetch,layout);
+    texture.width=layout.width; texture.height=layout.height;
+    if(texture.status==ConversionResult::Success &&
+       (layout.format!=6 || layout.swizzle!=(0u|(1u<<3)|(2u<<6)|(3u<<9))))
+        texture.status=ConversionResult::Unsupported;
+    return texture;
+}
+
+bool GuestGpu::SameTextureStorage(const NativeTexture& texture,const std::array<uint32_t,6>& fetch) noexcept
+{
+    TextureLayout a,b;
+    return texture.status==ConversionResult::Success && texture.physical==(fetch[1]&~4095u) &&
+        TextureLayout::Decode(texture.fetch,a)==ConversionResult::Success &&
+        TextureLayout::Decode(fetch,b)==ConversionResult::Success && a.width==b.width && a.height==b.height &&
+        a.pitch==b.pitch && a.format==b.format && a.swizzle==b.swizzle && a.endian==b.endian && a.tiled==b.tiled;
 }

@@ -1,3 +1,4 @@
+#include "native_frame_fixture.h"
 #include <gpu/native_commands.h>
 #include <gpu/render_backend.h>
 #include <bit>
@@ -57,6 +58,24 @@ static void TestClearOrdering()
 int main()
 {
     TestClearOrdering();
+    {
+        NativeFrameFixture f;
+        CHECK(f.Clear(f.SurfaceA,{1,0,0,1})==CaptureResult::Captured);
+        CHECK(f.Resolve(f.SurfaceA,f.TextureA)==CaptureResult::Captured);
+        auto frame=f.Frame(f.TextureA);
+        CHECK(frame.nativeTargets && frame.hasBackbuffer && frame.resolves.size()==1);
+        CHECK(frame.clears[0].sequence<frame.resolves[0].sequence);
+        CHECK(frame.clears[0].targets.surfaces[0].width==64 && frame.clears[0].targets.surfaces[0].tileCount==4);
+        CHECK(frame.backbuffer.status==ConversionResult::Success && frame.backbuffer.physical==0x100000);
+        f.Word(f.SurfaceA+36,0); f.Word(f.TextureA+36,0);
+        CHECK(frame.resolves[0].destination.width==64 && frame.clears[0].targets.surfaces[0].width==64);
+        CHECK(!f.stream.Drain().hasBackbuffer && f.stream.Drain().resolves.empty());
+        f.Word(f.SurfaceA+44,5121);
+        CHECK(ReadSurface({f.memory},f.SurfaceA).status==ConversionResult::InvalidLayout);
+        CHECK(ReadSurface({f.memory},0xFFFFFFF0).status==ConversionResult::Truncated);
+        f.Word(f.TextureA,2);
+        CHECK(ReadTexture({f.memory},f.TextureA).status==ConversionResult::Unsupported);
+    }
     std::vector<uint8_t> memory(Device + NativeState::ByteSize);
     Store(memory, 12792, 0x12345678);
     Store(memory, 12804, 0xCAFEBABE);

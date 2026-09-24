@@ -30,7 +30,16 @@ private:
     bool RecreateTargets();
     HostGpu::Resource Upload(std::span<const uint8_t> bytes, VkBufferUsageFlags usage);
     void ReleaseDrawResources();
-    mutable std::mutex mutex;
+    GuestGpu::SubmissionResult SubmitNativeFrame(const GuestGpu::NativeBatch& batch);
+    void ResetNativeTargets();
+    struct SurfaceImage { GuestGpu::NativeSurface descriptor; HostGpu::Resource color=0, depth=0; bool initialized=false; };
+    struct ResolvedImage { GuestGpu::NativeTexture descriptor; HostGpu::Resource image=0; };
+    std::map<uint32_t,SurfaceImage> nativeSurfaces;
+    std::map<uint32_t,ResolvedImage> nativeTextures; // physical base, not a host/guest object pointer
+    HostGpu::Resource frameImage=0;
+    bool nativeReplay=false;
+    // Native replay invokes the existing validated draw path under the same lock.
+    mutable std::recursive_mutex mutex;
     SDL_Window* window;
     bool validation;
     bool drawEnabled = false, frameReady = false;

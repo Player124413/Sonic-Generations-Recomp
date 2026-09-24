@@ -4,6 +4,7 @@ import re
 import unittest
 ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE = {
+    "sub_82DC1860": (273, ["mr r8,r6", "mr r9,r7", "mr r10,r8", "li r6,0", "li r7,0", "bl 0x82dc0708"]),
     "sub_82DBF460": (273, ["mr r31,r3", "fmr f31,f1", "mr r27,r4", "mr r23,r6", "mr r22,r8", "lwz r11,0(r5)", "addi r11,r11,-19088", "lis r11,-32228"]),
     "sub_82DB11C0": (272, ["stw r11,0(r8)", "li r4,128", "li r3,24704", "bl 0x82dc3108", "bl 0x82dc3690"]),
     "sub_82DB0D38": (272, ["addi r11,r3,60", "lwarx r10,0,r11", "stwcx. r10,0,r11", "bl 0x82dc3248"]),
@@ -20,6 +21,9 @@ class EntryEvidenceTests(unittest.TestCase):
         # These are checked even though they are not all individually hooked:
         # draw snapshots cover native and inlined changes to the same fields.
         evidence = {
+            "sub_82DA6488": (270, ["li r11,4", "stw r11,0(r31)", "stw r10,24(r31)", "stw r11,36(r31)", "stw r28,40(r31)", "mulli r11,r3,5120", "stw r11,44(r31)"]),
+            "sub_82DA6C98": (270, ["lwz r11,36(r3)", "rlwinm r11,r11,14,18,31", "rlwinm r11,r11,29,17,31", "lhz r11,24(r3)"]),
+            "sub_82DA6190": (270, ["ori r10,r10,3", "stw r10,0(r11)"]),
             "sub_82DA6DC0": (270, ["addi r11,r4,3224", "addi r11,r4,48", "mulli r11,r11,24", "stwx r5,r29,r31", "lwz r7,32(r5)", "clrlwi r30,r7,3", "addi r10,r10,512"]),
             "sub_82DAA9E8": (272, ["lwz r10,24(r5)", "lwz r5,28(r5)", "subfic r11,r4,17",
                                      "addi r4,r11,222", "stw r6,1780(r9)", "addi r11,r29,3203",

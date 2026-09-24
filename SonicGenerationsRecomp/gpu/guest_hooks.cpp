@@ -61,6 +61,17 @@ GuestGpu::Snapshot GuestGpu::GetSnapshot() noexcept
                 stream.CaptureClear({base ? std::span<const uint8_t>(base,PPC_MEMORY_SIZE) : std::span<const uint8_t>()}, \
                     ctx.r3.u32,ctx.r4.u32,ctx.r5.u32,ctx.r6.u32,float(ctx.f1.f64),ctx.r8.u32); \
         } \
+        if constexpr (GuestGpu::Entry::name == GuestGpu::Entry::Resolve || GuestGpu::Entry::name == GuestGpu::Entry::SwapHelper) \
+        { \
+            auto& stream=GuestGpu::GetCommandStream(); \
+            if(stream.IsEnabled()) \
+            { \
+                GuestGpu::MemoryView memory{base ? std::span<const uint8_t>(base,PPC_MEMORY_SIZE) : std::span<const uint8_t>()}; \
+                if constexpr(GuestGpu::Entry::name == GuestGpu::Entry::Resolve) \
+                    stream.CaptureResolve(memory,ctx.r3.u32,{ctx.r4.u32,ctx.r5.u32,ctx.r6.u32,ctx.r7.u32,ctx.r8.u32,ctx.r9.u32}); \
+                else stream.SelectBackbuffer(memory,ctx.r3.u32,ctx.r4.u32); \
+            } \
+        } \
         auto& counter = counters[static_cast<size_t>(GuestGpu::Entry::name)]; \
         if (observe) counter.entered.fetch_add(1, std::memory_order_relaxed); \
         __imp__##symbol(ctx, base); \

@@ -141,7 +141,7 @@ void Video::Present()
     if (GuestGpu::GetCommandStream().IsEnabled())
     {
         const auto batch = GuestGpu::GetCommandStream().Drain();
-        if (!batch.draws.empty() || batch.errors.Any())
+        if (!batch.draws.empty() || !batch.clears.empty() || !batch.resolves.empty() || batch.hasBackbuffer || batch.errors.Any())
         {
             g_stats.capturedDraws += batch.draws.size();
             g_stats.captureErrors.invalidMemory += batch.errors.invalidMemory;

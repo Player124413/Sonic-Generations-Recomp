@@ -5,7 +5,8 @@ set(_vulkan_root "${CMAKE_CURRENT_LIST_DIR}/..")
 add_library(SonicVulkanHost STATIC
     "${_vulkan_root}/SonicGenerationsRecomp/gpu/vulkan_host.cpp"
     "${_vulkan_root}/SonicGenerationsRecomp/gpu/vulkan_state.cpp"
-    "${_vulkan_root}/SonicGenerationsRecomp/gpu/vulkan_backend.cpp")
+    "${_vulkan_root}/SonicGenerationsRecomp/gpu/vulkan_backend.cpp"
+    "${_vulkan_root}/SonicGenerationsRecomp/gpu/native_frame.cpp")
 target_compile_features(SonicVulkanHost PUBLIC cxx_std_20)
 target_include_directories(SonicVulkanHost PUBLIC "${_vulkan_root}/SonicGenerationsRecomp")
 target_link_libraries(SonicVulkanHost PUBLIC Vulkan::Vulkan SDL2::SDL2)

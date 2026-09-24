@@ -930,3 +930,19 @@ bool VulkanHost::PresentFrame(Resource sourceId, const std::array<float, 4>& col
     return true;
 }
 } // namespace HostGpu
+
+bool HostGpu::VulkanHost::CopyImage(Resource source,Resource destination)
+{
+    auto& p=*impl; auto* src=p.FindImage(source); auto* dst=p.FindImage(destination);
+    if(!src || !dst) return false;
+    if(source==destination || src->kind!=dst->kind || src->width!=dst->width || src->height!=dst->height ||
+       src->layout==VK_IMAGE_LAYOUT_UNDEFINED) return p.Fail("Invalid single-sample image resolve");
+    if(!p.Begin()) return false;
+    p.Transition(*src,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_ACCESS_TRANSFER_READ_BIT);
+    p.Transition(*dst,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_ACCESS_TRANSFER_WRITE_BIT);
+    VkImageCopy region{};
+    region.srcSubresource={src->Aspect(),0,0,1}; region.dstSubresource={dst->Aspect(),0,0,1};
+    region.extent={src->width,src->height,1};
+    vkCmdCopyImage(p.command,src->image,src->layout,dst->image,dst->layout,1,&region);
+    return p.Submit();
+}

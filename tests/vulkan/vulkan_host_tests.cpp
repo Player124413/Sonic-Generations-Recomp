@@ -1,3 +1,4 @@
+#include "../gpu/native_frame_fixture.h"
 #include <gpu/vulkan_host.h>
 #include <gpu/vulkan_backend.h>
 #include <gpu/vulkan_state.h>
@@ -287,6 +288,46 @@ static void NativeGameShaderDrawTest()
     backend.Shutdown(); CHECK(backend.GetHostStats().validationErrors==0 && backend.GetHostStats().allocatedBytes==0);
     std::puts("Native indexed batch submitted with genuine game cache VS/PS; unsupported declaration rejected");
 }
+static void NativeFrameTests(SDL_Window* window)
+{
+    using namespace GuestGpu;
+    NativeFrameFixture f;
+    VulkanBackend backend(window,true,true); CHECK(backend.Init(VideoMode{64,64}));
+    CHECK(f.Clear(f.SurfaceA,{1,0,0,1})==CaptureResult::Captured);
+    CHECK(f.Resolve(f.SurfaceA,f.TextureA)==CaptureResult::Captured);
+    CHECK(f.Clear(f.SurfaceA,{0,0,1,1})==CaptureResult::Captured); // resolve is a snapshot, not an alias
+    CHECK(f.Clear(f.SurfaceB,{0,1,0,1})==CaptureResult::Captured);
+    CHECK(f.Resolve(f.SurfaceB,f.TextureB)==CaptureResult::Captured);
+    CHECK(backend.SubmitGuestBatch(f.Frame(f.TextureA))==SubmissionResult::Submitted);
+    std::vector<uint8_t> pixels;
+    auto check=[&](std::array<uint8_t,4> expected) {
+        CHECK(backend.ReadDiagnosticFrame(pixels) && pixels.size()==64*64*4);
+        for(size_t i=0;i<pixels.size();i+=4) for(size_t c=0;c<4;++c) CHECK(pixels[i+c]==expected[c]);
+    };
+    check({255,0,0,255}); // selected A, despite B being resolved last
+    backend.Present();
+    CHECK(backend.SubmitGuestBatch(f.Frame(f.TextureB))==SubmissionResult::Submitted);
+    check({0,255,0,255}); // persistent second target, no synthetic per-frame clear
+    CHECK(f.Resolve(f.SurfaceA,f.TextureA)==CaptureResult::Captured);
+    CHECK(backend.SubmitGuestBatch(f.Frame(f.TextureA))==SubmissionResult::Submitted);
+    check({0,0,255,255}); // A retained its post-resolve blue clear
+    const auto submissions=backend.GetHostStats().submissions;
+    f.Surface(f.SurfaceB,2); // overlaps A's EDRAM tiles with a different descriptor
+    CHECK(f.Clear(f.SurfaceB,{1,1,1,1})==CaptureResult::Captured);
+    CHECK(backend.SubmitGuestBatch(f.Frame(f.TextureA))==SubmissionResult::Incomplete);
+    CHECK(backend.GetHostStats().submissions==submissions);
+    CHECK(!backend.ReadDiagnosticFrame(pixels) && pixels.empty());
+    CHECK(f.Resolve(f.SurfaceA,f.TextureA)==CaptureResult::Captured);
+    CHECK(backend.SubmitGuestBatch(f.Frame(f.TextureA))==SubmissionResult::Incomplete); // reset -> uninitialized
+    f.Surface(f.SurfaceB,4);
+    CHECK(f.Clear(f.SurfaceA,{1,0,0,1})==CaptureResult::Captured);
+    CHECK(f.Resolve(f.SurfaceA,f.TextureA)==CaptureResult::Captured);
+    auto bad=f.Frame(f.TextureA); bad.resolves[0].flags=0x10;
+    CHECK(backend.SubmitGuestBatch(bad)==SubmissionResult::Incomplete); // no silent clear/resolve flags
+    CHECK(backend.GetHostStats().validationErrors==0);
+    backend.Shutdown(); CHECK(backend.GetHostStats().allocatedBytes==0);
+    std::puts("Native surfaces -> ordered resolve copies -> selected backbuffer pixels passed");
+}
 static void BackendTests(SDL_Window* window)
 {
     VulkanBackend backend(window, true);
@@ -395,6 +436,7 @@ int main(int argc, char** argv)
         CHECK(host.Init(config)); CHECK(host.ResizeSwapchain(64,64));
         GameAbiTests(host,true); host.Shutdown(); CHECK(host.Stats().validationErrors==0);
         BackendTests(window);
+        NativeFrameTests(window);
         SDL_DestroyWindow(window); SDL_Quit();
         std::puts("Vulkan WSI acquire/clear/submit/present/resize with validation passed");
         return 0;
@@ -476,6 +518,7 @@ int main(int argc, char** argv)
     host.Shutdown();
     CHECK(host.Stats().validationErrors == 0);
     BackendTests(nullptr);
+    NativeFrameTests(nullptr);
     NativeGameShaderDrawTest();
     std::puts("Vulkan resources, readback, transfers, state translation and lifecycle with validation passed");
 }

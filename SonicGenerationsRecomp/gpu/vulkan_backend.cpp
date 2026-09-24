@@ -21,6 +21,7 @@ bool VulkanBackend::Init(const VideoMode& mode)
 {
     std::lock_guard lock(mutex);
     host.Shutdown(); drawResources.clear(); states.clear(); color = depth = 0;
+    nativeSurfaces.clear(); nativeTextures.clear(); frameImage=0;
     shaderCache = {};
     resolvedShaders.clear();
     frameReady = false;
@@ -65,6 +66,7 @@ void VulkanBackend::Shutdown()
     std::lock_guard lock(mutex);
     // Host waits idle before freeing every resource, including exceptional paths.
     host.Shutdown(); drawResources.clear(); states.clear(); color = depth = 0;
+    nativeSurfaces.clear(); nativeTextures.clear(); frameImage=0;
     shaderCache = {};
     resolvedShaders.clear();
 }
@@ -105,8 +107,10 @@ HostGpu::Resource VulkanBackend::Upload(std::span<const uint8_t> bytes, VkBuffer
 GuestGpu::SubmissionResult VulkanBackend::SubmitGuestBatch(const GuestGpu::NativeBatch& batch)
 try
 {
+    if(drawEnabled && batch.nativeTargets) return SubmitNativeFrame(batch);
     std::lock_guard lock(mutex);
     frameReady = false;
+    if(!nativeReplay) frameImage=0;
     if (!host.IsReady()) return GuestGpu::SubmissionResult::Unsupported;
     if (batch.errors.Any() || batch.draws.empty() || batch.draws.size() + batch.clears.size() > GuestGpu::CommandStream::MaxDraws)
         return GuestGpu::SubmissionResult::Incomplete;
@@ -358,7 +362,7 @@ try
     std::vector<HostGpu::Resource> pipelines;
     if(graphics)
     {
-        if((resize || host.SwapchainNeedsResize()) && !RecreateTargets()) return GuestGpu::SubmissionResult::Incomplete;
+        if(!nativeReplay && (resize || host.SwapchainNeedsResize()) && !RecreateTargets()) return GuestGpu::SubmissionResult::Incomplete;
         pipelines.reserve(batch.draws.size());
         for(auto& plan:prepared)
         {
@@ -366,7 +370,7 @@ try
             if(!pipeline) { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
             drawResources.push_back(pipeline); pipelines.push_back(pipeline);
         }
-        if(!host.ClearColor(color,{0,0,0,1}) || !host.ClearDepth(depth,1))
+        if(!nativeReplay && (!host.ClearColor(color,{0,0,0,1}) || !host.ClearDepth(depth,1)))
         { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
     }
     size_t nextClear=0;
@@ -416,6 +420,19 @@ try
         }
         for (const auto& texture : draw.resources.textures)
         {
+            if(nativeReplay)
+            {
+                const auto found=nativeTextures.find(texture.physical);
+                if(found!=nativeTextures.end())
+                {
+                    const auto& resolved=found->second;
+                    if(!GuestGpu::SameTextureStorage(resolved.descriptor,texture.fetch) || resolved.descriptor.width!=texture.width ||
+                       resolved.descriptor.height!=texture.height)
+                    { Fail("Resolved texture view alias is unsupported"); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
+                    for(auto& binding:plan.textures) if(binding.slot==texture.slot) binding.image=resolved.image;
+                    continue; // sample the GPU resolve, never stale CPU capture bytes
+                }
+            }
             id = host.CreateImage(texture.width, texture.height, HostGpu::ImageKind::Rgba8);
             if (!id) { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
             drawResources.push_back(id);
@@ -448,10 +465,18 @@ void VulkanBackend::Present()
 {
     std::lock_guard lock(mutex);
     if (!host.IsReady() || !width || !height) return;
-    if ((resize || host.SwapchainNeedsResize()) && !RecreateTargets()) return;
+    if(resize || host.SwapchainNeedsResize())
+    {
+        if(frameImage)
+        {
+            if(window && !host.ResizeSwapchain(width,height)) { Fail(host.Error()); return; }
+            resize=false;
+        }
+        else if(!RecreateTargets()) return;
+    }
     if (window)
     {
-        const bool ok=frameReady ? host.PresentImage(color) : host.PresentClear({0,0,0,1});
+        const bool ok=frameReady ? host.PresentImage(frameImage ? frameImage : color) : host.PresentClear({0,0,0,1});
         if(!ok && !host.SwapchainNeedsResize()) Fail(host.Error());
     }
     frameReady=false;
@@ -469,6 +494,6 @@ bool VulkanBackend::ReadDiagnosticFrame(std::vector<uint8_t>& rgba)
     std::lock_guard lock(mutex);
     rgba.clear();
     if(!frameReady || !host.IsReady()) return false;
-    if(!host.ReadImage(color,rgba)) return Fail(host.Error());
+    if(!host.ReadImage(frameImage ? frameImage : color,rgba)) return Fail(host.Error());
     return true;
 }

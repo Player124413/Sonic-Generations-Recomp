@@ -103,17 +103,15 @@ void GuestGpu::CommandStream::Enable(bool enable, bool captureResources)
     std::lock_guard lock(mutex);
     enabled = enable;
     resourceCapture = enable && captureResources;
-    pending.draws.clear();
-    pending.clears.clear();
-    pending.errors = {};
-    pending.payloadBytes = 0;
+    pending={};
+    pending.nativeTargets=resourceCapture;
 }
 GuestGpu::CaptureResult GuestGpu::CommandStream::Capture(
     MemoryView memory, uint32_t device, DrawKind kind, std::array<uint32_t, 4> arguments) noexcept
 {
     std::lock_guard lock(mutex);
     if (!enabled) return CaptureResult::Disabled;
-    if (pending.draws.size() + pending.clears.size() >= capacity)
+    if (pending.draws.size() + pending.clears.size() + pending.resolves.size() >= capacity)
     {
         ++pending.errors.overflow;
         return CaptureResult::Overflow;
@@ -145,6 +143,7 @@ GuestGpu::CaptureResult GuestGpu::CommandStream::Capture(
     }
     if (resourceCapture)
     {
+        draw.targets=ReadTargets(memory,draw.state);
         draw.vertexShader = ReadShaderIdentity(memory, draw.state.VertexShader(), 0);
         draw.pixelShader = ReadShaderIdentity(memory, draw.state.PixelShader(), 4);
         draw.resources = ReadDrawResources(memory, draw.state,
@@ -167,11 +166,8 @@ GuestGpu::CaptureResult GuestGpu::CommandStream::Capture(
 GuestGpu::NativeBatch GuestGpu::CommandStream::Drain()
 {
     std::lock_guard lock(mutex);
-    NativeBatch result;
-    result.draws.swap(pending.draws);
-    result.clears.swap(pending.clears);
-    result.errors = std::exchange(pending.errors, {});
-    result.payloadBytes = std::exchange(pending.payloadBytes, 0);
+    NativeBatch result=std::move(pending);
+    pending={}; pending.nativeTargets=resourceCapture;
     return result;
 }
 GuestGpu::CommandStream& GuestGpu::GetCommandStream()
@@ -186,7 +182,7 @@ GuestGpu::CaptureResult GuestGpu::CommandStream::CaptureClear(MemoryView memory,
 {
     std::lock_guard lock(mutex);
     if(!enabled) return CaptureResult::Disabled;
-    if(pending.draws.size()+pending.clears.size()>=capacity)
+    if(pending.draws.size()+pending.clears.size()+pending.resolves.size()>=capacity)
     { ++pending.errors.overflow; return CaptureResult::Overflow; }
     NativeClear clear;
     clear.sequence=sequence; clear.device=device; clear.flags=flags;
@@ -207,8 +203,35 @@ GuestGpu::CaptureResult GuestGpu::CommandStream::CaptureClear(MemoryView memory,
         clear.rectangle[i]=std::bit_cast<int32_t>(word(rect,i*4));
         clear.color[i]=std::bit_cast<float>(word(rgba,i*4));
     }
+    if(resourceCapture) clear.targets=ReadTargets(memory,clear.state);
     try { pending.clears.push_back(std::move(clear)); }
     catch(const std::bad_alloc&) { ++pending.errors.allocationFailure; return CaptureResult::AllocationFailure; }
     ++sequence;
     return CaptureResult::Captured;
+}
+
+GuestGpu::CaptureResult GuestGpu::CommandStream::CaptureResolve(MemoryView memory,
+    uint32_t device,std::array<uint32_t,6> args) noexcept
+{
+    std::lock_guard lock(mutex);
+    if(!enabled || !resourceCapture) return CaptureResult::Disabled;
+    if(pending.draws.size()+pending.clears.size()+pending.resolves.size()>=capacity)
+    { ++pending.errors.overflow; return CaptureResult::Overflow; }
+    NativeResolve resolve;
+    resolve.sequence=sequence; resolve.device=device; resolve.flags=args[0];
+    resolve.rectangle=args[1]; resolve.point=args[3]; resolve.mip=args[4]; resolve.slice=args[5];
+    if(!NativeState::Read(memory,device,resolve.state))
+    { ++pending.errors.invalidMemory; return CaptureResult::InvalidMemory; }
+    resolve.targets=ReadTargets(memory,resolve.state);
+    resolve.destination=ReadTexture(memory,args[2]);
+    try { pending.resolves.push_back(std::move(resolve)); }
+    catch(const std::bad_alloc&) { ++pending.errors.allocationFailure; return CaptureResult::AllocationFailure; }
+    ++sequence; return CaptureResult::Captured;
+}
+void GuestGpu::CommandStream::SelectBackbuffer(MemoryView memory,uint32_t device,uint32_t texture) noexcept
+{
+    std::lock_guard lock(mutex);
+    if(!enabled || !resourceCapture) return;
+    pending.hasBackbuffer=true; pending.presentDevice=device;
+    pending.backbuffer=ReadTexture(memory,texture);
 }
