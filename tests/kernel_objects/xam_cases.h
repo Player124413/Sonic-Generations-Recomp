@@ -143,3 +143,37 @@ static void XamOverlappedEnumerationTests()
     CHECK(KernelObjects::Close(enumerator->handle)); CHECK(KernelObjects::Close(event->handle));
     g_userHeap.Free(block);
 }
+
+static void XamContentCompletionTests()
+{
+    extern PPCFunc __imp__XamContentClose;
+    auto* event=CreateKernelObject<Event>(true,false);
+    auto* block=static_cast<uint8_t*>(g_userHeap.Alloc(64)); std::memset(block,0,64);
+    auto* overlapped=reinterpret_cast<XXOVERLAPPED*>(block);
+    std::memcpy(block+32,"completion",11);
+    overlapped->hEvent=event->handle; overlapped->dwCompletionContext=0x12345678;
+    const auto address=g_memory.MapVirtual(block);
+    const auto call=[&](bool async) {
+        PPCContext ctx{}; ctx.r3.u64=address+32; ctx.r4.u64=async ? address : 0;
+        __imp__XamContentClose(ctx,g_memory.base); return ctx.r3.u32;
+    };
+    XamRootCreate("completion","save-root");
+    overlapped->pCompletionRoutine=0x1000;
+    CHECK(call(true)==50 && XamGetRootPath("completion")=="save-root");
+    overlapped->pCompletionRoutine=0; overlapped->hEvent=0xBAD;
+    CHECK(call(true)==6 && XamGetRootPath("completion")=="save-root");
+    CHECK(event->Wait(0)==STATUS_TIMEOUT);
+    overlapped->hEvent=event->handle;
+    CHECK(call(true)==997 && event->Wait(0)==0);
+    CHECK(overlapped->Error==0 && overlapped->Length==0 && overlapped->dwExtendedError==0);
+    CHECK(overlapped->dwCompletionContext==0x12345678 && XamGetRootPath("completion").empty());
+    event->Reset(); CHECK(call(true)==997 && event->Wait(0)==0);
+    CHECK(overlapped->Error==2 && overlapped->Length==UINT32_MAX && overlapped->dwExtendedError==2);
+    XamRootCreate("completion","save-root");
+    event->Reset(); overlapped->hEvent=0; // polling completion must not signal an old event
+    CHECK(call(true)==997 && overlapped->Error==0 && event->Wait(0)==STATUS_TIMEOUT);
+    XamRootCreate("completion","save-root");
+    CHECK(call(false)==0 && call(false)==2);
+    CHECK(XamContentClose(nullptr,nullptr)==87);
+    CHECK(KernelObjects::Close(event->handle)); g_userHeap.Free(block);
+}

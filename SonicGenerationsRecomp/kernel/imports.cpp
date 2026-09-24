@@ -1131,7 +1131,6 @@ GUEST_FUNCTION_HOOK(__imp__XamUserGetSigninState, XamUserGetSigninState);
 GUEST_FUNCTION_HOOK(__imp__XamGetSystemVersion, XamGetSystemVersion);
 GUEST_FUNCTION_HOOK(__imp__XamContentCreateEx, XamContentCreateEx);
 GUEST_FUNCTION_HOOK(__imp__XamContentDelete, XamContentDelete);
-GUEST_FUNCTION_HOOK(__imp__XamContentClose, XamContentClose);
 GUEST_FUNCTION_HOOK(__imp__XamContentGetCreator, XamContentGetCreator);
 GUEST_FUNCTION_HOOK(__imp__XamContentGetDeviceState, XamContentGetDeviceState);
 GUEST_FUNCTION_HOOK(__imp__XamContentGetDeviceData, XamContentGetDeviceData);

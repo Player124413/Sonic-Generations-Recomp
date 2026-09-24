@@ -5,11 +5,48 @@
 #include "xam_objects.h"
 #include "function.h"
 #include "object_imports.h"
+#include "xam_content_registry.h"
 #include <condition_variable>
 #include <deque>
 
 namespace
 {
+// Immediate completion still follows the guest OVERLAPPED/event protocol.
+// Hold a strong event reference across the operation, even if its handle closes.
+class OverlappedCompletion
+{
+    XXOVERLAPPED* target=nullptr;
+    std::shared_ptr<Event> event;
+public:
+    uint32_t Prepare(XXOVERLAPPED* block)
+    {
+        if(!block) return 0;
+        if(block->pCompletionRoutine) return 50; // no fabricated APC execution
+        if(block->hEvent)
+        {
+            event=std::dynamic_pointer_cast<Event>(KernelObjects::Acquire(block->hEvent));
+            if(!event) return 6;
+        }
+        target=block;
+        auto* current=KernelObjects::CurrentThread();
+        target->InternalContext=ByteSwap(current ? current->handle : uint32_t(0));
+        std::atomic_ref<uint32_t>(target->Error.value).store(ByteSwap(uint32_t(997)),std::memory_order_release);
+        return 0;
+    }
+    uint32_t Complete(uint32_t result,uint32_t length,uint32_t extended)
+    {
+        if(!target) return result;
+        target->Length=length;
+        target->dwExtendedError=extended;
+        std::atomic_ref<uint32_t>(target->Error.value).store(ByteSwap(result),std::memory_order_release);
+        if(event)
+        {
+            event->Set();
+            ++g_keSetEventGeneration; g_keSetEventGeneration.notify_all();
+        }
+        return 997;
+    }
+};
 struct NotificationListener;
 struct NotificationBus
 {
@@ -106,37 +143,22 @@ uint32_t XamEnumerate(uint32_t handle,uint32_t flags,void* buffer,uint32_t bytes
     auto enumerator=std::dynamic_pointer_cast<XamSnapshotEnumerator>(KernelObjects::Acquire(handle));
     if(!enumerator) return 6;
     if(flags) return 87;
-    if(overlapped)
-    {
-        // Built-in snapshots complete immediately. Event/polling completion is
-        // supported; an APC must not run on a fabricated or arbitrary thread.
-        if(overlapped->pCompletionRoutine) return 50;
-        std::shared_ptr<Event> event;
-        if(overlapped->hEvent)
-        {
-            event=std::dynamic_pointer_cast<Event>(KernelObjects::Acquire(overlapped->hEvent));
-            if(!event) return 6;
-        }
-        auto* current=KernelObjects::CurrentThread();
-        overlapped->InternalContext=ByteSwap(current ? current->handle : uint32_t(0));
-        std::atomic_ref<uint32_t>(overlapped->Error.value).store(ByteSwap(uint32_t(997)),std::memory_order_release);
-        uint32_t resultCount=0;
-        const auto result=enumerator->Read(buffer,bytes,resultCount);
-        overlapped->Length=resultCount;
-        overlapped->dwExtendedError=result ? (0x80070000u | result) : 0;
-        std::atomic_ref<uint32_t>(overlapped->Error.value).store(ByteSwap(result),std::memory_order_release);
-        if(event)
-        {
-            event->Set();
-            ++g_keSetEventGeneration; g_keSetEventGeneration.notify_all();
-        }
-        return 997; // accepted overlapped operation, result in the completion block
-    }
+    OverlappedCompletion completion;
+    if(const auto error=completion.Prepare(overlapped)) return error;
     uint32_t resultCount=0;
-    auto result=enumerator->Read(buffer,bytes,resultCount);
-    if(count) *count=resultCount;
-    return result;
+    const auto result=enumerator->Read(buffer,bytes,resultCount);
+    if(count && !overlapped) *count=resultCount;
+    return completion.Complete(result,resultCount,result ? (0x80070000u | result) : 0);
 }
+uint32_t XamContentClose(const char* root,XXOVERLAPPED* overlapped)
+{
+    if(!root) return 87;
+    OverlappedCompletion completion;
+    if(const auto error=completion.Prepare(overlapped)) return error;
+    const uint32_t result=XamRootClose(root) ? 0 : 2; // ERROR_FILE_NOT_FOUND
+    return completion.Complete(result,result ? UINT32_MAX : 0,result);
+}
+
 uint32_t XamSessionCreateHandle(be<uint32_t>* handle)
 {
     if(!handle) return 87;
@@ -163,3 +185,5 @@ GUEST_FUNCTION_HOOK(__imp__XamEnumerate,XamEnumerate);
 GUEST_FUNCTION_HOOK(__imp__XamSessionCreateHandle,XamSessionCreateHandle);
 GUEST_FUNCTION_HOOK(__imp__XamSessionRefObjByHandle,XamSessionRefObjByHandle);
 GUEST_FUNCTION_HOOK(__imp__XamUserCreateStatsEnumerator,XamUserCreateStatsEnumerator);
+
+GUEST_FUNCTION_HOOK(__imp__XamContentClose,XamContentClose);

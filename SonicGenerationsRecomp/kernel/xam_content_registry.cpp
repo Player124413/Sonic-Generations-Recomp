@@ -25,8 +25,8 @@ void XamRootCreate(const std::string_view& root,const std::string_view& path)
 {
     std::lock_guard lock(XamContentMutex()); roots.insert_or_assign(std::string(root),std::string(path));
 }
-void XamRootClose(std::string_view root)
-{ std::lock_guard lock(XamContentMutex()); roots.erase(std::string(root)); }
+bool XamRootClose(std::string_view root)
+{ std::lock_guard lock(XamContentMutex()); return roots.erase(std::string(root))!=0; }
 XCONTENT_DATA XamMakeContent(uint32_t type,const std::string_view& name)
 {
     XCONTENT_DATA data{}; data.DeviceID=1; data.dwContentType=type;

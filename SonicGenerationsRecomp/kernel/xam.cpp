@@ -143,13 +143,6 @@ uint32_t XamContentCreateEx(uint32_t dwUserIndex, const char* szRootName, const 
     return ERROR_PATH_NOT_FOUND;
 }
 
-uint32_t XamContentClose(const char* szRootName, XXOVERLAPPED* pOverlapped)
-{
-    if(!szRootName) return 87;
-    XamRootClose(szRootName);
-    return 0;
-}
-
 uint32_t XamContentGetDeviceData(uint32_t DeviceID, XDEVICE_DATA* pDeviceData)
 {
     pDeviceData->DeviceID = DeviceID;
