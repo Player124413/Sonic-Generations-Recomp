@@ -1,5 +1,6 @@
 name: FFmpeg XMA decoder tests
 on:
+  workflow_call:
   push:
     paths:
       - 'SonicGenerationsRecomp/apu/**'

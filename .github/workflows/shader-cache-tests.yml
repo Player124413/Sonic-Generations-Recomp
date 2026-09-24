@@ -1,5 +1,6 @@
 name: Uploaded shader cache validation
 on:
+  workflow_call:
   push:
     paths:
       - ".gitmodules"

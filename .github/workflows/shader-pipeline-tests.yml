@@ -1,5 +1,6 @@
 name: Shader pipeline safety tests
 on:
+  workflow_call:
   push:
     paths:
       - 'scripts/shader_pipeline.py'

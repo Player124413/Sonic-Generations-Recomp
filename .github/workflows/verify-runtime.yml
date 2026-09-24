@@ -1,0 +1,57 @@
+name: Verify Windows Vulkan runtime
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/verify-runtime.yml'
+permissions:
+  contents: read
+concurrency:
+  group: verify-runtime-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  windows:
+    uses: ./.github/workflows/windows-runtime.yml
+  kernel:
+    uses: ./.github/workflows/kernel-objects.yml
+  gpu:
+    uses: ./.github/workflows/gpu-tests.yml
+  vulkan:
+    uses: ./.github/workflows/vulkan-tests.yml
+  audio:
+    uses: ./.github/workflows/audio-tests.yml
+  cache:
+    uses: ./.github/workflows/shader-cache-tests.yml
+  shader-tools:
+    uses: ./.github/workflows/shader-pipeline-tests.yml
+  report:
+    if: ${{ always() }}
+    needs: [windows, kernel, gpu, vulkan, audio, cache, shader-tools]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Report every suite for the same revision
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          lines = [
+              '# Windows/Vulkan verification',
+              f"Revision: `{os.environ['GITHUB_SHA']}`", '',
+              '| Suite | Result |', '|---|---|',
+          ]
+          for name, result in sorted(results.items()):
+              lines.append(f"| {name} | {result['result']} |")
+          lines += ['',
+              'All called workflows use this exact revision, not older green runs.',
+              'The Windows executable and revision.txt are in this run\'s artifacts.',
+              'A passed run proves the listed build and synthetic checks only.',
+              'It does not certify game boot, correct gameplay or a complete port.',
+              'No README readiness flags are changed automatically.',
+          ]
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
+              out.write('\n'.join(lines) + '\n')
+          if any(result['result'] != 'success' for result in results.values()):
+              raise SystemExit('Required suite failed, was cancelled, or was skipped')
+          PY

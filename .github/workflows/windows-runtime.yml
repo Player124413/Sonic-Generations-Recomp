@@ -1,5 +1,6 @@
 name: Windows x64 runtime
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     paths:
@@ -13,7 +14,7 @@ on:
       - 'scripts/windows/**'
       - 'cmake/**'
 concurrency:
-  group: windows-runtime-${{ github.ref }}
+  group: windows-runtime-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read

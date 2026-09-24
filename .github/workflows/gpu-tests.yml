@@ -1,5 +1,6 @@
 name: GPU observation hook tests
 on:
+  workflow_call:
   push:
     paths:
       - ".gitmodules"
