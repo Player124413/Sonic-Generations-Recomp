@@ -20,9 +20,9 @@
 #include <ntstatus.h>
 #endif
 
-#include "dispatcher_objects.h"
+#include "object_imports.h"
 
-static std::atomic<uint32_t> g_keSetEventGeneration;
+
 
 inline void CloseKernelObject(XDISPATCHER_HEADER& header)
 {
@@ -34,10 +34,7 @@ inline void CloseKernelObject(XDISPATCHER_HEADER& header)
     DestroyKernelObject(header.WaitListHead.Blink);
 }
 
-uint32_t GuestTimeoutToMilliseconds(be<int64_t>* timeout)
-{
-    return timeout ? (*timeout * -1) / 10000 : INFINITE;
-}
+
 
 
 void ExLoadedCommandLine()
@@ -194,10 +191,7 @@ void RtlInitAnsiString(XANSI_STRING* destination, char* source)
 }
 
 
-uint32_t NtClose(uint32_t handle)
-{
-    return KernelObjects::Close(handle) ? 0 : 0xC0000008;
-}
+
 
 
 uint32_t FscSetCacheElementCount()
@@ -205,14 +199,7 @@ uint32_t FscSetCacheElementCount()
     return 0;
 }
 
-uint32_t NtWaitForSingleObjectEx(uint32_t Handle, uint32_t WaitMode, uint32_t Alertable, be<int64_t>* Timeout)
-{
-    uint32_t timeout = GuestTimeoutToMilliseconds(Timeout);
-    assert(timeout == 0 || timeout == INFINITE);
 
-    auto object=KernelObjects::Acquire(Handle);
-    return object ? object->Wait(timeout) : 0xC0000008;
-}
 
 
 
@@ -289,12 +276,7 @@ void MmQueryStatistics()
     LOG_UTILITY("!!! STUB !!!");
 }
 
-uint32_t NtCreateEvent(be<uint32_t>* handle, void* objAttributes, uint32_t eventType, uint32_t initialState)
-{
-    if(!handle || eventType>1) return 0xC000000D;
-    *handle = GetKernelHandle(CreateKernelObject<Event>(!eventType, !!initialState));
-    return 0;
-}
+
 
 
 void DbgPrint()
@@ -367,10 +349,7 @@ void ExFreePool()
 
 
 
-void ObDereferenceObject(uint32_t body)
-{
-    KernelObjects::Dereference(body);
-}
+
 
 void KeSetBasePriorityThread(GuestThreadHandle* hThread, int priority)
 {
@@ -388,29 +367,14 @@ void KeSetBasePriorityThread(GuestThreadHandle* hThread, int priority)
 #endif
 }
 
-uint32_t ObReferenceObjectByHandle(uint32_t handle, uint32_t objectType, be<uint32_t>* object)
-{
-    if(!object) return 0xC000000D;
-    uint32_t body=0;
-    const auto status=KernelObjects::Reference(handle,objectType,body);
-    *object=body;
-    return status;
-}
+
 
 void KeQueryBasePriorityThread()
 {
     LOG_UTILITY("!!! STUB !!!");
 }
 
-uint32_t NtSuspendThread(GuestThreadHandle* hThread, uint32_t* suspendCount)
-{
-    if(hThread!=KernelObjects::CurrentThread()) return 0xC0000002; // remote suspension needs a scheduler safepoint
 
-    hThread->suspended = true;
-    hThread->suspended.wait(true);
-
-    return S_OK;
-}
 
 uint32_t KeSetAffinityThread(uint32_t Thread, uint32_t Affinity, be<uint32_t>* lpPreviousAffinity)
 {
@@ -657,45 +621,11 @@ void KeUnlockL2()
     LOG_UTILITY("!!! STUB !!!");
 }
 
-bool KeSetEvent(XKEVENT* pEvent, uint32_t Increment, bool Wait)
-{
-    bool result = QueryKernelObject<Event>(*pEvent)->Set();
 
-    ++g_keSetEventGeneration;
-    g_keSetEventGeneration.notify_all();
 
-    return result;
-}
 
-bool KeResetEvent(XKEVENT* pEvent)
-{
-    return QueryKernelObject<Event>(*pEvent)->Reset();
-}
 
-uint32_t KeWaitForSingleObject(XDISPATCHER_HEADER* Object, uint32_t WaitReason, uint32_t WaitMode, bool Alertable, be<int64_t>* Timeout)
-{
-    const uint32_t timeout = GuestTimeoutToMilliseconds(Timeout);
-    switch (Object->Type)
-    {
-        case 0:
-        case 1:
-            return QueryKernelObject<Event>(*Object)->Wait(timeout);
 
-        case 5:
-            return QueryKernelObject<Semaphore>(*Object)->Wait(timeout);
-
-        case 6:
-        {
-            auto thread=KernelObjects::AcquireBody(g_memory.MapVirtual(Object));
-            return thread ? thread->Wait(timeout) : 0xC0000008;
-        }
-        default:
-            assert(false && "Unrecognized kernel object type.");
-            return STATUS_TIMEOUT;
-    }
-
-    return STATUS_SUCCESS;
-}
 
 static std::vector<size_t> g_tlsFreeIndices;
 static size_t g_tlsNextIndex = 0;
@@ -950,48 +880,15 @@ void MmQueryAllocationSize()
     LOG_UTILITY("!!! STUB !!!");
 }
 
-uint32_t NtClearEvent(Event* handle, uint32_t* previousState)
-{
-    const auto previous=handle->Reset();
-    if(previousState) *previousState=ByteSwap(uint32_t(previous));
-    return 0;
-}
 
-uint32_t NtResumeThread(GuestThreadHandle* hThread, uint32_t* suspendCount)
-{
-    const auto previous=hThread->suspended.exchange(false);
-    if(suspendCount) *suspendCount=ByteSwap(uint32_t(previous));
-    hThread->suspended.notify_all();
 
-    return S_OK;
-}
 
-uint32_t NtSetEvent(Event* handle, uint32_t* previousState)
-{
-    const auto previous=handle->Set();
-    if(previousState) *previousState=ByteSwap(uint32_t(previous));
-    ++g_keSetEventGeneration; g_keSetEventGeneration.notify_all();
-    return 0;
-}
 
-uint32_t NtCreateSemaphore(be<uint32_t>* Handle, XOBJECT_ATTRIBUTES* ObjectAttributes, uint32_t InitialCount, uint32_t MaximumCount)
-{
-    if(!Handle || !MaximumCount || MaximumCount>INT32_MAX || InitialCount>MaximumCount) return 0xC000000D;
-    *Handle = GetKernelHandle(CreateKernelObject<Semaphore>(InitialCount, MaximumCount));
-    return STATUS_SUCCESS;
-}
 
-uint32_t NtReleaseSemaphore(Semaphore* Handle, uint32_t ReleaseCount, int32_t* PreviousCount)
-{
-    uint32_t previousCount;
-    const auto status=Handle->Release(ReleaseCount, &previousCount);
-    if(status) return status;
 
-    if (PreviousCount != nullptr)
-        *PreviousCount = ByteSwap(previousCount);
 
-    return STATUS_SUCCESS;
-}
+
+
 
 void NtWaitForMultipleObjectsEx()
 {
@@ -1073,10 +970,7 @@ void IoInvalidDeviceRequest()
     LOG_UTILITY("!!! STUB !!!");
 }
 
-void ObReferenceObject(uint32_t body)
-{
-    KernelObjects::ReferenceBody(body);
-}
+
 
 void IoCreateDevice()
 {
@@ -1184,13 +1078,7 @@ uint32_t KeRaiseIrqlToDpcLevel()
 
 void KfLowerIrql() { }
 
-uint32_t KeReleaseSemaphore(XKSEMAPHORE* semaphore, uint32_t increment, uint32_t adjustment, uint32_t wait)
-{
-    auto* object = QueryKernelObject<Semaphore>(semaphore->Header);
-    uint32_t previous=0;
-    const auto status=object->Release(adjustment,&previous);
-    return status ? status : previous;
-}
+
 
 uint32_t XAudioGetVoiceCategoryVolume(uint32_t category, be<float>* volume)
 {
@@ -1207,21 +1095,9 @@ uint32_t XAudioGetVoiceCategoryVolumeChangeMask(uint32_t Driver, be<uint32_t>* M
     return 0;
 }
 
-uint32_t KeResumeThread(GuestThreadHandle* object)
-{
-    const auto previous=object->suspended.exchange(false);
-    object->suspended.notify_all();
-    return previous;
-}
 
-void KeInitializeSemaphore(XKSEMAPHORE* semaphore, uint32_t count, uint32_t limit)
-{
-    semaphore->Header.Type = 5;
-    semaphore->Header.SignalState = count;
-    semaphore->Limit = limit;
 
-    auto* object = QueryKernelObject<Semaphore>(semaphore->Header);
-}
+
 
 /* XMAReleaseContext is implemented in the video/audio layer. */
 
@@ -1279,15 +1155,12 @@ GUEST_FUNCTION_HOOK(__imp__XamLoaderLaunchTitle, XamLoaderLaunchTitle);
 GUEST_FUNCTION_HOOK(__imp__NtOpenFile, NtOpenFile);
 GUEST_FUNCTION_HOOK(__imp__RtlInitAnsiString, RtlInitAnsiString);
 GUEST_FUNCTION_HOOK(__imp__NtCreateFile, NtCreateFile);
-GUEST_FUNCTION_HOOK(__imp__NtClose, NtClose);
 GUEST_FUNCTION_HOOK(__imp__NtSetInformationFile, NtSetInformationFile);
 GUEST_FUNCTION_HOOK(__imp__FscSetCacheElementCount, FscSetCacheElementCount);
-GUEST_FUNCTION_HOOK(__imp__NtWaitForSingleObjectEx, NtWaitForSingleObjectEx);
 GUEST_FUNCTION_HOOK(__imp__NtWriteFile, NtWriteFile);
 GUEST_FUNCTION_HOOK(__imp__ExGetXConfigSetting, ExGetXConfigSetting);
 GUEST_FUNCTION_HOOK(__imp__NtQueryVirtualMemory, NtQueryVirtualMemory);
 GUEST_FUNCTION_HOOK(__imp__MmQueryStatistics, MmQueryStatistics);
-GUEST_FUNCTION_HOOK(__imp__NtCreateEvent, NtCreateEvent);
 GUEST_FUNCTION_HOOK(__imp__DbgPrint, DbgPrint);
 GUEST_FUNCTION_HOOK(__imp____C_specific_handler, __C_specific_handler_x);
 GUEST_FUNCTION_HOOK(__imp__RtlNtStatusToDosError, RtlNtStatusToDosError);
@@ -1299,14 +1172,10 @@ GUEST_FUNCTION_HOOK(__imp__NtQueryVolumeInformationFile, NtQueryVolumeInformatio
 GUEST_FUNCTION_HOOK(__imp__NtQueryDirectoryFile, NtQueryDirectoryFile);
 GUEST_FUNCTION_HOOK(__imp__NtReadFileScatter, NtReadFileScatter);
 GUEST_FUNCTION_HOOK(__imp__NtReadFile, NtReadFile);
-GUEST_FUNCTION_HOOK(__imp__NtDuplicateObject, NtDuplicateObject);
 GUEST_FUNCTION_HOOK(__imp__NtAllocateVirtualMemory, NtAllocateVirtualMemory);
 GUEST_FUNCTION_HOOK(__imp__NtFreeVirtualMemory, NtFreeVirtualMemory);
-GUEST_FUNCTION_HOOK(__imp__ObDereferenceObject, ObDereferenceObject);
 GUEST_FUNCTION_HOOK(__imp__KeSetBasePriorityThread, KeSetBasePriorityThread);
-GUEST_FUNCTION_HOOK(__imp__ObReferenceObjectByHandle, ObReferenceObjectByHandle);
 GUEST_FUNCTION_HOOK(__imp__KeQueryBasePriorityThread, KeQueryBasePriorityThread);
-GUEST_FUNCTION_HOOK(__imp__NtSuspendThread, NtSuspendThread);
 GUEST_FUNCTION_HOOK(__imp__KeSetAffinityThread, KeSetAffinityThread);
 GUEST_FUNCTION_HOOK(__imp__RtlLeaveCriticalSection, RtlLeaveCriticalSection);
 GUEST_FUNCTION_HOOK(__imp__RtlEnterCriticalSection, RtlEnterCriticalSection);
@@ -1355,9 +1224,6 @@ GUEST_FUNCTION_HOOK(__imp__VdEnableDisableClockGating, VdEnableDisableClockGatin
 GUEST_FUNCTION_HOOK(__imp__KeBugCheck, KeBugCheck);
 GUEST_FUNCTION_HOOK(__imp__KeLockL2, KeLockL2);
 GUEST_FUNCTION_HOOK(__imp__KeUnlockL2, KeUnlockL2);
-GUEST_FUNCTION_HOOK(__imp__KeSetEvent, KeSetEvent);
-GUEST_FUNCTION_HOOK(__imp__KeResetEvent, KeResetEvent);
-GUEST_FUNCTION_HOOK(__imp__KeWaitForSingleObject, KeWaitForSingleObject);
 GUEST_FUNCTION_HOOK(__imp__KeTlsGetValue, KeTlsGetValue);
 GUEST_FUNCTION_HOOK(__imp__KeTlsSetValue, KeTlsSetValue);
 GUEST_FUNCTION_HOOK(__imp__KeTlsAlloc, KeTlsAlloc);
@@ -1395,11 +1261,6 @@ GUEST_FUNCTION_HOOK(__imp__NtQueryFullAttributesFile, NtQueryFullAttributesFile)
 GUEST_FUNCTION_HOOK(__imp__RtlMultiByteToUnicodeN, RtlMultiByteToUnicodeN);
 GUEST_FUNCTION_HOOK(__imp__DbgBreakPoint, DbgBreakPoint);
 GUEST_FUNCTION_HOOK(__imp__MmQueryAllocationSize, MmQueryAllocationSize);
-GUEST_FUNCTION_HOOK(__imp__NtClearEvent, NtClearEvent);
-GUEST_FUNCTION_HOOK(__imp__NtResumeThread, NtResumeThread);
-GUEST_FUNCTION_HOOK(__imp__NtSetEvent, NtSetEvent);
-GUEST_FUNCTION_HOOK(__imp__NtCreateSemaphore, NtCreateSemaphore);
-GUEST_FUNCTION_HOOK(__imp__NtReleaseSemaphore, NtReleaseSemaphore);
 GUEST_FUNCTION_HOOK(__imp__NtWaitForMultipleObjectsEx, NtWaitForMultipleObjectsEx);
 GUEST_FUNCTION_HOOK(__imp__RtlCompareStringN, RtlCompareStringN);
 GUEST_FUNCTION_HOOK(__imp__StfsControlDevice, StfsControlDevice);
@@ -1413,7 +1274,6 @@ GUEST_FUNCTION_HOOK(__imp__RtlInitUnicodeString, RtlInitUnicodeString);
 GUEST_FUNCTION_HOOK(__imp__ExTerminateThread, ExTerminateThread);
 GUEST_FUNCTION_HOOK(__imp__ExCreateThread, ExCreateThread);
 GUEST_FUNCTION_HOOK(__imp__IoInvalidDeviceRequest, IoInvalidDeviceRequest);
-GUEST_FUNCTION_HOOK(__imp__ObReferenceObject, ObReferenceObject);
 GUEST_FUNCTION_HOOK(__imp__IoCreateDevice, IoCreateDevice);
 GUEST_FUNCTION_HOOK(__imp__IoDeleteDevice, IoDeleteDevice);
 GUEST_FUNCTION_HOOK(__imp__ExAllocatePoolTypeWithTag, ExAllocatePoolTypeWithTag);
@@ -1429,11 +1289,8 @@ GUEST_FUNCTION_HOOK(__imp__NetDll_XNetGetTitleXnAddr, NetDll_XNetGetTitleXnAddr)
 GUEST_FUNCTION_HOOK(__imp__KeWaitForMultipleObjects, KeWaitForMultipleObjects);
 GUEST_FUNCTION_HOOK(__imp__KeRaiseIrqlToDpcLevel, KeRaiseIrqlToDpcLevel);
 GUEST_FUNCTION_HOOK(__imp__KfLowerIrql, KfLowerIrql);
-GUEST_FUNCTION_HOOK(__imp__KeReleaseSemaphore, KeReleaseSemaphore);
 GUEST_FUNCTION_HOOK(__imp__XAudioGetVoiceCategoryVolume, XAudioGetVoiceCategoryVolume);
 GUEST_FUNCTION_HOOK(__imp__XAudioGetVoiceCategoryVolumeChangeMask, XAudioGetVoiceCategoryVolumeChangeMask);
-GUEST_FUNCTION_HOOK(__imp__KeResumeThread, KeResumeThread);
-GUEST_FUNCTION_HOOK(__imp__KeInitializeSemaphore, KeInitializeSemaphore);
 GUEST_FUNCTION_HOOK(__imp__XMAReleaseContext, XMAReleaseContext);
 GUEST_FUNCTION_HOOK(__imp__XMACreateContext, XMACreateContext);
 GUEST_FUNCTION_HOOK(__imp__XAudioRegisterRenderDriverClient, XAudioRegisterRenderDriverClient);

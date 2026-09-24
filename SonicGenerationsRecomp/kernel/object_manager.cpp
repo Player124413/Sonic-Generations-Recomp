@@ -159,8 +159,8 @@ uint32_t KernelObjects::Reference(uint32_t handle,uint32_t type,uint32_t& body)
     auto record=Find(state,handle);
     if(!record) return 0xC0000008;
     if(!record->object->ownsBody) return 0xC0000002; // unsupported body, not a host pointer
-    auto* header=static_cast<GuestHeader*>(g_memory.Translate(record->object->guestBody))-1;
-    if(type && type!=header->type.get()) return 0xC0000024;
+    const auto expected=state.types.at(record->object->guestType);
+    if(type && type!=expected) return 0xC0000024;
     if(!AddReference(state,record)) return 0xC000009A;
     body=record->object->guestBody; return 0;
 }

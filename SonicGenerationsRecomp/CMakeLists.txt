@@ -11,6 +11,7 @@ set(SONIC_GENERATIONS_CORE_SOURCES
     "kernel/memory.cpp"
     "kernel/xdm.cpp"
     "kernel/object_manager.cpp"
+    "kernel/object_imports.cpp"
     "kernel/imports.cpp"
     "kernel/imports_extra.cpp"
     "kernel/guest_printf.cpp"

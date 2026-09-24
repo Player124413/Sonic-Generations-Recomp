@@ -89,10 +89,13 @@ static_assert(sizeof(WIN32_FIND_DATAA) == 320);
 struct KernelObject
 {
     uint32_t handle=0, guestBody=0;
+    const KernelObjects::Type guestType=KernelObjects::Type::Unknown;
     bool ownsBody=false;
     KernelObject()=default;
+    KernelObject(const KernelObject&)=delete;
+    KernelObject& operator=(const KernelObject&)=delete;
     KernelObject(KernelObjects::Type type,uint32_t bytes)
-        : guestBody(KernelObjects::AllocateBody(type,bytes)), ownsBody(true) {}
+        : guestBody(KernelObjects::AllocateBody(type,bytes)), guestType(type), ownsBody(true) {}
     virtual ~KernelObject()
     {
         if(ownsBody) KernelObjects::FreeBody(guestBody);

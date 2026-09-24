@@ -30,3 +30,27 @@ jobs:
           cmake --build build-objects --parallel 2
       - name: Guest bodies, types, close, duplicate, references, concurrency and threads
         run: ctest --test-dir build-objects --output-on-failure
+  windows-objects:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Dependencies
+        shell: pwsh
+        run: |
+          git submodule update --init tools/XenonRecomp tools/XenosRecomp
+          git -C tools/XenonRecomp submodule update --init thirdparty/fmt thirdparty/simde
+          git -C tools/XenosRecomp submodule update --init thirdparty/xxHash
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install sdl2:x64-windows-static
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and test Windows guest object runtime
+        shell: pwsh
+        run: |
+          cmake -S tests/kernel_objects -B build-objects -G "Visual Studio 17 2022" -A x64 -T ClangCL "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-objects --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build-objects -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

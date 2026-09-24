@@ -1,4 +1,7 @@
 #include <stdafx.h>
+#ifdef _WIN32
+#include <ntstatus.h>
+#endif
 #include <kernel/dispatcher_objects.h>
 #include <kernel/function.h>
 #include <cpu/guest_thread.h>
@@ -8,9 +11,10 @@
 Memory g_memory;
 Heap g_userHeap;
 PPCFuncMapping PPCFuncMappings[]={{0,nullptr}};
-static int failures=0;
+static std::atomic<int> failures{0};
 #define CHECK(x) do { if(!(x)) { std::printf("FAIL %d: %s\n",__LINE__,#x); ++failures; } } while(0)
 using namespace KernelObjects;
+#include "import_cases.h"
 static uint32_t Word(uint32_t address)
 { return static_cast<be<uint32_t>*>(g_memory.Translate(address))->get(); }
 static uint32_t WaitEvent(Event* event) { return event->Wait(0); }
@@ -119,8 +123,12 @@ static void Threads()
     CHECK(Duplicate(object->handle,alias,false)==0);
     CHECK(Close(object->handle) && Close(alias)); // running ownership is separate
     CHECK(AcquireBody(body).get()==object);
+    auto keepAlive=AcquireBody(body);
     object->suspended=false; object->suspended.notify_all();
     CHECK(object->Wait(INFINITE)==0);
+#ifndef USE_PTHREAD
+    object->thread.join(); // test cleanup; Wait itself must not consume the thread handle
+#endif
     CHECK(threadBody==body && ran==1);
     // Completion precedes release of the worker's own ref; wait for destruction
     // through shared ownership rather than assuming that it has already exited.
@@ -134,7 +142,7 @@ static void Threads()
 int main()
 {
     g_userHeap.Init();
-    BodiesAndHandles(); ImportedPointerConversion(); ConcurrentClose(); Threads();
-    std::printf("Kernel object tests: %d failures\n",failures);
+    BodiesAndHandles(); ImportedPointerConversion(); ConcurrentClose(); Threads(); TestObjectImports();
+    std::printf("Kernel object tests: %d failures\n",failures.load());
     return failures ? 1 : 0;
 }
