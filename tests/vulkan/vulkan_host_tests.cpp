@@ -107,6 +107,15 @@ static void GraphicsTests(VulkanHost& host)
     info.depthTest = state.depth.depthTestEnable; info.depthWrite = state.depth.depthWriteEnable;
     info.depthCompare = state.depth.depthCompareOp; info.cullMode = state.raster.cullMode;
     info.frontFace = state.raster.frontFace;
+    auto invalidDepth=info; invalidDepth.depthKind=ImageKind::Rgba8;
+    CHECK(!host.CreateGraphicsPipeline(invalidDepth));
+    invalidDepth.depthKind=static_cast<ImageKind>(255);
+    CHECK(!host.CreateGraphicsPipeline(invalidDepth));
+    invalidDepth=info; invalidDepth.stencilTest=true; // D32 has no stencil aspect
+    CHECK(!host.CreateGraphicsPipeline(invalidDepth));
+    invalidDepth.depthKind=ImageKind::Depth24Stencil8;
+    invalidDepth.stencilFront.failOp=VK_STENCIL_OP_MAX_ENUM;
+    CHECK(!host.CreateGraphicsPipeline(invalidDepth));
     const auto pipeline = host.CreateGraphicsPipeline(info);
     CHECK(pipeline);
     CHECK(host.DrawIndexed(pipeline, color, depth, vb, ib, 3, VK_INDEX_TYPE_UINT16, {0, 0, 0, 1}));

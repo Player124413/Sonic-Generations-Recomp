@@ -481,10 +481,18 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
             for (const auto& binding : module->bindings)
                 validShaders &= (binding.set == 0 || binding.set == 3) && binding.binding == 0 && binding.storage == 0;
     }
-    if (input.depthKind == ImageKind::Rgba8 || (input.stencilTest && input.depthKind != ImageKind::Depth24Stencil8) || !validShaders || !input.vertexStride ||
+    if ((input.depthKind != ImageKind::Depth32 && input.depthKind != ImageKind::Depth24Stencil8) || (input.stencilTest && input.depthKind != ImageKind::Depth24Stencil8) || !validShaders || !input.vertexStride ||
         input.vertexStride > limits.limits.maxVertexInputBindingStride || input.attributes.empty() || input.attributes.size() > 32 ||
         p.buffers.size() + p.images.size() + p.pipelines.size() >= Impl::MaxResources || p.nextId == UINT64_MAX)
     { p.Fail("Invalid/unsupported graphics shader ABI or pipeline input"); return 0; }
+    for(const auto& face : {input.stencilFront,input.stencilBack})
+        if(uint32_t(face.compareOp)>VK_COMPARE_OP_ALWAYS || uint32_t(face.failOp)>VK_STENCIL_OP_DECREMENT_AND_WRAP ||
+           uint32_t(face.passOp)>VK_STENCIL_OP_DECREMENT_AND_WRAP || uint32_t(face.depthFailOp)>VK_STENCIL_OP_DECREMENT_AND_WRAP)
+        { p.Fail("Invalid stencil state enum"); return 0; }
+    VkFormatProperties depthProperties{};
+    vkGetPhysicalDeviceFormatProperties(p.physical,ImageFormat(input.depthKind),&depthProperties);
+    if(!(depthProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
+    { p.Fail("Requested depth/stencil format is unavailable; no precision-changing fallback"); return 0; }
     uint32_t locations = 0;
     for (const auto& attribute : input.attributes)
     {
