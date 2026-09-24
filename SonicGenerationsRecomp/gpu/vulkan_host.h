@@ -13,13 +13,14 @@ namespace HostGpu
 {
     using Resource = uint64_t; // monotonically allocated, zero is invalid
     enum class ImageKind { Rgba8, Depth32, Depth24Stencil8 };
-    // One RGBA8 target, D32 depth and one vertex stream. generationsAbi selects
+    // One RGBA8 target, D32/D24S8 depth and per-vertex streams. generationsAbi selects
     // the fork's BDA/push-constant + 2D image/sampler layout; otherwise this is
     // a descriptor-free fixture profile. No runtime fallback shaders.
     struct GraphicsPipelineInfo
     {
         std::span<const uint32_t> vertexShader, fragmentShader;
-        uint32_t vertexStride = 0;
+        uint32_t vertexStride = 0; // legacy single-binding shorthand
+        std::span<const VkVertexInputBindingDescription> vertexBindings;
         std::span<const VkVertexInputAttributeDescription> attributes;
         VkCullModeFlags cullMode = VK_CULL_MODE_NONE;
         VkFrontFace frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -42,10 +43,12 @@ namespace HostGpu
         VkFilter filter = VK_FILTER_NEAREST;
         VkSamplerAddressMode u = VK_SAMPLER_ADDRESS_MODE_REPEAT, v = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     };
+    struct GameVertexBinding { uint32_t stream=0; Resource buffer=0; };
     struct GameDrawBindings
     {
         Resource constants = 0, shared = 0;
         std::span<const GameTextureBinding> textures;
+        std::span<const GameVertexBinding> vertices;
         VkViewport viewport{};
         VkRect2D scissor{};
         int32_t baseVertex = 0;

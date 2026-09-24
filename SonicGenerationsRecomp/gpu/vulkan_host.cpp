@@ -55,7 +55,7 @@ struct VulkanHost::Impl
         VkPipeline pipeline{};
         VkPipelineLayout layout{};
         VkRenderPass pass{};
-        uint32_t stride{};
+        std::vector<VkVertexInputBindingDescription> bindings;
         bool game = false, preserve = false;
         ImageKind depthKind = ImageKind::Depth32;
         bool usesDepthStencil = false;
@@ -481,8 +481,7 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
             for (const auto& binding : module->bindings)
                 validShaders &= (binding.set == 0 || binding.set == 3) && binding.binding == 0 && binding.storage == 0;
     }
-    if ((input.depthKind != ImageKind::Depth32 && input.depthKind != ImageKind::Depth24Stencil8) || (input.stencilTest && input.depthKind != ImageKind::Depth24Stencil8) || !validShaders || !input.vertexStride ||
-        input.vertexStride > limits.limits.maxVertexInputBindingStride || input.attributes.empty() || input.attributes.size() > 32 ||
+    if ((input.depthKind != ImageKind::Depth32 && input.depthKind != ImageKind::Depth24Stencil8) || (input.stencilTest && input.depthKind != ImageKind::Depth24Stencil8) || !validShaders || input.attributes.empty() || input.attributes.size() > 32 ||
         p.buffers.size() + p.images.size() + p.pipelines.size() >= Impl::MaxResources || p.nextId == UINT64_MAX)
     { p.Fail("Invalid/unsupported graphics shader ABI or pipeline input"); return 0; }
     for(const auto& face : {input.stencilFront,input.stencilBack})
@@ -493,6 +492,18 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     vkGetPhysicalDeviceFormatProperties(p.physical,ImageFormat(input.depthKind),&depthProperties);
     if(!(depthProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
     { p.Fail("Requested depth/stencil format is unavailable; no precision-changing fallback"); return 0; }
+    const VkVertexInputBindingDescription single{0,input.vertexStride,VK_VERTEX_INPUT_RATE_VERTEX};
+    const auto bindings=input.vertexBindings.empty() ? std::span(&single,1) : input.vertexBindings;
+    if(bindings.size()>16 || bindings.size()>limits.limits.maxVertexInputBindings)
+    { p.Fail("Too many vertex streams"); return 0; }
+    uint32_t bindingMask=0;
+    for(const auto& binding:bindings) {
+        if(binding.binding>=16 || binding.binding>=limits.limits.maxVertexInputBindings ||
+           (bindingMask & (1u<<binding.binding)) || !binding.stride ||
+           binding.stride>limits.limits.maxVertexInputBindingStride || binding.inputRate!=VK_VERTEX_INPUT_RATE_VERTEX)
+        { p.Fail("Invalid or unsupported vertex stream binding"); return 0; }
+        bindingMask|=1u<<binding.binding;
+    }
     uint32_t locations = 0;
     for (const auto& attribute : input.attributes)
     {
@@ -500,8 +511,9 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
         if(!bytes) { p.Fail("Unsupported vertex format"); return 0; }
         VkFormatProperties properties{};
         vkGetPhysicalDeviceFormatProperties(p.physical,attribute.format,&properties);
-        if (!bytes || !(properties.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT) || attribute.binding != 0 || attribute.location >= 32 || (locations & (1u << attribute.location)) ||
-            attribute.offset > input.vertexStride || bytes > input.vertexStride - attribute.offset ||
+        const auto binding=std::find_if(bindings.begin(),bindings.end(),[&](const auto& b){return b.binding==attribute.binding;});
+        if (!bytes || !(properties.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT) || binding==bindings.end() || attribute.location >= 32 || (locations & (1u << attribute.location)) ||
+            attribute.offset > binding->stride || bytes > binding->stride - attribute.offset ||
             attribute.offset > limits.limits.maxVertexInputAttributeOffset)
         { p.Fail("Unsupported vertex attribute in initial graphics profile"); return 0; }
         locations |= 1u << attribute.location;
@@ -512,7 +524,7 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     if (!p.Check(vkCreateShaderModule(p.device, &shader, nullptr, &vertex.module), "vkCreateShaderModule(vertex)")) return 0;
     shader.codeSize = input.fragmentShader.size_bytes(); shader.pCode = input.fragmentShader.data();
     if (!p.Check(vkCreateShaderModule(p.device, &shader, nullptr, &fragment.module), "vkCreateShaderModule(fragment)")) return 0;
-    auto pipeline = std::make_unique<Impl::Pipeline>(); pipeline->device = p.device; pipeline->stride = input.vertexStride;
+    auto pipeline = std::make_unique<Impl::Pipeline>(); pipeline->device = p.device; pipeline->bindings.assign(bindings.begin(),bindings.end());
     pipeline->depthKind = input.depthKind; pipeline->usesDepthStencil = input.depthTest || input.depthWrite || input.stencilTest;
     pipeline->game = input.generationsAbi; pipeline->preserve = input.preserveTargets;
     if (pipeline->game)
@@ -566,9 +578,8 @@ Resource VulkanHost::CreateGraphicsPipeline(const GraphicsPipelineInfo& input)
     if (pipeline->game) for (auto& stage : stages) stage.pSpecializationInfo = &spec;
     stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT; stages[0].module = vertex.module;
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; stages[1].module = fragment.module;
-    const VkVertexInputBindingDescription binding{0, input.vertexStride, VK_VERTEX_INPUT_RATE_VERTEX};
     VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    vi.vertexBindingDescriptionCount = 1; vi.pVertexBindingDescriptions = &binding;
+    vi.vertexBindingDescriptionCount = uint32_t(bindings.size()); vi.pVertexBindingDescriptions = bindings.data();
     vi.vertexAttributeDescriptionCount = uint32_t(input.attributes.size()); vi.pVertexAttributeDescriptions = input.attributes.data();
     VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -607,12 +618,25 @@ bool VulkanHost::DrawIndexed(Resource pipelineId, Resource colorId, Resource dep
     if (it == p.pipelines.end()) return p.Fail("Invalid/stale graphics pipeline");
     auto& pipeline = *it->second;
     auto* color = p.FindImage(colorId); auto* depth = p.FindImage(depthId);
-    auto* vertices = p.FindBuffer(verticesId); auto* indices = p.FindBuffer(indicesId);
-    if (!color || !depth || !vertices || !indices) return false;
+    auto* indices = p.FindBuffer(indicesId);
+    if (!color || !depth || !indices) return false;
+    const GameVertexBinding single{0,verticesId};
+    const auto vertexBindings=(game && !game->vertices.empty()) ? game->vertices : std::span(&single,1);
+    if(vertexBindings.size()!=pipeline.bindings.size()) return p.Fail("Vertex stream count mismatch");
+    std::array<VkBuffer,16> vertexBuffers{};
+    uint32_t streamMask=0;
+    for(const auto& vertex:vertexBindings) {
+        if(vertex.stream>=16 || (streamMask & (1u<<vertex.stream))) return p.Fail("Invalid/duplicate bound vertex stream");
+        const auto expected=std::find_if(pipeline.bindings.begin(),pipeline.bindings.end(),[&](const auto& b){return b.binding==vertex.stream;});
+        auto* buffer=p.FindBuffer(vertex.buffer);
+        if(expected==pipeline.bindings.end() || !buffer || buffer->size<expected->stride || !(buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT))
+            return p.Fail("Missing, undersized or invalid vertex stream buffer");
+        streamMask|=1u<<vertex.stream; vertexBuffers[vertex.stream]=buffer->buffer;
+    }
     const uint32_t indexSize = indexType == VK_INDEX_TYPE_UINT16 ? 2 : indexType == VK_INDEX_TYPE_UINT32 ? 4 : 0;
     if (color->kind != ImageKind::Rgba8 || depth->kind != pipeline.depthKind || color->width != depth->width || color->height != depth->height ||
-        !indexSize || !count || count % 3 || uint64_t(count) * indexSize > indices->size || vertices->size < pipeline.stride ||
-        !(vertices->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) || !(indices->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) ||
+        !indexSize || !count || count % 3 || uint64_t(count) * indexSize > indices->size ||
+        !(indices->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) ||
         !std::all_of(clearColor.begin(), clearColor.end(), [](float x) { return std::isfinite(x); }))
         return p.Fail("Invalid indexed draw range, target, or vertex/index resource");
     if (pipeline.game != (game != nullptr)) return p.Fail("Graphics pipeline/bindings ABI mismatch");
@@ -713,7 +737,9 @@ bool VulkanHost::DrawIndexed(Resource pipelineId, Resource colorId, Resource dep
             vkCmdPushConstants(p.command,pipeline.layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,24,addresses.data());
         }
         const VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(p.command, 0, 1, &vertices->buffer, &offset);
+        // Sparse Xbox stream numbers are binding numbers, not vector positions.
+        for(const auto& binding:pipeline.bindings)
+            vkCmdBindVertexBuffers(p.command,binding.binding,1,&vertexBuffers[binding.binding],&offset);
         vkCmdBindIndexBuffer(p.command, indices->buffer, 0, indexType);
         const VkViewport viewport=game ? game->viewport : VkViewport{0, 0, float(color->width), float(color->height), 0, 1};
         const VkRect2D scissor=game ? game->scissor : VkRect2D{{0, 0}, {color->width, color->height}};

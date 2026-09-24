@@ -532,6 +532,7 @@ int main(int argc, char** argv)
         NativeFrameTests(window);
         NativePartialClearTests(window);
         NativeResolvedSamplingTests(window);
+        NativeMultiStreamTests(window);
         SDL_DestroyWindow(window); SDL_Quit();
         std::puts("Vulkan WSI acquire/clear/submit/present/resize with validation passed");
         return 0;
@@ -616,6 +617,7 @@ int main(int argc, char** argv)
     NativeFrameTests(nullptr);
     NativePartialClearTests(nullptr);
     NativeResolvedSamplingTests(nullptr);
+    NativeMultiStreamTests(nullptr);
     NativeGameShaderDrawTest();
     std::puts("Vulkan resources, readback, transfers, state translation and lifecycle with validation passed");
 }

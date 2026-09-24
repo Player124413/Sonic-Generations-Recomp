@@ -9,11 +9,11 @@ struct SamplingShaderCache
     std::array<ShaderCacheEntry,2> entries{};
     std::vector<uint8_t> compressed;
     size_t decodedBytes=0;
-    SamplingShaderCache()
+    explicit SamplingShaderCache(const char* vertexFile="game_abi.vert.spv")
     {
         std::vector<uint8_t> packed;
         size_t i=0;
-        for(auto name:{"game_abi.vert.spv","game_abi.frag.spv"})
+        for(auto name:{vertexFile,"game_abi.frag.spv"})
         {
             auto words=ReadShader(name);
             smolv::ByteArray encoded;
@@ -34,13 +34,9 @@ struct SamplingShaderCache
     GuestGpu::ShaderCacheData Data() const
     { return {entries,compressed,entries.size(),compressed.size(),decodedBytes}; }
 };
-static void NativeResolvedSamplingTests(SDL_Window* window)
+static GuestGpu::NativeBatch MakeSamplingBatch(NativeFrameFixture& f)
 {
     using namespace GuestGpu;
-    SamplingShaderCache shaders;
-    VulkanBackend backend(window,true,true);
-    CHECK(backend.InitWithShaderCache(VideoMode{64,64},shaders.Data()));
-    NativeFrameFixture f;
     CHECK(f.Clear(f.SurfaceA,{1,0,0,1})==CaptureResult::Captured);
     CHECK(f.Resolve(f.SurfaceA,f.TextureA)==CaptureResult::Captured);
     CHECK(f.Clear(f.SurfaceA,{0,0,1,1})==CaptureResult::Captured);
@@ -83,6 +79,16 @@ static void NativeResolvedSamplingTests(SDL_Window* window)
     draw.resources.textures.push_back(std::move(texture));
     draw.resources.payloadBytes=sizeof(triangle)+64*64*4;
     batch.draws.push_back(std::move(draw));
+    return batch;
+}
+static void NativeResolvedSamplingTests(SDL_Window* window)
+{
+    using namespace GuestGpu;
+    SamplingShaderCache shaders;
+    VulkanBackend backend(window,true,true);
+    CHECK(backend.InitWithShaderCache(VideoMode{64,64},shaders.Data()));
+    NativeFrameFixture f;
+    auto batch=MakeSamplingBatch(f);
     CHECK(backend.SubmitGuestBatch(batch)==SubmissionResult::Submitted);
     std::vector<uint8_t> pixels;
     CHECK(backend.ReadDiagnosticFrame(pixels) && pixels.size()==64*64*4);
@@ -240,4 +246,80 @@ static void NativeResolvedSamplingTests(SDL_Window* window)
     CHECK(backend.GetHostStats().validationErrors==0);
     backend.Shutdown(); CHECK(backend.GetHostStats().allocatedBytes==0);
     std::puts("Native resolve -> sampled descriptor -> viewport/scissor draw -> second resolve/backbuffer pixels passed");
+}
+
+static void NativeMultiStreamTests(SDL_Window* window)
+{
+    using namespace GuestGpu;
+    SamplingShaderCache shaders("multi_stream.vert.spv");
+    VulkanBackend backend(window,true,true);
+    CHECK(backend.InitWithShaderCache(VideoMode{64,64},shaders.Data()));
+    NativeFrameFixture f;
+    auto batch=MakeSamplingBatch(f);
+    auto& draw=batch.draws[0];
+    // Sparse binding numbers and deliberately reverse resource order. No stream
+    // zero dependency: POSITION is stream 7, TEXCOORD0 is stream 3.
+    draw.resources.declaration={{7,4,0x2C23A5,0,0,0},{3,8,0x2C23A5,0,5,0}};
+    draw.resources.vertices.clear(); draw.state.words[12812/4]=0;
+    const auto add=[&](uint32_t stream,uint32_t stride,uint32_t resource,const std::vector<float>& data) {
+        VertexSnapshot v; v.stream=stream; v.stride=stride; v.resource=resource;
+        v.bytes.resize(data.size()*4); std::memcpy(v.bytes.data(),data.data(),v.bytes.size());
+        draw.resources.vertices.push_back(std::move(v)); draw.state.words[12812/4+stream]=resource;
+    };
+    add(3,16,0x7400,{99,88,0.75f,0.75f, 99,88,0.75f,0.75f, 99,88,0.75f,0.75f});
+    add(7,12,0x7440,{42,-1,-1, 42,3,-1, 42,-1,3});
+    auto& texture=draw.resources.textures[0];
+    texture.resource=0x7480; texture.physical=0x200000;
+    texture.width=texture.height=2; texture.fetch[1]=texture.physical|6;
+    texture.fetch[2]=1|(1<<13);
+    texture.rgba={255,0,0,255, 0,255,0,255, 255,255,0,255, 0,0,255,255};
+    draw.state.words[12896/4]=texture.resource;
+    for(size_t i=0;i<6;++i) draw.state.words[1152/4+i]=texture.fetch[i];
+    const auto payload=[](NativeDraw& d) {
+        d.resources.payloadBytes=0;
+        for(const auto& v:d.resources.vertices) d.resources.payloadBytes+=v.bytes.size();
+        for(const auto& t:d.resources.textures) d.resources.payloadBytes+=t.rgba.size();
+    };
+    payload(draw);
+    std::vector<uint8_t> pixels;
+    const auto render=[&](const NativeBatch& b) {
+        CHECK(backend.SubmitGuestBatch(b)==SubmissionResult::Submitted);
+        CHECK(backend.ReadDiagnosticFrame(pixels) && pixels.size()==64*64*4);
+        // UV must come from its own stream (0.75,0.75 => blue texel), not
+        // POSITION/default zero. The oversized triangle covers the viewport.
+        for(unsigned y=8;y<48;++y) for(unsigned x=16;x<48;++x) {
+            const size_t at=(y*64+x)*4;
+            CHECK(pixels[at]==0 && pixels[at+1]==0 && pixels[at+2]==255 && pixels[at+3]==255);
+        }
+        CHECK(pixels[0]==0 && pixels[1]==255 && pixels[2]==0);
+    };
+    render(batch);
+    auto based=batch;
+    for(auto& v:based.draws[0].resources.vertices) v.bytes.insert(v.bytes.begin(),v.stride,0);
+    based.draws[0].arguments[1]=1; payload(based.draws[0]); render(based);
+    auto negative=batch; negative.draws[0].arguments[1]=uint32_t(-1);
+    negative.draws[0].indices.bytes={1,0,2,0,3,0}; render(negative);
+    auto sequential=based;
+    sequential.draws[0].kind=DrawKind::Vertices;
+    sequential.draws[0].arguments={4,1,3,0}; sequential.draws[0].indices={};
+    sequential.draws[0].state.words[12788/4]=0;
+    // A bound but unreferenced tiny stream must not limit either active stream.
+    VertexSnapshot unused; unused.resource=0x74C0; unused.stream=0; unused.stride=4; unused.bytes={0,0,0,0};
+    sequential.draws[0].resources.vertices.push_back(unused);
+    sequential.draws[0].state.words[12812/4]=unused.resource;
+    payload(sequential.draws[0]); render(sequential);
+    if(window) { backend.Present(); CHECK(backend.GetHostStats().presents==1); }
+    const auto reject=[&](NativeBatch invalid) {
+        CHECK(backend.SubmitGuestBatch(invalid)==SubmissionResult::Incomplete);
+        CHECK(!backend.ReadDiagnosticFrame(pixels) && pixels.empty());
+    };
+    auto bad=batch; bad.draws[0].resources.vertices.erase(bad.draws[0].resources.vertices.begin()); reject(bad);
+    bad=batch; bad.draws[0].resources.vertices[0].bytes.resize(32); reject(bad); // short UV, not position
+    bad=sequential; bad.draws[0].resources.vertices[0].bytes.resize(48); reject(bad);
+    bad=batch; bad.draws[0].resources.declaration[1].offset=12; reject(bad);
+    bad=batch; bad.draws[0].resources.vertices.push_back(bad.draws[0].resources.vertices[0]); reject(bad);
+    bad=batch; bad.draws[0].arguments[1]=uint32_t(-1); reject(bad);
+    CHECK(backend.GetHostStats().validationErrors==0);
+    backend.Shutdown(); CHECK(backend.GetHostStats().allocatedBytes==0);
+    std::puts("Native multi-stream positions/UV, sparse bindings, per-stream strides/offsets and index bounds passed");
 }

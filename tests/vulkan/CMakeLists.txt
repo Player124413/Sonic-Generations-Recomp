@@ -40,3 +40,11 @@ foreach(stage vert frag)
 endforeach()
 add_custom_target(vulkan_game_abi_shaders DEPENDS ${GAME_SHADER_OUTPUTS})
 add_dependencies(vulkan_host_tests vulkan_game_abi_shaders)
+
+set(MULTI_STREAM_SHADER "${CMAKE_CURRENT_BINARY_DIR}/multi_stream.vert.spv")
+add_custom_command(OUTPUT "${MULTI_STREAM_SHADER}"
+    COMMAND "${GLSLANG_VALIDATOR}" -V --target-env vulkan1.2
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/multi_stream.vert" -o "${MULTI_STREAM_SHADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/multi_stream.vert" VERBATIM)
+add_custom_target(vulkan_multi_stream_shader DEPENDS "${MULTI_STREAM_SHADER}")
+add_dependencies(vulkan_host_tests vulkan_multi_stream_shader)
