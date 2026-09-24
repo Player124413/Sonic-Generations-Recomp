@@ -110,7 +110,7 @@ static void NativeResolvedSamplingTests(SDL_Window* window)
     auto depthBatch=batch;
     const auto attach=[&](auto& command) {
         command.state.words[12808/4]=depthResource;
-        command.state.words[10368/4]=ds.descriptor[1];
+        command.state.words[10376/4]=ds.descriptor[1];
         command.targets.surfaces[4]=ds;
     };
     attach(depthBatch.clears.back()); attach(depthBatch.draws[0]); attach(depthBatch.resolves.back());

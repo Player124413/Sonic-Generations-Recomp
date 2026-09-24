@@ -80,7 +80,7 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
             if(d.resource) {
                 // D24S8 is fixed-point. D24FS8 is 20e4 floating point, not D32.
                 if(d.status!=ConversionResult::Success || d.samples || d.format ||
-                   (d.descriptor[1]&~4095u) || state.words[10368/4]!=d.descriptor[1] ||
+                   (d.descriptor[1]&~4095u) || state.words[10376/4]!=d.descriptor[1] ||
                    !d.tileCount || d.baseTile>=2048 || d.tileCount>2048-d.baseTile ||
                    d.width!=s.width || d.height!=s.height) return false;
                 for(const auto& [base,entry]:depthPlan) {
