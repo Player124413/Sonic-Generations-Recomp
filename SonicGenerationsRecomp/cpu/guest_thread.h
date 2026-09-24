@@ -23,7 +23,7 @@ struct GuestThreadContext
     PPCContext ppcContext{};
     uint8_t* thread = nullptr;
 
-    GuestThreadContext(uint32_t cpuNumber);
+    GuestThreadContext(uint32_t cpuNumber, uint32_t guestBody=0);
     ~GuestThreadContext();
 };
 
@@ -38,13 +38,16 @@ struct GuestThreadHandle : KernelObject
 {
     GuestThreadParams params;
     std::atomic<bool> suspended;
+    std::atomic<bool> completed{false};
+    bool external=false;
+    void OnRegistered() override;
 #ifdef USE_PTHREAD
     pthread_t thread;
 #else
     std::thread thread;
 #endif
 
-    GuestThreadHandle(const GuestThreadParams& params);
+    GuestThreadHandle(const GuestThreadParams& params, bool external=false);
     ~GuestThreadHandle() override;
 
     uint32_t GetThreadId() const;

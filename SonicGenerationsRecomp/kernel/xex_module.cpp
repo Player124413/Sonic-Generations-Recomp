@@ -6,6 +6,7 @@
 #include <xex.h>
 #include <image.h>
 #include <kernel/heap.h>
+#include <kernel/object_manager.h>
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -133,6 +134,9 @@ uint32_t xex_module::VariableAddress(uint32_t ordinal)
     if(!g_exports) return 0;
     switch(ordinal)
     {
+    case 0xE: return KernelObjects::TypeAddress(KernelObjects::Type::Event);
+    case 0x17: return KernelObjects::TypeAddress(KernelObjects::Type::Semaphore);
+    case 0x1B: return KernelObjects::TypeAddress(KernelObjects::Type::Thread);
     case 0x193: return g_memory.MapVirtual(&g_exports->moduleHandle);
     case 0x266: return g_memory.MapVirtual(&g_exports->certMonitor); // disabled, null pointee
     case 0x59: return g_memory.MapVirtual(&g_exports->debugMonitor); // disabled, null pointee

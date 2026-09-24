@@ -13,7 +13,7 @@ constexpr size_t TOTAL_SIZE = PCR_SIZE + TLS_SIZE + TEB_SIZE + STACK_SIZE;
 
 constexpr size_t TEB_OFFSET = PCR_SIZE + TLS_SIZE;
 
-GuestThreadContext::GuestThreadContext(uint32_t cpuNumber)
+GuestThreadContext::GuestThreadContext(uint32_t cpuNumber, uint32_t guestBody)
 {
     assert(thread == nullptr);
 
@@ -21,11 +21,11 @@ GuestThreadContext::GuestThreadContext(uint32_t cpuNumber)
     memset(thread, 0, TOTAL_SIZE);
 
     *(uint32_t*)thread = ByteSwap(g_memory.MapVirtual(thread + PCR_SIZE)); // tls pointer
-    *(uint32_t*)(thread + 0x100) = ByteSwap(g_memory.MapVirtual(thread + PCR_SIZE + TLS_SIZE)); // teb pointer
+    *(uint32_t*)(thread + 0x100) = ByteSwap(guestBody ? guestBody : g_memory.MapVirtual(thread + PCR_SIZE + TLS_SIZE)); // teb pointer
     *(thread + 0x10C) = cpuNumber;
 
     *(uint32_t*)(thread + PCR_SIZE + 0x10) = 0xFFFFFFFF; // that one TLS entry that felt quirky
-    *(uint32_t*)(thread + PCR_SIZE + TLS_SIZE + 0x14C) = ByteSwap(GuestThread::GetCurrentThreadId()); // thread id
+    *static_cast<be<uint32_t>*>(g_memory.Translate(ByteSwap(*(uint32_t*)(thread+0x100))+0x14C)) = GuestThread::GetCurrentThreadId(); // thread id
 
     ppcContext.r1.u64 = g_memory.MapVirtual(thread + PCR_SIZE + TLS_SIZE + TEB_SIZE + STACK_SIZE); // stack pointer
     ppcContext.r13.u64 = g_memory.MapVirtual(thread);
@@ -37,6 +37,7 @@ GuestThreadContext::GuestThreadContext(uint32_t cpuNumber)
 
 GuestThreadContext::~GuestThreadContext()
 {
+    g_ppcContext=nullptr;
     g_userHeap.Free(thread);
 }
 
@@ -71,39 +72,55 @@ static void* GuestThreadFunc(void* arg)
 static void GuestThreadFunc(GuestThreadHandle* hThread)
 {
 #endif
+    KernelObjects::SetCurrentThread(hThread);
     hThread->suspended.wait(true);
     GuestThread::Start(hThread->params);
+    hThread->completed=true;
+    auto* header=static_cast<XDISPATCHER_HEADER*>(g_memory.Translate(hThread->guestBody));
+    std::atomic_ref<uint32_t>(header->SignalState.value).store(ByteSwap(uint32_t(1)));
+    hThread->completed.notify_all();
+    KernelObjects::SetCurrentThread(nullptr);
+    KernelObjects::Dereference(hThread->guestBody);
 #ifdef USE_PTHREAD
     return nullptr;
 #endif
 }
 
-GuestThreadHandle::GuestThreadHandle(const GuestThreadParams& params)
-    : params(params), suspended((params.flags & 0x1) != 0)
-#ifdef USE_PTHREAD
+GuestThreadHandle::GuestThreadHandle(const GuestThreadParams& params, bool external)
+    : KernelObject(KernelObjects::Type::Thread,TEB_SIZE), params(params),
+      suspended((params.flags & 0x1) != 0), external(external)
 {
+    static_cast<XDISPATCHER_HEADER*>(g_memory.Translate(guestBody))->Type=6;
+}
+
+void GuestThreadHandle::OnRegistered()
+{
+    if(external) return;
+    // The running thread owns a reference independent of all user handles.
+    if(!KernelObjects::ReferenceBody(guestBody)) throw std::bad_alloc();
+#ifdef USE_PTHREAD
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, GetStackSize());
-    const auto ret = pthread_create(&thread, &attr, GuestThreadFunc, this);
-    if (ret != 0) {
-        fprintf(stderr, "pthread_create failed with error code 0x%X.\n", ret);
-        return;
-    }
-}
+    const auto ret=pthread_create(&thread,&attr,GuestThreadFunc,this);
+    pthread_attr_destroy(&attr);
+    if(ret) { KernelObjects::Dereference(guestBody); throw std::runtime_error("pthread_create failed"); }
 #else
-      , thread(GuestThreadFunc, this)
-{
-}
+    try { thread=std::thread(GuestThreadFunc,this); }
+    catch(...) { KernelObjects::Dereference(guestBody); throw; }
 #endif
+}
 
 GuestThreadHandle::~GuestThreadHandle()
 {
 #ifdef USE_PTHREAD
-    pthread_join(thread, nullptr);
+    if(!external) { if(pthread_equal(thread,pthread_self())) pthread_detach(thread); else pthread_join(thread,nullptr); }
 #else
     if (thread.joinable())
-        thread.join();
+    {
+        if(thread.get_id()==std::this_thread::get_id()) thread.detach();
+        else thread.join();
+    }
 #endif
 }
 
@@ -127,15 +144,9 @@ uint32_t GuestThreadHandle::GetThreadId() const
 
 uint32_t GuestThreadHandle::Wait(uint32_t timeout)
 {
-    assert(timeout == INFINITE);
-
-#ifdef USE_PTHREAD
-    pthread_join(thread, nullptr);
-#else
-    if (thread.joinable())
-        thread.join();
-#endif
-
+    if(timeout==0) return completed ? STATUS_WAIT_0 : STATUS_TIMEOUT;
+    if(timeout!=INFINITE) return 0xC0000002;
+    completed.wait(false);
     return STATUS_WAIT_0;
 }
 
@@ -144,7 +155,25 @@ uint32_t GuestThread::Start(const GuestThreadParams& params)
     const auto procMask = (uint8_t)(params.flags >> 24);
     const auto cpuNumber = procMask == 0 ? 0 : 7 - std::countl_zero(procMask);
 
-    GuestThreadContext ctx(cpuNumber);
+    if(!KernelObjects::CurrentThread())
+    {
+        // Initial title execution also has a real guest thread body.
+        auto* initial=CreateKernelObject<GuestThreadHandle>(params,true);
+        const auto handle=initial->handle;
+        auto keepAlive=KernelObjects::Acquire(handle);
+        KernelObjects::SetCurrentThread(initial);
+        struct Cleanup
+        {
+            uint32_t handle;
+            ~Cleanup() { KernelObjects::SetCurrentThread(nullptr); KernelObjects::Close(handle); }
+        } cleanup{handle};
+        const auto result=Start(params);
+        initial->completed=true;
+        static_cast<XDISPATCHER_HEADER*>(g_memory.Translate(initial->guestBody))->SignalState=1;
+        initial->completed.notify_all();
+        return result;
+    }
+    GuestThreadContext ctx(cpuNumber,KernelObjects::CurrentThread()->guestBody);
     ctx.ppcContext.r3.u64 = params.value;
 
     g_memory.FindFunction(params.function)(ctx.ppcContext, g_memory.base);
@@ -183,7 +212,7 @@ void GuestThread::SetLastError(uint32_t error)
     }
 
     // TEB + 0x160 : Win32LastError
-    *(uint32_t*)(thread + TEB_OFFSET + 0x160) = ByteSwap(error);
+    *static_cast<be<uint32_t>*>(g_memory.Translate(ByteSwap(*(uint32_t*)(thread+0x100))+0x160)) = error;
 }
 
 #ifdef _WIN32

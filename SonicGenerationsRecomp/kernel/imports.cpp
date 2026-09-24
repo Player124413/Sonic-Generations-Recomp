@@ -20,149 +20,9 @@
 #include <ntstatus.h>
 #endif
 
-struct Event final : KernelObject, HostObject<XKEVENT>
-{
-    bool manualReset;
-    std::atomic<bool> signaled;
-
-    Event(XKEVENT* header)
-        : manualReset(!header->Type), signaled(!!header->SignalState)
-    {
-    }
-
-    Event(bool manualReset, bool initialState)
-        : manualReset(manualReset), signaled(initialState)
-    {
-    }
-
-    uint32_t Wait(uint32_t timeout) override
-    {
-        if (timeout == 0)
-        {
-            if (manualReset)
-            {
-                if (!signaled)
-                    return STATUS_TIMEOUT;
-            }
-            else
-            {
-                bool expected = true;
-                if (!signaled.compare_exchange_strong(expected, false))
-                    return STATUS_TIMEOUT;
-            }
-        }
-        else if (timeout == INFINITE)
-        {
-            if (manualReset)
-            {
-                signaled.wait(false);
-            }
-            else
-            {
-                while (true)
-                {
-                    bool expected = true;
-                    if (signaled.compare_exchange_weak(expected, false))
-                        break;
-
-                    signaled.wait(expected);
-                }
-            }
-        }
-        else
-        {
-            assert(false && "Unhandled timeout value.");
-        }
-
-        return STATUS_SUCCESS;
-    }
-
-    bool Set()
-    {
-        signaled = true;
-
-        if (manualReset)
-            signaled.notify_all();
-        else
-            signaled.notify_one();
-
-        return TRUE;
-    }
-
-    bool Reset()
-    {
-        signaled = false;
-        return TRUE;
-    }
-};
+#include "dispatcher_objects.h"
 
 static std::atomic<uint32_t> g_keSetEventGeneration;
-
-struct Semaphore final : KernelObject, HostObject<XKSEMAPHORE>
-{
-    std::atomic<uint32_t> count;
-    uint32_t maximumCount;
-
-    Semaphore(XKSEMAPHORE* semaphore)
-        : count(semaphore->Header.SignalState), maximumCount(semaphore->Limit)
-    {
-    }
-
-    Semaphore(uint32_t count, uint32_t maximumCount)
-        : count(count), maximumCount(maximumCount)
-    {
-    }
-
-    uint32_t Wait(uint32_t timeout) override
-    {
-        if (timeout == 0)
-        {
-            uint32_t currentCount = count.load();
-            if (currentCount != 0)
-            {
-                if (count.compare_exchange_weak(currentCount, currentCount - 1))
-                    return STATUS_SUCCESS;
-            }
-
-            return STATUS_TIMEOUT;
-        }
-        else if (timeout == INFINITE)
-        {
-            uint32_t currentCount;
-            while (true)
-            {
-                currentCount = count.load();
-                if (currentCount != 0)
-                {
-                    if (count.compare_exchange_weak(currentCount, currentCount - 1))
-                        return STATUS_SUCCESS;
-                }
-                else
-                {
-                    count.wait(0);
-                }
-            }
-
-            return STATUS_SUCCESS;
-        }
-        else
-        {
-            assert(false && "Unhandled timeout value.");
-            return STATUS_TIMEOUT;
-        }
-    }
-
-    void Release(uint32_t releaseCount, uint32_t* previousCount)
-    {
-        if (previousCount != nullptr)
-            *previousCount = count;
-
-        assert(count + releaseCount <= maximumCount);
-
-        count += releaseCount;
-        count.notify_all();
-    }
-};
 
 inline void CloseKernelObject(XDISPATCHER_HEADER& header)
 {
@@ -336,19 +196,7 @@ void RtlInitAnsiString(XANSI_STRING* destination, char* source)
 
 uint32_t NtClose(uint32_t handle)
 {
-    if (handle == GUEST_INVALID_HANDLE_VALUE)
-        return 0xFFFFFFFF;
-
-    if (IsKernelObject(handle))
-    {
-        DestroyKernelObject(handle);
-        return 0;
-    }
-    else
-    {
-        assert(false && "Unrecognized kernel object.");
-        return 0xFFFFFFFF;
-    }
+    return KernelObjects::Close(handle) ? 0 : 0xC0000008;
 }
 
 
@@ -362,16 +210,8 @@ uint32_t NtWaitForSingleObjectEx(uint32_t Handle, uint32_t WaitMode, uint32_t Al
     uint32_t timeout = GuestTimeoutToMilliseconds(Timeout);
     assert(timeout == 0 || timeout == INFINITE);
 
-    if (IsKernelObject(Handle))
-    {
-        return GetKernelObject(Handle)->Wait(timeout);
-    }
-    else
-    {
-        assert(false && "Unrecognized handle value.");
-    }
-
-    return STATUS_TIMEOUT;
+    auto object=KernelObjects::Acquire(Handle);
+    return object ? object->Wait(timeout) : 0xC0000008;
 }
 
 
@@ -451,6 +291,7 @@ void MmQueryStatistics()
 
 uint32_t NtCreateEvent(be<uint32_t>* handle, void* objAttributes, uint32_t eventType, uint32_t initialState)
 {
+    if(!handle || eventType>1) return 0xC000000D;
     *handle = GetKernelHandle(CreateKernelObject<Event>(!eventType, !!initialState));
     return 0;
 }
@@ -526,9 +367,9 @@ void ExFreePool()
 
 
 
-void ObDereferenceObject()
+void ObDereferenceObject(uint32_t body)
 {
-    LOG_UTILITY("!!! STUB !!!");
+    KernelObjects::Dereference(body);
 }
 
 void KeSetBasePriorityThread(GuestThreadHandle* hThread, int priority)
@@ -549,8 +390,11 @@ void KeSetBasePriorityThread(GuestThreadHandle* hThread, int priority)
 
 uint32_t ObReferenceObjectByHandle(uint32_t handle, uint32_t objectType, be<uint32_t>* object)
 {
-    *object = handle;
-    return 0;
+    if(!object) return 0xC000000D;
+    uint32_t body=0;
+    const auto status=KernelObjects::Reference(handle,objectType,body);
+    *object=body;
+    return status;
 }
 
 void KeQueryBasePriorityThread()
@@ -560,7 +404,7 @@ void KeQueryBasePriorityThread()
 
 uint32_t NtSuspendThread(GuestThreadHandle* hThread, uint32_t* suspendCount)
 {
-    assert(hThread != GetKernelObject(CURRENT_THREAD_HANDLE) && hThread->GetThreadId() == GuestThread::GetCurrentThreadId());
+    if(hThread!=KernelObjects::CurrentThread()) return 0xC0000002; // remote suspension needs a scheduler safepoint
 
     hThread->suspended = true;
     hThread->suspended.wait(true);
@@ -831,19 +675,20 @@ bool KeResetEvent(XKEVENT* pEvent)
 uint32_t KeWaitForSingleObject(XDISPATCHER_HEADER* Object, uint32_t WaitReason, uint32_t WaitMode, bool Alertable, be<int64_t>* Timeout)
 {
     const uint32_t timeout = GuestTimeoutToMilliseconds(Timeout);
-    assert(timeout == INFINITE);
-
     switch (Object->Type)
     {
         case 0:
         case 1:
-            QueryKernelObject<Event>(*Object)->Wait(timeout);
-            break;
+            return QueryKernelObject<Event>(*Object)->Wait(timeout);
 
         case 5:
-            QueryKernelObject<Semaphore>(*Object)->Wait(timeout);
-            break;
+            return QueryKernelObject<Semaphore>(*Object)->Wait(timeout);
 
+        case 6:
+        {
+            auto thread=KernelObjects::AcquireBody(g_memory.MapVirtual(Object));
+            return thread ? thread->Wait(timeout) : 0xC0000008;
+        }
         default:
             assert(false && "Unrecognized kernel object type.");
             return STATUS_TIMEOUT;
@@ -1113,9 +958,8 @@ uint32_t NtClearEvent(Event* handle, uint32_t* previousState)
 
 uint32_t NtResumeThread(GuestThreadHandle* hThread, uint32_t* suspendCount)
 {
-    assert(hThread != GetKernelObject(CURRENT_THREAD_HANDLE));
-
-    hThread->suspended = false;
+    const auto previous=hThread->suspended.exchange(false);
+    if(suspendCount) *suspendCount=ByteSwap(uint32_t(previous));
     hThread->suspended.notify_all();
 
     return S_OK;
@@ -1129,6 +973,7 @@ uint32_t NtSetEvent(Event* handle, uint32_t* previousState)
 
 uint32_t NtCreateSemaphore(be<uint32_t>* Handle, XOBJECT_ATTRIBUTES* ObjectAttributes, uint32_t InitialCount, uint32_t MaximumCount)
 {
+    if(!Handle || !MaximumCount || MaximumCount>INT32_MAX || InitialCount>MaximumCount) return 0xC000000D;
     *Handle = GetKernelHandle(CreateKernelObject<Semaphore>(InitialCount, MaximumCount));
     return STATUS_SUCCESS;
 }
@@ -1224,9 +1069,9 @@ void IoInvalidDeviceRequest()
     LOG_UTILITY("!!! STUB !!!");
 }
 
-void ObReferenceObject()
+void ObReferenceObject(uint32_t body)
 {
-    LOG_UTILITY("!!! STUB !!!");
+    KernelObjects::ReferenceBody(body);
 }
 
 void IoCreateDevice()
@@ -1359,11 +1204,9 @@ uint32_t XAudioGetVoiceCategoryVolumeChangeMask(uint32_t Driver, be<uint32_t>* M
 
 uint32_t KeResumeThread(GuestThreadHandle* object)
 {
-    assert(object != GetKernelObject(CURRENT_THREAD_HANDLE));
-
-    object->suspended = false;
+    const auto previous=object->suspended.exchange(false);
     object->suspended.notify_all();
-    return 0;
+    return previous;
 }
 
 void KeInitializeSemaphore(XKSEMAPHORE* semaphore, uint32_t count, uint32_t limit)

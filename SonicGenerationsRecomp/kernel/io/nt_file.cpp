@@ -633,12 +633,11 @@ uint32_t NtQueryVolumeInformationFile(uint32_t handle, XIO_STATUS_BLOCK* ioStatu
 uint32_t NtDuplicateObject(uint32_t sourceHandle, be<uint32_t>* targetHandle,
     uint32_t desiredAccess, uint32_t handleAttributes, uint32_t options)
 {
-    // Handles are direct object pointers in this runtime; duplicating simply
-    // copies the value. Object lifetime is managed by NtClose on the last
-    // user, which is sufficient for the title's usage.
-    if (targetHandle)
-        *targetHandle = sourceHandle;
-    return STATUS_SUCCESS;
+    if(!targetHandle || (options & ~3u)) return STATUS_INVALID_PARAMETER;
+    uint32_t destination=0;
+    const auto status=KernelObjects::Duplicate(sourceHandle,destination,(options&1)!=0);
+    *targetHandle=destination;
+    return status;
 }
 
 // ---------------------------------------------------------------------------

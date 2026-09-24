@@ -6,29 +6,28 @@ Mutex g_kernelLock;
 
 void DestroyKernelObject(KernelObject* obj)
 {
-    obj->~KernelObject();
-    g_userHeap.Free(obj);
+    if(obj) KernelObjects::Close(obj->handle);
 }
 
 uint32_t GetKernelHandle(KernelObject* obj)
 {
     assert(obj != GetInvalidKernelObject());
-    return g_memory.MapVirtual(obj);
+    return obj ? obj->handle : 0;
 }
 
 void DestroyKernelObject(uint32_t handle)
 {
-    DestroyKernelObject(GetKernelObject(handle));
+    KernelObjects::Close(handle);
 }
 
 bool IsKernelObject(uint32_t handle)
 {
-    return (handle & 0x80000000) != 0;
+    return bool(KernelObjects::Acquire(handle));
 }
 
 bool IsKernelObject(void* obj)
 {
-    return IsKernelObject(g_memory.MapVirtual(obj));
+    return obj && g_memory.IsInMemoryRange(obj) && IsKernelObject(g_memory.MapVirtual(obj));
 }
 
 bool IsInvalidKernelObject(void* obj)

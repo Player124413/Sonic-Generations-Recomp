@@ -1,0 +1,32 @@
+name: Kernel object bodies and lifetime
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'SonicGenerationsRecomp/kernel/**'
+      - 'SonicGenerationsRecomp/cpu/**'
+      - 'tests/kernel_objects/**'
+      - '.github/workflows/kernel-objects.yml'
+permissions:
+  contents: read
+jobs:
+  objects:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Dependencies
+        run: |
+          git submodule update --init tools/XenonRecomp tools/XenosRecomp
+          git -C tools/XenonRecomp submodule update --init thirdparty/fmt thirdparty/simde
+          git -C tools/XenosRecomp submodule update --init thirdparty/xxHash
+          sudo apt-get update
+          sudo apt-get install -y clang ninja-build libsdl2-dev
+      - name: Configure and build isolated real object manager
+        run: |
+          cmake -S tests/kernel_objects -B build-objects -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-objects --parallel 2
+      - name: Guest bodies, types, close, duplicate, references, concurrency and threads
+        run: ctest --test-dir build-objects --output-on-failure

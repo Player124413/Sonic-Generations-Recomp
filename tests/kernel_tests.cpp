@@ -205,12 +205,20 @@ static void TestXexImportBinding()
     CHECK(XexGetModuleHandle("not-the-title.xex",&handle)!=0 && handle==0);
     CHECK(XexGetModuleHandle(nullptr,nullptr)!=0);
 
+    for(auto ordinal : {0xEu,0x17u,0x1Bu})
+    {
+        raw[2]=ordinal;
+        CHECK(xex_module::BindImports(bytes,image,error));
+        CHECK(guest[2]==xex_module::VariableAddress(ordinal) && guest[2]!=0);
+    }
+    raw[2]=0xAD;
+
     // Failed plans must not partially patch the first, otherwise valid record.
     guest[0]=guest[1]=guest[2]=0xDEADBEEF;
     raw[2]=0xFFFF;
     CHECK(!xex_module::BindImports(bytes,image,error) && !error.empty());
     CHECK(guest[0]==0xDEADBEEF && guest[1]==0xDEADBEEF && guest[2]==0xDEADBEEF);
-    raw[2]=0x1B; // known variable, but no implemented object-type ABI
+    raw[2]=0x3E; // file body/type is not implemented yet
     CHECK(!xex_module::BindImports(bytes,image,error));
     raw[2]=0xAD;
     store(0x8C,slot); // duplicate destination

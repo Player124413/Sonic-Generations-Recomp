@@ -4,6 +4,7 @@
 #include <array>
 #include "xbox.h"
 #include "memory.h"
+#include "xdm.h"
 
 template <typename R, typename... T>
 constexpr std::tuple<T...> function_args(R(*)(T...)) noexcept
@@ -147,9 +148,17 @@ struct ArgTranslator
         const auto v = GetIntegerArgumentValue(ctx, base, idx);
         if (!v)
         {
+            if constexpr (std::is_base_of_v<KernelObject,std::remove_pointer_t<T>>)
+                KernelObjects::InvalidArgument();
             return nullptr;
         }
 
+        if constexpr (std::is_base_of_v<KernelObject,std::remove_pointer_t<T>>)
+        {
+            auto* object=dynamic_cast<T>(KernelObjects::Pin(static_cast<uint32_t>(v)));
+            if(!object) KernelObjects::InvalidArgument();
+            return object;
+        }
         return reinterpret_cast<T>(base + static_cast<uint32_t>(v));
     }
 
@@ -274,8 +283,10 @@ PPC_FUNC(HostToGuestFunction)
 {
     using ret_t = decltype(std::apply(Func, function_args(Func)));
 
+    KernelObjects::CallScope objectScope;
     auto args = function_args(Func);
     _translate_args_to_host<Func>(ctx, base, args);
+    if(objectScope.invalid) { ctx.r3.u64=0xC0000008; return; }
 
     if constexpr (std::is_same_v<ret_t, void>)
     {
