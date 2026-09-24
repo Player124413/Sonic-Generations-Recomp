@@ -266,7 +266,7 @@ static void NativeMultiStreamTests(SDL_Window* window)
         v.bytes.resize(data.size()*4); std::memcpy(v.bytes.data(),data.data(),v.bytes.size());
         draw.resources.vertices.push_back(std::move(v)); draw.state.words[12812/4+stream]=resource;
     };
-    add(3,16,0x7400,{99,88,0.75f,0.75f, 99,88,0.75f,0.75f, 99,88,0.75f,0.75f});
+    add(3,16,0x7400,{0.25f,0.25f,0.75f,0.75f, 0.25f,0.25f,0.75f,0.75f, 0.25f,0.25f,0.75f,0.75f});
     add(7,12,0x7440,{42,-1,-1, 42,3,-1, 42,-1,3});
     auto& texture=draw.resources.textures[0];
     texture.resource=0x7480; texture.physical=0x200000;
@@ -294,6 +294,12 @@ static void NativeMultiStreamTests(SDL_Window* window)
         CHECK(pixels[0]==0 && pixels[1]==255 && pixels[2]==0);
     };
     render(batch);
+    auto lastSlot=batch;
+    lastSlot.draws[0].resources.vertices[1].stream=15;
+    lastSlot.draws[0].resources.declaration[0].stream=15;
+    lastSlot.draws[0].state.words[12812/4+7]=0;
+    lastSlot.draws[0].state.words[12812/4+15]=0x7440;
+    render(lastSlot);
     auto based=batch;
     for(auto& v:based.draws[0].resources.vertices) v.bytes.insert(v.bytes.begin(),v.stride,0);
     based.draws[0].arguments[1]=1; payload(based.draws[0]); render(based);
