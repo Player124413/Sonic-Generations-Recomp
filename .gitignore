@@ -6,6 +6,7 @@ dist/
 cmake-build-*/
 
 # User game data (never commit)
+assets/
 default.xex
 default.xexp
 default_patched.xex

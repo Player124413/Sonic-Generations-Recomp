@@ -92,8 +92,8 @@ jobs:
           Download **windows-x64-diagnostic-runtime** from this run's Artifacts section.
           Extract the entire ZIP, then double-click **Launcher.cmd**.
           Select your own Xbox 360 ISO/XISO or dump folder and click **Install / extract**.
-          Game files: `%LOCALAPPDATA%\SonicGenerationsRecomp`; saves: `save\SYS-DATA` inside it.
-          For portable storage, create `portable.txt` beside the EXE **before** installation.
+          Game files: `assets` beside the EXE; saves: `assets\save\SYS-DATA`.
+          No portable marker is required. Keep the extracted runtime folder writable.
           Generated PPC and the supplied SPIR-V cache are already build inputs; no game upload is needed.
           Logs: `diagnostics` beside the EXE. This is a diagnostic runtime, not confirmed playable.
           '@ | Add-Content $env:GITHUB_STEP_SUMMARY

@@ -2,22 +2,19 @@
 
 #include <filesystem>
 
-#define USER_DIRECTORY "SonicGenerationsRecomp"
-
 extern std::filesystem::path g_executableRoot;
 
-bool CheckPortable();
 std::filesystem::path BuildUserPath();
 const std::filesystem::path& GetUserPath();
 
 inline std::filesystem::path GetGamePath()
 {
     // Never embed a build runner's source directory in a distributed binary.
-    // portable.txt selects the executable directory; otherwise use user storage.
+    // Game resources, configuration and saves live in assets beside the EXE.
     return GetUserPath();
 }
 
-inline std::filesystem::path GetSavePath(bool checkForMods = false)
+inline std::filesystem::path GetSavePath([[maybe_unused]] bool checkForMods = false)
 {
     return GetUserPath() / "save";
 }

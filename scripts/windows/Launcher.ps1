@@ -2,10 +2,7 @@ param([switch]$SelfTest)
 $ErrorActionPreference = 'Stop'
 
 function Get-GameDirectory([string]$Root) {
-    if (Test-Path -LiteralPath (Join-Path $Root 'portable.txt')) { return $Root }
-    $local = [Environment]::GetFolderPath('LocalApplicationData')
-    if ([string]::IsNullOrEmpty($local)) { return Join-Path $Root 'SonicGenerationsRecomp' }
-    return Join-Path $local 'SonicGenerationsRecomp'
+    return Join-Path $Root 'assets'
 }
 function Quote-NativeArgument([string]$Value) {
     # Windows CRT argument rules, not cmd.exe quoting. Preserve trailing slashes.
@@ -18,10 +15,10 @@ if ($SelfTest) {
     $root = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
     try {
         [IO.Directory]::CreateDirectory($root) | Out-Null
-        $expected = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'SonicGenerationsRecomp'
-        if ((Get-GameDirectory $root) -ne $expected) { throw 'User storage path mismatch' }
+        $expected = Join-Path $root 'assets'
+        if ((Get-GameDirectory $root) -ne $expected) { throw 'Assets storage path mismatch' }
         [IO.File]::WriteAllText((Join-Path $root 'portable.txt'), '')
-        if ((Get-GameDirectory $root) -ne $root) { throw 'Portable storage path mismatch' }
+        if ((Get-GameDirectory $root) -ne $expected) { throw 'Legacy marker must not change assets path' }
     } finally { if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force } }
     Write-Output 'Launcher argument and storage-path tests passed'
     exit 0

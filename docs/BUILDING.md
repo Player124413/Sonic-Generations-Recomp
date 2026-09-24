@@ -41,9 +41,10 @@ ctest --preset linux-vulkan
 ./build/linux-vulkan/SonicGenerationsRecomp/SonicGenerationsRecomp --install /path/to/dump --update /path/to/default.xexp
 ```
 
-Файлы копируются в пользовательское хранилище (`GetUserPath`). Чтобы хранить
-их рядом с executable, создайте там `portable.txt` **до установки**. Старые
-установки в корне исходников автоматически не перемещаются.
+Файлы копируются в `assets` рядом с executable (`GetUserPath`), сохранение —
+в `assets/save/SYS-DATA`. Папка рантайма должна быть доступна для записи;
+`portable.txt` не требуется и не меняет путь. Старые установки автоматически
+не перемещаются; инструкции переноса — в [Windows guide](TESTING_WINDOWS.md).
 Проверка: `--check`. Запуск: без аргументов.
 
 ## Регенерация ppc/ (опционально)

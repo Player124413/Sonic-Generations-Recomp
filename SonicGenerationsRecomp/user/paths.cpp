@@ -1,9 +1,8 @@
-#include <stdafx.h>
 #include "paths.h"
-#include <os/logger.h>
+#include <iterator>
 
 #ifdef _WIN32
-#include <ShlObj.h>
+#include <Windows.h>
 #elif defined(__APPLE__)
 #include <CoreFoundation/CFBundle.h>
 #include <mach-o/dyld.h>
@@ -32,37 +31,11 @@ static std::filesystem::path GetExecutableRoot()
     return result.parent_path();
 }
 
-bool CheckPortable()
-{
-    std::error_code ec;
-    return std::filesystem::exists(g_executableRoot / "portable.txt", ec);
-}
-
 std::filesystem::path BuildUserPath()
 {
-    if (CheckPortable())
-        return g_executableRoot;
-
-#ifdef _WIN32
-    wchar_t* buffer;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &buffer)))
-    {
-        std::filesystem::path path = buffer;
-        CoTaskMemFree(buffer);
-        return path / USER_DIRECTORY;
-    }
-#elif defined(__APPLE__)
-    if (const char* home = std::getenv("HOME"))
-        return std::filesystem::path(home) / "Library" / "Application Support" / USER_DIRECTORY;
-#else
-    if (const char* xdg = std::getenv("XDG_DATA_HOME"))
-        return std::filesystem::path(xdg) / USER_DIRECTORY;
-
-    if (const char* home = std::getenv("HOME"))
-        return std::filesystem::path(home) / ".local" / "share" / USER_DIRECTORY;
-#endif
-
-    return g_executableRoot / USER_DIRECTORY;
+    // The entire installation travels with the runtime. Never depend on CWD,
+    // a per-user storage directory, or the legacy portable.txt marker.
+    return g_executableRoot / "assets";
 }
 
 const std::filesystem::path& GetUserPath()
