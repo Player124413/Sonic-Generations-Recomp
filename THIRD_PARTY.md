@@ -108,3 +108,20 @@ semantics researched in Xenia's `src/xenia/kernel/xmodule.h` and
 contributors). See `licenses/Xenia-BSD.txt` and `docs/XEX_IMPORT_BINDING.md`.
 The separately compiled runtime decoder uses the pinned XenonRecomp source;
 it does not replace or modify the CPU generation tool.
+
+
+## ReXGlue migration target (optional, Windows)
+
+`rex/` consumes the official ReXGlue SDK 0.10.0, commit
+`f5337cdc947ff6d4c4196737e2c807a48f2a1fc2` (BSD-3-Clause, includes Xenia-derived
+work). See `licenses/ReXGlue-BSD-3-Clause.txt` and the SDK's own third-party
+notices/source dependencies at https://github.com/rexglue/rexglue-sdk/tree/v0.10.0.
+The workflow verifies the Windows SDK archive SHA256 recorded in
+`rex/dependencies.json` and retains its share directory/notices when packaging.
+
+The optional game-build candidate is generated Sonic PPC from the user's
+reference repository at the commit recorded in that JSON, not a new SDK
+implementation. It is fetched externally, not copied into this checkout.
+Compatibility with the official SDK and redistribution obligations of the
+complete final package must not be inferred from the forwarding contract test.
+No Plume code/dependency has been added at this stage.

@@ -1,0 +1,15 @@
+{
+  "sdk": {
+    "repository": "rexglue/rexglue-sdk",
+    "tag": "v0.10.0",
+    "commit": "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2",
+    "windows_asset": "rexglue-sdk-0.10.0-win-amd64.zip",
+    "sha256": "ad4485da853fbe932e9f5dbb643f9b5fe85dc73775ebbad4df6879fe6df0c11b"
+  },
+  "generated_candidate": {
+    "repository": "Player124413/Sonic-Generations-recomp-android-and-pc-edition",
+    "commit": "a163e7d5cb9464056d8e34ab55f84fe38459a979",
+    "directory": "port/generated/default",
+    "compatibility_with_official_sdk": "unverified; modified SDK used by the source project"
+  }
+}

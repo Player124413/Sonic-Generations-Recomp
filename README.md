@@ -1,5 +1,12 @@
 # Sonic Generations Recompiled (Xbox 360)
 
+> **Новый курс разработки:** Windows x64, ядро/XMA/ввод/VFS от ReXGlue,
+> собственная графика поверх Vulkan. Отдельный миграционный target и честный
+> статус этапов: [rex/README.md](rex/README.md). Штатный Xenos сохраняется как
+> reference до проверки native/shadow пути. Ниже описан прежний собственный
+> runtime; его зелёные тесты не являются проверкой новой архитектуры.
+
+
 рекомпиляция (static recompilation) **Xbox 360** версии *Sonic Generations*
 в нативное приложение для PC — по образцу
 [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp)
