@@ -48,7 +48,7 @@ jobs:
           ctest --test-dir build-rex-contract -C Release --output-on-failure --timeout 30
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Read generated-code pin
-        if: inputs.build_game
+        if: github.event_name == 'push' || inputs.build_game
         id: source
         run: |
           $pins = Get-Content rex/dependencies.json -Raw | ConvertFrom-Json
@@ -56,7 +56,7 @@ jobs:
           "commit=$($pins.generated_candidate.commit)" | Add-Content $env:GITHUB_OUTPUT
           "directory=$($pins.generated_candidate.directory)" | Add-Content $env:GITHUB_OUTPUT
       - name: Fetch candidate PPC from the user's reference project
-        if: inputs.build_game
+        if: github.event_name == 'push' || inputs.build_game
         uses: actions/checkout@v4
         with:
           repository: ${{ steps.source.outputs.repository }}
@@ -65,21 +65,24 @@ jobs:
           sparse-checkout: ${{ steps.source.outputs.directory }}
           persist-credentials: false
       - name: Configure the separate game host
-        if: inputs.build_game
+        if: github.event_name == 'push' || inputs.build_game
         run: >-
           cmake -S rex -B build-rex-game -G "Visual Studio 17 2022" -A x64 -T ClangCL
           "-DCMAKE_PREFIX_PATH=$env:REXSDK_PREFIX" -DSONIC_REX_BUILD_GAME=ON
           "-DSONIC_REX_GENERATED_DIR=${{ github.workspace }}/build-rex-source/${{ steps.source.outputs.directory }}"
+      - name: Compile real host and first generated TU before the full game
+        if: github.event_name == 'push' || inputs.build_game
+        run: cmake --build build-rex-game --config Release --target sonic_rex_api_probe --parallel 2
       - name: Build the candidate (fail on incompatible generated ABI)
-        if: inputs.build_game
+        if: github.event_name == 'push' || inputs.build_game
         run: cmake --build build-rex-game --config Release --parallel 2
       - name: Game host CLI smoke test (not a game boot)
-        if: inputs.build_game
+        if: github.event_name == 'push' || inputs.build_game
         run: |
           & ./build-rex-game/Release/SonicGenerationsRecomp-ReXGlue.exe --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Stage reference-path package
-        if: inputs.build_game
+        if: github.event_name == 'push' || inputs.build_game
         run: |
           New-Item -ItemType Directory package-rex | Out-Null
           Copy-Item build-rex-game/Release/SonicGenerationsRecomp-ReXGlue.exe package-rex/
@@ -92,7 +95,7 @@ jobs:
           Get-ChildItem "$env:REXSDK_PREFIX" -File | Where-Object { $_.Name -match 'LICENSE|COPYING|NOTICE' } | Copy-Item -Destination package-rex/
           git rev-parse HEAD | Set-Content package-rex/revision.txt
       - uses: actions/upload-artifact@v4
-        if: inputs.build_game
+        if: github.event_name == 'push' || inputs.build_game
         with:
           name: windows-x64-rexglue-reference-candidate
           path: package-rex/
