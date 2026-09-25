@@ -337,10 +337,10 @@ static void TestXexImportBinding()
     CHECK(guest[0]==0xDEADBEEF && guest[1]==0xDEADBEEF && guest[2]==0xDEADBEEF);
     raw[2]=0x3E; // file body/type is not implemented yet
     CHECK(!xex_module::BindImports(bytes,image,error));
-    raw[1]=0x156; // another unsupported variable; collect both, no partial writes
+    raw[1]=0x157; // another unsupported variable; collect both, no partial writes
     CHECK(!xex_module::BindImports(bytes,image,error));
     CHECK(error.find("IoFileObjectType")!=std::string::npos);
-    CHECK(error.find("XboxHardwareInfo")!=std::string::npos);
+    CHECK(error.find("XboxKrnlBaseVersion")!=std::string::npos);
     CHECK(guest[0]==0xDEADBEEF && guest[1]==0xDEADBEEF && guest[2]==0xDEADBEEF);
     raw[1]=0x266;
     raw[2]=0xAD;
@@ -431,6 +431,100 @@ static void TestXexImportBinding()
     CHECK(guest[0]==0xDEADBEEF && guest[1]==0xDEADBEEF && guest[2]==0xDEADBEEF);
 }
 
+static void TestObservedTitleImports()
+{
+    struct Entry { const char* library; uint32_t ordinal; bool variable; uint32_t iat,thunk; const char* name; };
+#define TITLE_IMPORT(lib, ord, variable, iat, thunk, name) {lib,ord,variable,iat,thunk,#name},
+    const Entry entries[]={
+#include "fixtures/observed_title_imports.inc"
+    };
+#undef TITLE_IMPORT
+    static_assert(std::size(entries)==231);
+    Image image; image.base=PPC_IMAGE_BASE; image.size=PPC_IMAGE_SIZE; image.entry_point=PPC_CODE_BASE;
+    image.data=std::make_unique<uint8_t[]>(image.size);
+    // Reconstruct only import metadata; no proprietary XEX or code is in this fixture.
+    std::vector<uint8_t> directory(44); // header + padded string table
+    auto store=[](auto& buffer,size_t offset,uint32_t value) {
+        for(size_t i=0;i<4;++i) buffer[offset+i]=uint8_t(value>>(24-8*i));
+    };
+    store(directory,4,32); store(directory,8,2);
+    std::memcpy(directory.data()+12,"xam.xex",8);
+    std::memcpy(directory.data()+20,"xboxkrnl.exe",13);
+    unsigned variables=0,functions=0;
+    for(unsigned library=0;library<2;++library)
+    {
+        const size_t start=directory.size(); directory.resize(start+40);
+        directory[start+37]=uint8_t(library);
+        uint16_t count=0;
+        auto record=[&](uint32_t address) {
+            const size_t at=directory.size(); directory.resize(at+4); store(directory,at,address); ++count;
+        };
+        for(const auto& e:entries)
+        {
+            if(std::strcmp(e.library,library==0 ? "xam.xex" : "xboxkrnl.exe")) continue;
+            record(e.iat);
+            *reinterpret_cast<be<uint32_t>*>(image.data.get()+e.iat-image.base)=e.ordinal;
+            *static_cast<be<uint32_t>*>(g_memory.Translate(e.iat))=0xDEADBEEF;
+            if(e.variable) ++variables;
+            else
+            {
+                ++functions; record(e.thunk);
+                *reinterpret_cast<be<uint32_t>*>(image.data.get()+e.thunk-image.base)=0x01000000|e.ordinal;
+            }
+        }
+        store(directory,start,uint32_t(directory.size()-start));
+        directory[start+38]=uint8_t(count>>8); directory[start+39]=uint8_t(count);
+    }
+    CHECK(variables==12 && functions==219);
+    store(directory,0,uint32_t(directory.size()));
+    std::vector<uint8_t> bytes(0x1400);
+    store(bytes,0,0x58455832); store(bytes,8,uint32_t(bytes.size()));
+    store(bytes,16,0x1000); store(bytes,20,2);
+    store(bytes,24,XEX_HEADER_ENTRY_POINT); store(bytes,28,uint32_t(PPC_CODE_BASE));
+    store(bytes,32,XEX_HEADER_IMPORT_LIBRARIES); store(bytes,36,0x40);
+    CHECK(directory.size()+0x40<0x1000);
+    std::memcpy(bytes.data()+0x40,directory.data(),directory.size());
+    CHECK(xex_module::RegisterImage(bytes,image));
+    std::string error,report;
+    CHECK(xex_module::AuditImports(bytes,image,report,error) && error.empty());
+    for(const auto& e:entries)
+    {
+        CHECK(*static_cast<be<uint32_t>*>(g_memory.Translate(e.iat))==0xDEADBEEF);
+        CHECK(report.find(e.name)!=std::string::npos);
+    }
+    CHECK(xex_module::BindImports(bytes,image,error) && error.empty());
+    for(const auto& e:entries)
+    {
+        const uint32_t target=*static_cast<be<uint32_t>*>(g_memory.Translate(e.iat));
+        CHECK(target!=0 && target==(e.variable ? xex_module::VariableAddress(e.ordinal) : e.thunk));
+    }
+    const auto version=xex_module::VariableAddress(0x158);
+    const auto hardware=xex_module::VariableAddress(0x156);
+    const auto command=xex_module::VariableAddress(0x1AE);
+    CHECK(version && hardware && command && version!=hardware && hardware!=command);
+    if(version && hardware && command)
+    {
+        constexpr uint8_t versionBytes[]={0,2,0xFF,0xFF,0xFF,0xFF,0x80,0};
+        CHECK(std::memcmp(g_memory.Translate(version),versionBytes,8)==0);
+        const auto* hw=static_cast<const uint8_t*>(g_memory.Translate(hardware));
+        CHECK(hw[0]==0 && hw[1]==0 && hw[2]==0 && hw[3]==0x20 && hw[4]==6);
+        for(size_t i=5;i<16;++i) CHECK(hw[i]==0);
+        auto* line=static_cast<char*>(g_memory.Translate(command));
+        CHECK(std::strcmp(line,"\"default.xex\"")==0);
+        for(size_t i=14;i<1024;++i) CHECK(line[i]==0);
+        line[0]='X'; // writable guest buffer, preserved across image registration
+        CHECK(xex_module::RegisterImage(bytes,image));
+        CHECK(xex_module::VariableAddress(0x158)==version && xex_module::VariableAddress(0x156)==hardware);
+        CHECK(xex_module::VariableAddress(0x1AE)==command && line[0]=='X');
+        line[0]='"';
+    }
+    // A late unsupported export must leave ALL preceding IAT slots unchanged.
+    for(const auto& e:entries) *static_cast<be<uint32_t>*>(g_memory.Translate(e.iat))=0xDEADBEEF;
+    *reinterpret_cast<be<uint32_t>*>(image.data.get()+entries[230].iat-image.base)=0xFFFF;
+    CHECK(!xex_module::BindImports(bytes,image,error));
+    for(const auto& e:entries) CHECK(*static_cast<be<uint32_t>*>(g_memory.Translate(e.iat))==0xDEADBEEF);
+}
+
 static void TestRtlFillMemoryUlongImport()
 {
     auto* memory=static_cast<uint8_t*>(g_userHeap.Alloc(16));
@@ -496,6 +590,7 @@ int main()
 
     TestXexRegistry();
     TestXexImportBinding();
+    TestObservedTitleImports();
     TestRuntimeDecoderImports();
     TestRtlFillMemoryUlongImport();
     TestHeap();

@@ -28,3 +28,6 @@ add_test(NAME title_function_import_inventory COMMAND "${Python3_EXECUTABLE}"
 
 add_test(NAME reference_title_metadata COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/test_reference_title_metadata.py")
+
+add_test(NAME observed_title_import_metadata COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_observed_title_imports.py")

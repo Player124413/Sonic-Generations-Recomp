@@ -1,0 +1,1861 @@
+{
+  "provenance": "User-supplied complete Import audit v1 report; metadata only. Function identities cross-checked against the compiled inventory.",
+  "xex_size": 8773632,
+  "xxh64": "BC88D51CE0755637",
+  "cryptographic_identity_verified": false,
+  "reported_binding_failures": [
+    "XboxKrnlVersion",
+    "XboxHardwareInfo",
+    "ExLoadedCommandLine"
+  ],
+  "imports": [
+    {
+      "library": "xam.xex",
+      "ordinal": "0x3D1",
+      "kind": "function",
+      "name": "XGetVideoMode",
+      "iat": "0x82000400",
+      "thunk": "0x8368F7D4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x28B",
+      "kind": "function",
+      "name": "XNotifyGetNext",
+      "iat": "0x82000404",
+      "thunk": "0x8368F7E4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x49E",
+      "kind": "function",
+      "name": "XGetVideoCapabilities",
+      "iat": "0x82000408",
+      "thunk": "0x8368F7F4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x3CC",
+      "kind": "function",
+      "name": "XGetGameRegion",
+      "iat": "0x8200040C",
+      "thunk": "0x8368F804"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2BC",
+      "kind": "function",
+      "name": "XamShowSigninUI",
+      "iat": "0x82000410",
+      "thunk": "0x8368F814"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2D5",
+      "kind": "function",
+      "name": "XamShowGamerCardUIForXUID",
+      "iat": "0x82000414",
+      "thunk": "0x8368F824"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2CB",
+      "kind": "function",
+      "name": "XamShowDeviceSelectorUI",
+      "iat": "0x82000418",
+      "thunk": "0x8368F834"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2CA",
+      "kind": "function",
+      "name": "XamShowMessageBoxUI",
+      "iat": "0x8200041C",
+      "thunk": "0x8368F844"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2D9",
+      "kind": "function",
+      "name": "XamShowDirtyDiscErrorUI",
+      "iat": "0x82000420",
+      "thunk": "0x8368F854"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1F7",
+      "kind": "function",
+      "name": "XMsgStartIORequest",
+      "iat": "0x82000424",
+      "thunk": "0x8368F864"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x20E",
+      "kind": "function",
+      "name": "XamUserGetName",
+      "iat": "0x82000428",
+      "thunk": "0x8368F874"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x210",
+      "kind": "function",
+      "name": "XamUserGetSigninState",
+      "iat": "0x8200042C",
+      "thunk": "0x8368F884"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x212",
+      "kind": "function",
+      "name": "XamUserCheckPrivilege",
+      "iat": "0x82000430",
+      "thunk": "0x8368F894"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x282",
+      "kind": "function",
+      "name": "XamGetSystemVersion",
+      "iat": "0x82000434",
+      "thunk": "0x8368F8A4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2F7",
+      "kind": "function",
+      "name": "XamUserCreateStatsEnumerator",
+      "iat": "0x82000438",
+      "thunk": "0x8368F8B4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2F5",
+      "kind": "function",
+      "name": "XamReadTileToTexture",
+      "iat": "0x8200043C",
+      "thunk": "0x8368F8C4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x30A",
+      "kind": "function",
+      "name": "XamParseGamerTileKey",
+      "iat": "0x82000440",
+      "thunk": "0x8368F8D4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x20A",
+      "kind": "function",
+      "name": "XamUserGetXUID",
+      "iat": "0x82000444",
+      "thunk": "0x8368F8E4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x259",
+      "kind": "function",
+      "name": "XamContentCreateEx",
+      "iat": "0x82000448",
+      "thunk": "0x8368F8F4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x25B",
+      "kind": "function",
+      "name": "XamContentDelete",
+      "iat": "0x8200044C",
+      "thunk": "0x8368F904"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x25A",
+      "kind": "function",
+      "name": "XamContentClose",
+      "iat": "0x82000450",
+      "thunk": "0x8368F914"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x262",
+      "kind": "function",
+      "name": "XamContentGetCreator",
+      "iat": "0x82000454",
+      "thunk": "0x8368F924"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x25C",
+      "kind": "function",
+      "name": "XamContentCreateEnumerator",
+      "iat": "0x82000458",
+      "thunk": "0x8368F934"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x265",
+      "kind": "function",
+      "name": "XamContentGetDeviceState",
+      "iat": "0x8200045C",
+      "thunk": "0x8368F944"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x25E",
+      "kind": "function",
+      "name": "XamContentGetDeviceData",
+      "iat": "0x82000460",
+      "thunk": "0x8368F954"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x250",
+      "kind": "function",
+      "name": "XamEnumerate",
+      "iat": "0x82000464",
+      "thunk": "0x8368F964"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x227",
+      "kind": "function",
+      "name": "XamUserGetSigninInfo",
+      "iat": "0x82000468",
+      "thunk": "0x8368F974"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1F8",
+      "kind": "function",
+      "name": "XMsgCancelIORequest",
+      "iat": "0x8200046C",
+      "thunk": "0x8368F984"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1A4",
+      "kind": "function",
+      "name": "XamLoaderLaunchTitle",
+      "iat": "0x82000470",
+      "thunk": "0x8368F994"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x28A",
+      "kind": "function",
+      "name": "XamNotifyCreateListener",
+      "iat": "0x82000474",
+      "thunk": "0x8368F9A4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1A0",
+      "kind": "function",
+      "name": "XamEnableInactivityProcessing",
+      "iat": "0x82000478",
+      "thunk": "0x8368F9B4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1A1",
+      "kind": "function",
+      "name": "XamResetInactivity",
+      "iat": "0x8200047C",
+      "thunk": "0x8368F9C4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2DC",
+      "kind": "function",
+      "name": "XamShowMessageBoxUIEx",
+      "iat": "0x82000480",
+      "thunk": "0x8368F9D4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x3CD",
+      "kind": "function",
+      "name": "XGetLanguage",
+      "iat": "0x82000484",
+      "thunk": "0x8368F9E4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x3CB",
+      "kind": "function",
+      "name": "XGetAVPack",
+      "iat": "0x82000488",
+      "thunk": "0x8368F9F4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1A9",
+      "kind": "function",
+      "name": "XamLoaderTerminateTitle",
+      "iat": "0x8200048C",
+      "thunk": "0x8368FA04"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x280",
+      "kind": "function",
+      "name": "XamGetExecutionId",
+      "iat": "0x82000490",
+      "thunk": "0x8368FA14"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x49",
+      "kind": "function",
+      "name": "NetDll_XNetGetTitleXnAddr",
+      "iat": "0x82000494",
+      "thunk": "0x83690574"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x33",
+      "kind": "function",
+      "name": "NetDll_XNetStartup",
+      "iat": "0x82000498",
+      "thunk": "0x83690564"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x192",
+      "kind": "function",
+      "name": "XamInputSetState",
+      "iat": "0x8200049C",
+      "thunk": "0x83690214"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x191",
+      "kind": "function",
+      "name": "XamInputGetState",
+      "iat": "0x820004A0",
+      "thunk": "0x83690204"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x190",
+      "kind": "function",
+      "name": "XamInputGetCapabilities",
+      "iat": "0x820004A4",
+      "thunk": "0x836901F4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1FC",
+      "kind": "function",
+      "name": "XMsgStartIORequestEx",
+      "iat": "0x820004A8",
+      "thunk": "0x836901E4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x22",
+      "kind": "function",
+      "name": "NetDll___WSAFDIsSet",
+      "iat": "0x820004AC",
+      "thunk": "0x836901D4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1A",
+      "kind": "function",
+      "name": "NetDll_inet_addr",
+      "iat": "0x820004B0",
+      "thunk": "0x836901C4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x16",
+      "kind": "function",
+      "name": "NetDll_send",
+      "iat": "0x820004B4",
+      "thunk": "0x836901B4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x12",
+      "kind": "function",
+      "name": "NetDll_recv",
+      "iat": "0x820004B8",
+      "thunk": "0x836901A4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0xF",
+      "kind": "function",
+      "name": "NetDll_select",
+      "iat": "0x820004BC",
+      "thunk": "0x83690194"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0xE",
+      "kind": "function",
+      "name": "NetDll_accept",
+      "iat": "0x820004C0",
+      "thunk": "0x83690184"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0xD",
+      "kind": "function",
+      "name": "NetDll_listen",
+      "iat": "0x820004C4",
+      "thunk": "0x83690174"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0xC",
+      "kind": "function",
+      "name": "NetDll_connect",
+      "iat": "0x820004C8",
+      "thunk": "0x83690164"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0xB",
+      "kind": "function",
+      "name": "NetDll_bind",
+      "iat": "0x820004CC",
+      "thunk": "0x83690154"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x7",
+      "kind": "function",
+      "name": "NetDll_setsockopt",
+      "iat": "0x820004D0",
+      "thunk": "0x83690144"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x4",
+      "kind": "function",
+      "name": "NetDll_closesocket",
+      "iat": "0x820004D4",
+      "thunk": "0x83690134"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x3",
+      "kind": "function",
+      "name": "NetDll_socket",
+      "iat": "0x820004D8",
+      "thunk": "0x83690124"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x2",
+      "kind": "function",
+      "name": "NetDll_WSACleanup",
+      "iat": "0x820004DC",
+      "thunk": "0x83690114"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1",
+      "kind": "function",
+      "name": "NetDll_WSAStartup",
+      "iat": "0x820004E0",
+      "thunk": "0x83690104"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x316",
+      "kind": "function",
+      "name": "XamSessionCreateHandle",
+      "iat": "0x820004E4",
+      "thunk": "0x836900F4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x317",
+      "kind": "function",
+      "name": "XamSessionRefObjByHandle",
+      "iat": "0x820004E8",
+      "thunk": "0x836900E4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x219",
+      "kind": "function",
+      "name": "XamUserReadProfileSettings",
+      "iat": "0x820004EC",
+      "thunk": "0x836900D4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1EA",
+      "kind": "function",
+      "name": "XamAlloc",
+      "iat": "0x820004F0",
+      "thunk": "0x836900C4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1EC",
+      "kind": "function",
+      "name": "XamFree",
+      "iat": "0x820004F4",
+      "thunk": "0x836900B4"
+    },
+    {
+      "library": "xam.xex",
+      "ordinal": "0x1F4",
+      "kind": "function",
+      "name": "XMsgInProcessCall",
+      "iat": "0x820004F8",
+      "thunk": "0x836900A4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C2",
+      "kind": "function",
+      "name": "VdInitializeEngines",
+      "iat": "0x82000500",
+      "thunk": "0x8368FFA4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C6",
+      "kind": "function",
+      "name": "VdIsHSIOTrainingSucceeded",
+      "iat": "0x82000504",
+      "thunk": "0x8368FFB4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x83",
+      "kind": "function",
+      "name": "KeQueryPerformanceFrequency",
+      "iat": "0x82000508",
+      "thunk": "0x8368FFC4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x13A",
+      "kind": "function",
+      "name": "_snprintf",
+      "iat": "0x8200050C",
+      "thunk": "0x8368FFD4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C7",
+      "kind": "function",
+      "name": "VdPersistDisplay",
+      "iat": "0x82000510",
+      "thunk": "0x8368FFE4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x25B",
+      "kind": "function",
+      "name": "VdSwap",
+      "iat": "0x82000514",
+      "thunk": "0x8368FFF4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1BD",
+      "kind": "function",
+      "name": "VdGetSystemCommandBuffer",
+      "iat": "0x82000518",
+      "thunk": "0x83690004"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C9",
+      "kind": "function",
+      "name": "VdQueryVideoFlags",
+      "iat": "0x8200051C",
+      "thunk": "0x83690014"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C0",
+      "kind": "variable",
+      "name": "VdGpuClockInMHz",
+      "iat": "0x82000520",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C5",
+      "kind": "function",
+      "name": "VdInitializeScalerCommandBuffer",
+      "iat": "0x82000524",
+      "thunk": "0x83690024"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x104",
+      "kind": "function",
+      "name": "ObDeleteSymbolicLink",
+      "iat": "0x82000528",
+      "thunk": "0x83690034"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1D5",
+      "kind": "function",
+      "name": "VdSetGraphicsInterruptCallback",
+      "iat": "0x8200052C",
+      "thunk": "0x8368FF94"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x9A",
+      "kind": "function",
+      "name": "KeSetCurrentProcessType",
+      "iat": "0x82000530",
+      "thunk": "0x83690054"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x7D",
+      "kind": "function",
+      "name": "KeLeaveCriticalRegion",
+      "iat": "0x82000534",
+      "thunk": "0x83690064"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x269",
+      "kind": "function",
+      "name": "VdRetrainEDRAM",
+      "iat": "0x82000538",
+      "thunk": "0x83690074"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x26A",
+      "kind": "function",
+      "name": "VdRetrainEDRAMWorker",
+      "iat": "0x8200053C",
+      "thunk": "0x83690084"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C1",
+      "kind": "variable",
+      "name": "VdHSIOCalibrationLock",
+      "iat": "0x82000540",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x5F",
+      "kind": "function",
+      "name": "KeEnterCriticalRegion",
+      "iat": "0x82000544",
+      "thunk": "0x83690094"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1DC",
+      "kind": "function",
+      "name": "VdShutdownEngines",
+      "iat": "0x82000548",
+      "thunk": "0x8368FF84"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1D4",
+      "kind": "function",
+      "name": "VdSetDisplayModeOverride",
+      "iat": "0x8200054C",
+      "thunk": "0x8368FF74"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1D3",
+      "kind": "function",
+      "name": "VdSetDisplayMode",
+      "iat": "0x82000550",
+      "thunk": "0x8368FF64"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1BA",
+      "kind": "function",
+      "name": "VdGetCurrentDisplayInformation",
+      "iat": "0x82000554",
+      "thunk": "0x8368FF54"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1B1",
+      "kind": "function",
+      "name": "VdCallGraphicsNotificationRoutines",
+      "iat": "0x82000558",
+      "thunk": "0x8368FF44"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x15",
+      "kind": "function",
+      "name": "ExRegisterTitleTerminateNotification",
+      "iat": "0x8200055C",
+      "thunk": "0x8368FF34"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x158",
+      "kind": "variable",
+      "name": "XboxKrnlVersion",
+      "iat": "0x82000560",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x6F",
+      "kind": "function",
+      "name": "KeInitializeDpc",
+      "iat": "0x82000564",
+      "thunk": "0x8368FF24"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xB0",
+      "kind": "function",
+      "name": "KeWaitForSingleObject",
+      "iat": "0x82000568",
+      "thunk": "0x8368FF14"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x8F",
+      "kind": "function",
+      "name": "KeResetEvent",
+      "iat": "0x8200056C",
+      "thunk": "0x8368FF04"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x6C",
+      "kind": "function",
+      "name": "KeUnlockL2",
+      "iat": "0x82000570",
+      "thunk": "0x8368FEF4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x6B",
+      "kind": "function",
+      "name": "KeLockL2",
+      "iat": "0x82000574",
+      "thunk": "0x8368FEE4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1CA",
+      "kind": "function",
+      "name": "VdQueryVideoMode",
+      "iat": "0x82000578",
+      "thunk": "0x8368FED4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x14D",
+      "kind": "function",
+      "name": "_vsnprintf",
+      "iat": "0x8200057C",
+      "thunk": "0x8368FEC4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1B4",
+      "kind": "function",
+      "name": "VdEnableDisableClockGating",
+      "iat": "0x82000580",
+      "thunk": "0x8368FEB4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1B9",
+      "kind": "function",
+      "name": "VdGetCurrentDisplayGamma",
+      "iat": "0x82000584",
+      "thunk": "0x8368FEA4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x52",
+      "kind": "function",
+      "name": "KeBugCheck",
+      "iat": "0x82000588",
+      "thunk": "0x8368FE94"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1D9",
+      "kind": "function",
+      "name": "VdSetSystemCommandBufferGpuIdentifierAddress",
+      "iat": "0x8200058C",
+      "thunk": "0x8368FE84"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xBE",
+      "kind": "function",
+      "name": "MmGetPhysicalAddress",
+      "iat": "0x82000590",
+      "thunk": "0x8368FE74"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1C3",
+      "kind": "function",
+      "name": "VdInitializeRingBuffer",
+      "iat": "0x82000594",
+      "thunk": "0x8368FE64"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1B6",
+      "kind": "function",
+      "name": "VdEnableRingBufferRPtrWriteBack",
+      "iat": "0x82000598",
+      "thunk": "0x8368FE54"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1DF",
+      "kind": "function",
+      "name": "KiApcNormalRoutineNop",
+      "iat": "0x8200059C",
+      "thunk": "0x8368FE44"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x7B",
+      "kind": "function",
+      "name": "KeInsertQueueDpc",
+      "iat": "0x820005A0",
+      "thunk": "0x8368FE34"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xB1",
+      "kind": "function",
+      "name": "KfAcquireSpinLock",
+      "iat": "0x820005A4",
+      "thunk": "0x8368FE24"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xB4",
+      "kind": "function",
+      "name": "KfReleaseSpinLock",
+      "iat": "0x820005A8",
+      "thunk": "0x8368FE14"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x9D",
+      "kind": "function",
+      "name": "KeSetEvent",
+      "iat": "0x820005AC",
+      "thunk": "0x8368FE04"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x4D",
+      "kind": "function",
+      "name": "KeAcquireSpinLockAtRaisedIrql",
+      "iat": "0x820005B0",
+      "thunk": "0x8368FDF4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x89",
+      "kind": "function",
+      "name": "KeReleaseSpinLockFromRaisedIrql",
+      "iat": "0x820005B4",
+      "thunk": "0x8368FDE4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x266",
+      "kind": "variable",
+      "name": "KeCertMonitorData",
+      "iat": "0x820005B8",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x13B",
+      "kind": "function",
+      "name": "sprintf",
+      "iat": "0x820005BC",
+      "thunk": "0x8368FDD4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1BF",
+      "kind": "variable",
+      "name": "VdGlobalXamDevice",
+      "iat": "0x820005C0",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1BE",
+      "kind": "variable",
+      "name": "VdGlobalDevice",
+      "iat": "0x820005C4",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x136",
+      "kind": "function",
+      "name": "RtlRaiseException",
+      "iat": "0x820005C8",
+      "thunk": "0x8368FDC4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xEE",
+      "kind": "function",
+      "name": "NtQueryVirtualMemory",
+      "iat": "0x820005CC",
+      "thunk": "0x8368FDB4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x12E",
+      "kind": "function",
+      "name": "RtlInitializeCriticalSection",
+      "iat": "0x820005D0",
+      "thunk": "0x8368FDA4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x11B",
+      "kind": "function",
+      "name": "RtlCompareMemoryUlong",
+      "iat": "0x820005D4",
+      "thunk": "0x8368FD94"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xDC",
+      "kind": "function",
+      "name": "NtFreeVirtualMemory",
+      "iat": "0x820005D8",
+      "thunk": "0x8368FD84"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x53",
+      "kind": "function",
+      "name": "KeBugCheckEx",
+      "iat": "0x820005DC",
+      "thunk": "0x8368FD74"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x126",
+      "kind": "function",
+      "name": "RtlFillMemoryUlong",
+      "iat": "0x820005E0",
+      "thunk": "0x8368FD64"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xCC",
+      "kind": "function",
+      "name": "NtAllocateVirtualMemory",
+      "iat": "0x820005E4",
+      "thunk": "0x8368FD54"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x156",
+      "kind": "variable",
+      "name": "XboxHardwareInfo",
+      "iat": "0x820005E8",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x193",
+      "kind": "variable",
+      "name": "XexExecutableModuleHandle",
+      "iat": "0x820005EC",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x12B",
+      "kind": "function",
+      "name": "RtlImageXexHeaderField",
+      "iat": "0x820005F0",
+      "thunk": "0x8368FD44"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x125",
+      "kind": "function",
+      "name": "RtlEnterCriticalSection",
+      "iat": "0x820005F4",
+      "thunk": "0x8368FD34"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x130",
+      "kind": "function",
+      "name": "RtlLeaveCriticalSection",
+      "iat": "0x820005F8",
+      "thunk": "0x8368FD24"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1AE",
+      "kind": "variable",
+      "name": "ExLoadedCommandLine",
+      "iat": "0x820005FC",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x97",
+      "kind": "function",
+      "name": "KeSetAffinityThread",
+      "iat": "0x82000600",
+      "thunk": "0x8368FD14"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xFC",
+      "kind": "function",
+      "name": "NtSuspendThread",
+      "iat": "0x82000604",
+      "thunk": "0x8368FD04"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x81",
+      "kind": "function",
+      "name": "KeQueryBasePriorityThread",
+      "iat": "0x82000608",
+      "thunk": "0x8368FCF4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1B",
+      "kind": "variable",
+      "name": "ExThreadObjectType",
+      "iat": "0x8200060C",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x110",
+      "kind": "function",
+      "name": "ObReferenceObjectByHandle",
+      "iat": "0x82000610",
+      "thunk": "0x8368FCE4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x99",
+      "kind": "function",
+      "name": "KeSetBasePriorityThread",
+      "iat": "0x82000614",
+      "thunk": "0x8368FCD4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x105",
+      "kind": "function",
+      "name": "ObDereferenceObject",
+      "iat": "0x82000618",
+      "thunk": "0x8368FCC4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x100",
+      "kind": "function",
+      "name": "NtWriteFileGather",
+      "iat": "0x8200061C",
+      "thunk": "0x8368FCB4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x5A",
+      "kind": "function",
+      "name": "KeDelayExecutionThread",
+      "iat": "0x82000620",
+      "thunk": "0x8368FCA4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x143",
+      "kind": "function",
+      "name": "RtlUnicodeToMultiByteN",
+      "iat": "0x82000624",
+      "thunk": "0x8368FC94"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xDA",
+      "kind": "function",
+      "name": "NtDuplicateObject",
+      "iat": "0x82000628",
+      "thunk": "0x8368FC84"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF0",
+      "kind": "function",
+      "name": "NtReadFile",
+      "iat": "0x8200062C",
+      "thunk": "0x8368FC74"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF1",
+      "kind": "function",
+      "name": "NtReadFileScatter",
+      "iat": "0x82000630",
+      "thunk": "0x8368FC64"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xE4",
+      "kind": "function",
+      "name": "NtQueryDirectoryFile",
+      "iat": "0x82000634",
+      "thunk": "0x8368FC54"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xEF",
+      "kind": "function",
+      "name": "NtQueryVolumeInformationFile",
+      "iat": "0x82000638",
+      "thunk": "0x8368FC44"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xE8",
+      "kind": "function",
+      "name": "NtQueryInformationFile",
+      "iat": "0x8200063C",
+      "thunk": "0x8368FC34"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xE7",
+      "kind": "function",
+      "name": "NtQueryFullAttributesFile",
+      "iat": "0x82000640",
+      "thunk": "0x8368FC24"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x195",
+      "kind": "function",
+      "name": "XexGetModuleHandle",
+      "iat": "0x82000644",
+      "thunk": "0x8368FC14"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF",
+      "kind": "function",
+      "name": "ExFreePool",
+      "iat": "0x82000648",
+      "thunk": "0x8368FC04"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x135",
+      "kind": "function",
+      "name": "RtlNtStatusToDosError",
+      "iat": "0x8200064C",
+      "thunk": "0x8368FBF4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1A5",
+      "kind": "function",
+      "name": "__C_specific_handler",
+      "iat": "0x82000650",
+      "thunk": "0x8368FBE4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x3",
+      "kind": "function",
+      "name": "DbgPrint",
+      "iat": "0x82000654",
+      "thunk": "0x8368FBD4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x196",
+      "kind": "function",
+      "name": "XexGetModuleSection",
+      "iat": "0x82000658",
+      "thunk": "0x8368FBC4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x199",
+      "kind": "function",
+      "name": "XexLoadImage",
+      "iat": "0x8200065C",
+      "thunk": "0x8368FBB4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x197",
+      "kind": "function",
+      "name": "XexGetProcedureAddress",
+      "iat": "0x82000660",
+      "thunk": "0x8368FBA4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x141",
+      "kind": "function",
+      "name": "RtlTryEnterCriticalSection",
+      "iat": "0x82000664",
+      "thunk": "0x83690224"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x152",
+      "kind": "function",
+      "name": "KeTlsAlloc",
+      "iat": "0x82000668",
+      "thunk": "0x83690234"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x153",
+      "kind": "function",
+      "name": "KeTlsFree",
+      "iat": "0x8200066C",
+      "thunk": "0x83690244"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x154",
+      "kind": "function",
+      "name": "KeTlsGetValue",
+      "iat": "0x82000670",
+      "thunk": "0x83690254"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x155",
+      "kind": "function",
+      "name": "KeTlsSetValue",
+      "iat": "0x82000674",
+      "thunk": "0x83690264"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x2C",
+      "kind": "function",
+      "name": "InterlockedPopEntrySList",
+      "iat": "0x82000678",
+      "thunk": "0x83690274"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x2B",
+      "kind": "function",
+      "name": "InterlockedFlushSList",
+      "iat": "0x8200067C",
+      "thunk": "0x83690284"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x12F",
+      "kind": "function",
+      "name": "RtlInitializeCriticalSectionAndSpinCount",
+      "iat": "0x82000680",
+      "thunk": "0x83690294"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x151",
+      "kind": "function",
+      "name": "vswprintf",
+      "iat": "0x82000684",
+      "thunk": "0x836902A4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x14F",
+      "kind": "function",
+      "name": "_vscwprintf",
+      "iat": "0x82000688",
+      "thunk": "0x836902B4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x13E",
+      "kind": "function",
+      "name": "swprintf",
+      "iat": "0x8200068C",
+      "thunk": "0x836902C4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x13D",
+      "kind": "function",
+      "name": "_snwprintf",
+      "iat": "0x82000690",
+      "thunk": "0x836902D4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x166",
+      "kind": "function",
+      "name": "XeCryptBnQwBeSigVerify",
+      "iat": "0x82000694",
+      "thunk": "0x836902E4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x244",
+      "kind": "function",
+      "name": "XeKeysGetKey",
+      "iat": "0x82000698",
+      "thunk": "0x836902F4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x18E",
+      "kind": "function",
+      "name": "XeCryptRotSumSha",
+      "iat": "0x8200069C",
+      "thunk": "0x83690304"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x192",
+      "kind": "function",
+      "name": "XeCryptSha",
+      "iat": "0x820006A0",
+      "thunk": "0x83690314"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1F8",
+      "kind": "function",
+      "name": "XAudioGetVoiceCategoryVolume",
+      "iat": "0x820006A4",
+      "thunk": "0x83690324"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xC2",
+      "kind": "function",
+      "name": "MmMapIoSpace",
+      "iat": "0x820006A8",
+      "thunk": "0x83690334"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x224",
+      "kind": "function",
+      "name": "XMACreateContext",
+      "iat": "0x820006AC",
+      "thunk": "0x83690344"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x226",
+      "kind": "function",
+      "name": "XMAReleaseContext",
+      "iat": "0x820006B0",
+      "thunk": "0x83690354"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xAF",
+      "kind": "function",
+      "name": "KeWaitForMultipleObjects",
+      "iat": "0x820006B4",
+      "thunk": "0x83690364"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1F5",
+      "kind": "function",
+      "name": "XAudioSubmitRenderDriverFrame",
+      "iat": "0x820006B8",
+      "thunk": "0x83690374"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1F4",
+      "kind": "function",
+      "name": "XAudioUnregisterRenderDriverClient",
+      "iat": "0x820006BC",
+      "thunk": "0x83690384"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1F3",
+      "kind": "function",
+      "name": "XAudioRegisterRenderDriverClient",
+      "iat": "0x820006C0",
+      "thunk": "0x83690394"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1FF",
+      "kind": "function",
+      "name": "XAudioGetSpeakerConfig",
+      "iat": "0x820006C4",
+      "thunk": "0x836903A4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x147",
+      "kind": "function",
+      "name": "RtlUnwind",
+      "iat": "0x820006C8",
+      "thunk": "0x836903B4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x119",
+      "kind": "function",
+      "name": "RtlCaptureContext",
+      "iat": "0x820006CC",
+      "thunk": "0x836903C4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xCE",
+      "kind": "function",
+      "name": "NtClearEvent",
+      "iat": "0x820006D0",
+      "thunk": "0x836903D4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF5",
+      "kind": "function",
+      "name": "NtResumeThread",
+      "iat": "0x820006D4",
+      "thunk": "0x836903E4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x133",
+      "kind": "function",
+      "name": "RtlMultiByteToUnicodeN",
+      "iat": "0x820006D8",
+      "thunk": "0x836903F4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x25A",
+      "kind": "function",
+      "name": "StfsControlDevice",
+      "iat": "0x820006DC",
+      "thunk": "0x83690404"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x259",
+      "kind": "function",
+      "name": "StfsCreateDevice",
+      "iat": "0x820006E0",
+      "thunk": "0x83690414"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xDB",
+      "kind": "function",
+      "name": "NtFlushBuffersFile",
+      "iat": "0x820006E4",
+      "thunk": "0x83690424"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x11D",
+      "kind": "function",
+      "name": "RtlCompareStringN",
+      "iat": "0x820006E8",
+      "thunk": "0x83690434"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xD5",
+      "kind": "function",
+      "name": "NtCreateSemaphore",
+      "iat": "0x820006EC",
+      "thunk": "0x83690444"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF3",
+      "kind": "function",
+      "name": "NtReleaseSemaphore",
+      "iat": "0x820006F0",
+      "thunk": "0x83690454"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x19",
+      "kind": "function",
+      "name": "ExTerminateThread",
+      "iat": "0x820006F4",
+      "thunk": "0x83690464"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x127",
+      "kind": "function",
+      "name": "RtlFreeAnsiString",
+      "iat": "0x820006F8",
+      "thunk": "0x83690474"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x142",
+      "kind": "function",
+      "name": "RtlUnicodeStringToAnsiString",
+      "iat": "0x820006FC",
+      "thunk": "0x83690484"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x12D",
+      "kind": "function",
+      "name": "RtlInitUnicodeString",
+      "iat": "0x82000700",
+      "thunk": "0x83690494"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xD",
+      "kind": "function",
+      "name": "ExCreateThread",
+      "iat": "0x82000704",
+      "thunk": "0x836904A4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x41",
+      "kind": "function",
+      "name": "IoInvalidDeviceRequest",
+      "iat": "0x82000708",
+      "thunk": "0x836904B4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x10F",
+      "kind": "function",
+      "name": "ObReferenceObject",
+      "iat": "0x8200070C",
+      "thunk": "0x836904C4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x37",
+      "kind": "function",
+      "name": "IoCreateDevice",
+      "iat": "0x82000710",
+      "thunk": "0x836904D4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x39",
+      "kind": "function",
+      "name": "IoDeleteDevice",
+      "iat": "0x82000714",
+      "thunk": "0x836904E4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xB",
+      "kind": "function",
+      "name": "ExAllocatePoolTypeWithTag",
+      "iat": "0x82000718",
+      "thunk": "0x836904F4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x35",
+      "kind": "function",
+      "name": "IoCompleteRequest",
+      "iat": "0x8200071C",
+      "thunk": "0x83690504"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x149",
+      "kind": "function",
+      "name": "RtlUpcaseUnicodeChar",
+      "iat": "0x82000720",
+      "thunk": "0x83690514"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x109",
+      "kind": "function",
+      "name": "ObIsTitleObject",
+      "iat": "0x82000724",
+      "thunk": "0x83690524"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x34",
+      "kind": "function",
+      "name": "IoCheckShareAccess",
+      "iat": "0x82000728",
+      "thunk": "0x83690534"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x47",
+      "kind": "function",
+      "name": "IoSetShareAccess",
+      "iat": "0x8200072C",
+      "thunk": "0x83690544"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x45",
+      "kind": "function",
+      "name": "IoRemoveShareAccess",
+      "iat": "0x82000730",
+      "thunk": "0x83690554"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1A1",
+      "kind": "function",
+      "name": "XexUnloadImage",
+      "iat": "0x82000734",
+      "thunk": "0x8368FB94"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x10",
+      "kind": "function",
+      "name": "ExGetXConfigSetting",
+      "iat": "0x82000738",
+      "thunk": "0x8368FB84"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x84",
+      "kind": "function",
+      "name": "KeQuerySystemTime",
+      "iat": "0x8200073C",
+      "thunk": "0x8368FB74"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x140",
+      "kind": "function",
+      "name": "RtlTimeToTimeFields",
+      "iat": "0x82000740",
+      "thunk": "0x8368FB64"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x13F",
+      "kind": "function",
+      "name": "RtlTimeFieldsToTime",
+      "iat": "0x82000744",
+      "thunk": "0x8368FB54"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF6",
+      "kind": "function",
+      "name": "NtSetEvent",
+      "iat": "0x82000748",
+      "thunk": "0x8368FB44"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xC4",
+      "kind": "function",
+      "name": "MmQueryAddressProtect",
+      "iat": "0x8200074C",
+      "thunk": "0x8368FB34"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xBD",
+      "kind": "function",
+      "name": "MmFreePhysicalMemory",
+      "iat": "0x82000750",
+      "thunk": "0x8368FB24"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xC5",
+      "kind": "function",
+      "name": "MmQueryAllocationSize",
+      "iat": "0x82000754",
+      "thunk": "0x8368FB14"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xBA",
+      "kind": "function",
+      "name": "MmAllocatePhysicalMemoryEx",
+      "iat": "0x82000758",
+      "thunk": "0x8368FB04"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xD1",
+      "kind": "function",
+      "name": "NtCreateEvent",
+      "iat": "0x8200075C",
+      "thunk": "0x8368FAF4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xAD",
+      "kind": "variable",
+      "name": "KeTimeStampBundle",
+      "iat": "0x82000760",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xFF",
+      "kind": "function",
+      "name": "NtWriteFile",
+      "iat": "0x82000764",
+      "thunk": "0x8368FAE4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xFD",
+      "kind": "function",
+      "name": "NtWaitForSingleObjectEx",
+      "iat": "0x82000768",
+      "thunk": "0x8368FAD4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x28",
+      "kind": "function",
+      "name": "HalReturnToFirmware",
+      "iat": "0x8200076C",
+      "thunk": "0x8368FAC4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x59",
+      "kind": "variable",
+      "name": "KeDebugMonitorData",
+      "iat": "0x82000770",
+      "thunk": null
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x21",
+      "kind": "function",
+      "name": "FscSetCacheElementCount",
+      "iat": "0x82000774",
+      "thunk": "0x8368FAB4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xF7",
+      "kind": "function",
+      "name": "NtSetInformationFile",
+      "iat": "0x82000778",
+      "thunk": "0x8368FAA4"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xCF",
+      "kind": "function",
+      "name": "NtClose",
+      "iat": "0x8200077C",
+      "thunk": "0x8368FA94"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x66",
+      "kind": "function",
+      "name": "KeGetCurrentProcessType",
+      "iat": "0x82000780",
+      "thunk": "0x8368FA84"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xD2",
+      "kind": "function",
+      "name": "NtCreateFile",
+      "iat": "0x82000784",
+      "thunk": "0x8368FA74"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x12C",
+      "kind": "function",
+      "name": "RtlInitAnsiString",
+      "iat": "0x82000788",
+      "thunk": "0x8368FA64"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0xDF",
+      "kind": "function",
+      "name": "NtOpenFile",
+      "iat": "0x8200078C",
+      "thunk": "0x8368FA54"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x14E",
+      "kind": "function",
+      "name": "vsprintf",
+      "iat": "0x82000790",
+      "thunk": "0x8368FA44"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x194",
+      "kind": "function",
+      "name": "XexCheckExecutablePrivilege",
+      "iat": "0x82000794",
+      "thunk": "0x8368FA34"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x1",
+      "kind": "function",
+      "name": "DbgBreakPoint",
+      "iat": "0x82000798",
+      "thunk": "0x8368FA24"
+    },
+    {
+      "library": "xboxkrnl.exe",
+      "ordinal": "0x103",
+      "kind": "function",
+      "name": "ObCreateSymbolicLink",
+      "iat": "0x8200079C",
+      "thunk": "0x83690044"
+    }
+  ]
+}

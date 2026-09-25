@@ -1,5 +1,11 @@
 # Runtime XEX imports
 
+**Update:** the user supplied a complete audit for XEX size 8773632,
+XXH64 `BC88D51CE0755637`. The previously blocked variable inventory is now known:
+219 functions and 12 variables. See [observed title](OBSERVED_TITLE_IMPORTS.md).
+Earlier descriptions below of missing metadata are historical, not the current
+state. Full function semantics and gameplay remain uncertified.
+
 The CPU generator's `Xex2LoadImage` is not a runtime import loader. At the pinned
 revision it byte-swaps type-0 import words **in place**, and replaces type-1
 thunks with NOP/BLR before returning the image. Reading those words as ordinary

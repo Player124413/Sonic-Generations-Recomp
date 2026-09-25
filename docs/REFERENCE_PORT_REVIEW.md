@@ -1,5 +1,9 @@
 # Сверка с Android/PC-проектом Sonic Generations
 
+**Обновление:** после этого обзора пользователь предоставил полный аудит XEX.
+Недостающая таблица переменных теперь известна из этого отчёта, а не из
+внешнего репозитория: [результат](OBSERVED_TITLE_IMPORTS.md).
+
 Проверенный источник: [Player124413/Sonic-Generations-recomp-android-and-pc-edition](https://github.com/Player124413/Sonic-Generations-recomp-android-and-pc-edition/tree/a163e7d5cb9464056d8e34ab55f84fe38459a979),
 коммит **a163e7d5cb9464056d8e34ab55f84fe38459a979**.
 

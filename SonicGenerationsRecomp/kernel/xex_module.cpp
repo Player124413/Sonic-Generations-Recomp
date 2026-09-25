@@ -87,6 +87,14 @@ const ExportType xamExports[]={
 
 // LDR_DATA_TABLE_ENTRY layout follows Xenia's xmodule.h (BSD attribution in
 // licenses/Xenia-BSD.txt). This is guest storage, never a host pointer/handle.
+struct GuestHardwareInfo
+{
+    be<uint32_t> flags{};
+    uint8_t cpuCount{};
+    std::array<uint8_t,11> reserved{};
+};
+static_assert(sizeof(GuestHardwareInfo)==16);
+static_assert(offsetof(GuestHardwareInfo,cpuCount)==4);
 struct TitleExports
 {
     std::array<be<uint32_t>,25> loader{}; // header pointer at 0x58
@@ -96,6 +104,10 @@ struct TitleExports
     // Guest DWORD exports, not host Vulkan objects. Xenia's xboxkrnl_video.cc
     // maps the device slots initially to null and the Xenos GPU clock to 500 MHz.
     be<uint32_t> videoDevice{}, xamVideoDevice{}, gpuClockInMHz{};
+    std::array<be<uint16_t>,4> kernelVersion{};
+    GuestHardwareInfo hardwareInfo{};
+    std::array<char,1024> commandLine{}; // direct writable ANSI buffer, not char**
+
 };
 static_assert(offsetof(TitleExports,moduleHandle)==0x64);
 TitleExports* g_exports=nullptr;
@@ -146,6 +158,9 @@ uint32_t xex_module::VariableAddress(uint32_t ordinal)
     case 0xE: return KernelObjects::TypeAddress(KernelObjects::Type::Event);
     case 0x17: return KernelObjects::TypeAddress(KernelObjects::Type::Semaphore);
     case 0x1B: return KernelObjects::TypeAddress(KernelObjects::Type::Thread);
+    case 0x156: return g_memory.MapVirtual(&g_exports->hardwareInfo);
+    case 0x158: return g_memory.MapVirtual(g_exports->kernelVersion.data());
+    case 0x1AE: return g_memory.MapVirtual(g_exports->commandLine.data());
     case 0x193: return g_memory.MapVirtual(&g_exports->moduleHandle);
     case 0x1BE: return g_memory.MapVirtual(&g_exports->videoDevice);
     case 0x1BF: return g_memory.MapVirtual(&g_exports->xamVideoDevice);
@@ -313,6 +328,16 @@ bool xex_module::RegisterImage(std::span<const uint8_t> bytes, const Image& imag
         RtlInitializeCriticalSectionAndSpinCount(g_hsioCalibrationLock,10000);
         g_exports=new(storage) TitleExports{};
         g_exports->gpuClockInMHz=500;
+        // Xenia-compatible HLE version policy (not a claim of running a retail kernel).
+        // Three BE16 version fields followed by QFE/flags bytes 0x80, 0x00.
+        g_exports->kernelVersion[0]=2;
+        g_exports->kernelVersion[1]=0xFFFF;
+        g_exports->kernelVersion[2]=0xFFFF;
+        g_exports->kernelVersion[3]=0x8000;
+        g_exports->hardwareInfo.flags=0x20; // storage initialized / HDD-present policy
+        g_exports->hardwareInfo.cpuCount=6; // Xbox logical processors, not host CPU count
+        constexpr char commandLine[]="\"default.xex\"";
+        std::memcpy(g_exports->commandLine.data(),commandLine,sizeof(commandLine));
         StartTimestampClock();
     }
     const uint32_t handle=ModuleHandle();
