@@ -10,9 +10,10 @@
 namespace sonic::rex_host {
 class SonicApp final : public rex::ReXApp {
 public:
-    using rex::ReXApp::ReXApp;
+    explicit SonicApp(rex::ui::WindowedAppContext& context)
+        : rex::ReXApp(context, "SonicGenerationsRecomp-ReXGlue", PPCImageConfig) {}
     static std::unique_ptr<rex::ui::WindowedApp> Create(rex::ui::WindowedAppContext& context) {
-        return std::make_unique<SonicApp>(context, "SonicGenerationsRecomp-ReXGlue", PPCImageConfig);
+        return std::make_unique<SonicApp>(context);
     }
     void OnPreSetup(rex::RuntimeConfig& config) override {
         const char* requested = std::getenv("SONIC_REX_GRAPHICS_MODE");
