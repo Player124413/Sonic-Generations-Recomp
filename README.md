@@ -52,9 +52,9 @@ Windows-инструкции и результаты проверок: [TESTING_
 
 - [x] Точка подключения `IGraphicsSystem`: Windows-тесты передачи параметров,
   ошибок, presentation и завершения прошли (Actions `36156714239`).
-- [ ] Полный EXE на ReXGlue: PPC скомпилировался; линковка в `36157340577`
-  остановилась на `roundevenf`. Исправление и регрессионные тесты добавлены,
-  повторная полная сборка должна подтвердить результат.
+- [x] Базовый EXE на ReXGlue: полная Windows-сборка, линковка, `--help` и
+  упаковка Xenos/Vulkan прошли в [Actions 36229760484](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/36229760484)
+  (`99b1375`). Это reference-сборка; новые D3D hooks проверяются отдельно.
 - [ ] Загрузка Sonic, меню и уровень на эталонном Xenos/Vulkan.
 - [ ] Ядро/XAM, XMA, ввод и VFS от ReXGlue проверены в этой игре.
 - [ ] Перехваты Sonic D3D работают с памятью и ABI ReXGlue.
