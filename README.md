@@ -70,6 +70,20 @@ Windows-инструкции и результаты проверок: [TESTING_
 Это существенно полезнее прежнего плана, но не проверка 3D-рендеринга Sonic.
 Патчи FPS/widescreen остаются за пределами обязательного завершения.
 
+### Подключённый native renderer: тестовый режим
+
+В ReXGlue-host добавлен `Run-Native-GPU-Test.cmd`: Sonic D3D hooks передают
+собственные snapshots ресурсов и shader identities в наш Vulkan backend.
+**Режим offscreen**: окно остаётся эталонным Xenos/Vulkan, собственный renderer
+сохраняет только успешно считанные GPU-кадры в `assets/rex-cache/native/run-*`.
+Это не полная замена Xenos и не отметка готовности всех сцен.
+
+[Инструкция и ограничения](rex/README.md#тест-подключённого-собственного-vulkan-renderer).
+Цепочка нового bridge → clear/resolve → GPU readback и прежние indexed-draw
+тесты прошли на [Mesa/Lavapipe](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/36231473589).
+Windows-пакет этого изменения публикуется после успешного завершения
+[отдельной сборки](https://github.com/Player124413/Sonic-Generations-Recomp/actions/runs/36231473572).
+
 ## Что уже сделано в прежнем runtime (не статус ReXGlue-порта)
 
 | Компонент | Статус |
