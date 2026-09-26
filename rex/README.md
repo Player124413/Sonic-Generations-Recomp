@@ -104,9 +104,12 @@ diagnostics/
 6. **Replace gate:** отключить Xenos только после проверок нужных сцен и сохранений.
    Plume — кандидат RHI для Vulkan; решение и интеграция ещё впереди.
 
-Rayman [section 7](https://github.com/BelmanteGu/RaymanOriginsRecomp/blob/eace41d03cb62cdeb1c5350898338377fabcbff2/docs/PROGRESS.md#7-toward-a-native-renderer-static-study)
-описывает static study/план, не готовый native renderer. Не переносим его
-адреса, количество шейдеров, detached capture thread или неподтверждённые ABI.
+**Обновление:** Rayman на `5ab44ae94326b975b4f38bc3b927d62dbca4c72c` уже содержит
+нативный Vulkan renderer и `docs/NATIVE_RENDERER.md`. Старый раздел PROGRESS
+отстал. См. [свежий разбор](../docs/RAYMAN_NATIVE_REVIEW.md). Не переносим
+его адреса, UbiArt vertex layouts или шейдерный ABI без проверки Sonic.
+Замена Xenos также требует guest GPU protocol (в Rayman это rexgpu-null),
+а не просто обнуления `config.graphics`.
 
 ## Зависимости и лицензии
 
@@ -115,3 +118,15 @@ Rayman [section 7](https://github.com/BelmanteGu/RaymanOriginsRecomp/blob/eace41
 Уведомления SDK сохраняются в пакете. SDK/codegen не включены в исходники нашего
 репозитория; workflow получает зафиксированные внешние версии. Подключение
 ReXGlue разрешено пользователем как новая архитектура, отменяющая прежний запрет.
+
+
+## Исправление Windows-линковки
+
+В `36157340577` все generated PPC units скомпилировались, но LLVM оставил вызов
+C23 `roundevenf`, которого нет в Windows UCRT на runner. `src/roundeven.cpp`
+предоставляет этот символ для Windows: округление binary32 к ближайшему целому,
+ничья к чётному, независимо от текущего host rounding mode, с сохранением
+знака нуля. Это не `roundf` (у него другое правило ничьей) и не `nearbyintf`
+(он зависит от fenv). Проверки выполняются до большой PPC-сборки и покрывают
+400000 псевдослучайных значений, границы, NaN/Inf и все четыре режима округления;
+на Windows дополнительно вызывается сам экспортируемый C-символ.
