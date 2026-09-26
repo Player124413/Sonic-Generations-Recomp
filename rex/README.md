@@ -21,7 +21,7 @@
   presenter/provider, teardown, локальные пути. Это **не тест работы Xenos/GPU**.
 - Режимы `shadow` и `native` пока отвергаются, а не маскируются под reference.
 
-**Пока не реализованы:** D3D shadow hooks, второе окно, нативная отрисовка,
+**Пока не реализованы:** D3D shadow rendering, второе окно, нативная отрисовка,
 покадровое сравнение, замена Xenos, Plume-интеграция. `forward` — это проверяемая
 точка подключения, а не готовый shadow mode и не сокращение GPU-нагрузки.
 
@@ -130,3 +130,39 @@ C23 `roundevenf`, которого нет в Windows UCRT на runner. `src/roun
 (он зависит от fenv). Проверки выполняются до большой PPC-сборки и покрывают
 400000 псевдослучайных значений, границы, NaN/Inf и все четыре режима округления;
 на Windows дополнительно вызывается сам экспортируемый C-символ.
+
+## Sonic D3D hooks в новом host
+
+`gpu_hooks.cpp` подключает все 10 существующих Sonic entry points из общего
+`gpu/guest_entries.inc` через SDK `REX_HOOK_RAW`. Каждая точка всегда вызывает
+свой оригинальный `__imp__` с тем же PPCContext/base. GPU protocol и отрисовка
+Xenos остаются активны. Это **не native/shadow renderer** и не замена GPU.
+
+Для ограниченного диагностического захвата:
+
+```bat
+set SONIC_REX_GPU_CAPTURE=1
+Run-ReXGlue.cmd
+```
+
+Файл `assets/rex-cache/gpu-capture.bin` содержит максимум 4096 событий
+(менее 52 MiB), r3–r10, исходные биты f1 и копии известного Sonic device prefix
+для draw/clear/resolve/swap. Он перезаписывается при следующем запуске с capture.
+Содержит данные игры: не включать в Git или публичные артефакты.
+Состояние копируется до вызова оригинала; успешное выполнение вызова оно не доказывает.
+`ReadProcessMemory` позволяет отметить недоступную память без падения из-за
+диагностического чтения. Учтена Windows alias-поправка `+0x1000` закреплённого PPC.
+
+```bat
+python tools\inspect_gpu_capture.py assets\rex-cache\gpu-capture.bin
+```
+
+В checkout скрипт находится в `rex/tools`. JSON показывает вызовы, недоступные
+снимки и комбинации primitive/VS/PS **guest object pointers**, не shader hashes.
+В нём нет texture/vertex/index payloads; это ещё не воспроизводимый draw dump.
+`SwapHelper` не объявляется кадром/Present без проверки его семантики.
+
+До полной PPC-сборки CI проверяет фактический SDK hook TU с тестовыми оригиналами
+(все 10 точек, capture off/on, неизменность контекста на входе, вызов оригинала
+ровно один раз, исходный результат), бинарный формат/лимит/ошибки и Python reader.
+Эти проверки не заменяют запуск Sonic с настоящими ресурсами и шейдерами.

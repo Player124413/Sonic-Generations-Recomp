@@ -9,12 +9,14 @@ on:
   push:
     paths:
       - 'rex/**'
+      - 'SonicGenerationsRecomp/gpu/guest_entries.inc'
       - '.github/workflows/windows-rexglue.yml'
 permissions:
   contents: read
 concurrency:
   group: rex-windows-${{ github.ref }}
-  cancel-in-progress: true
+  # Preserve an almost-finished full link when a follow-up fix is pushed.
+  cancel-in-progress: false
 jobs:
   windows:
     runs-on: windows-2022
@@ -47,6 +49,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir build-rex-contract -C Release --output-on-failure --timeout 30
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test bounded GPU capture inspection
+        run: python -m unittest discover -s rex/tests -p "test_*.py" -v
       - name: Read generated-code pin
         if: github.event_name == 'push' || inputs.build_game
         id: source
@@ -88,6 +92,7 @@ jobs:
           Copy-Item build-rex-game/Release/SonicGenerationsRecomp-ReXGlue.exe package-rex/
           Get-ChildItem build-rex-game/Release/*.dll | Copy-Item -Destination package-rex/
           if (!(Test-Path package-rex/rexgpu-xenos.dll)) { throw 'Xenos reference plugin missing' }
+          Copy-Item rex/tools package-rex/tools -Recurse
           Copy-Item rex/windows/*.cmd,rex/README.md,rex/dependencies.json,COPYING,THIRD_PARTY.md package-rex/
           Copy-Item licenses package-rex/licenses -Recurse
           # Preserve the SDK's redistributed notices/resources, rather than stripping them.

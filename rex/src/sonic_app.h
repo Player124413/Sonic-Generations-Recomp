@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include "graphics_bridge.h"
 #include "host_policy.h"
+#include "gpu_capture.h"
 
 namespace sonic::rex_host {
 class SonicApp final : public rex::ReXApp {
@@ -16,6 +17,7 @@ public:
         return std::make_unique<SonicApp>(context);
     }
     void OnPreSetup(rex::RuntimeConfig& config) override {
+        InitializeGpuCapture(BuildPaths(rex::filesystem::GetExecutableFolder()).cache);
         const char* requested = std::getenv("SONIC_REX_GRAPHICS_MODE");
         const auto mode = ParseGraphicsMode(requested ? requested : "");
         // Explicit Vulkan selection: Windows must not default to the SDK's D3D12 backend.

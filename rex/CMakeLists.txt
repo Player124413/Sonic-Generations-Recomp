@@ -18,6 +18,12 @@ add_executable(rex_roundeven_tests tests/roundeven_tests.cpp)
 target_link_libraries(rex_roundeven_tests PRIVATE sonic_rex_math)
 add_test(NAME rex_roundeven COMMAND rex_roundeven_tests)
 
+add_library(sonic_rex_capture STATIC src/gpu_capture.cpp)
+target_include_directories(sonic_rex_capture PUBLIC src)
+add_executable(rex_gpu_capture_tests tests/gpu_capture_tests.cpp)
+target_link_libraries(rex_gpu_capture_tests PRIVATE sonic_rex_capture)
+add_test(NAME rex_gpu_capture COMMAND rex_gpu_capture_tests)
+
 add_executable(rex_host_contract_tests tests/host_contract_tests.cpp)
 target_include_directories(rex_host_contract_tests PRIVATE src)
 target_link_libraries(rex_host_contract_tests PRIVATE rex::runtime)
@@ -27,6 +33,16 @@ add_custom_command(TARGET rex_host_contract_tests POST_BUILD
         $<TARGET_RUNTIME_DLLS:rex_host_contract_tests> $<TARGET_FILE_DIR:rex_host_contract_tests>
     COMMAND_EXPAND_LISTS VERBATIM)
 add_test(NAME rex_host_contract COMMAND rex_host_contract_tests)
+
+# Link the actual SDK hook translation unit against test originals before the
+# multi-minute PPC build. This catches hook API and missing-symbol regressions.
+add_executable(rex_gpu_hook_tests tests/gpu_hook_tests.cpp src/gpu_hooks.cpp)
+target_link_libraries(rex_gpu_hook_tests PRIVATE sonic_rex_capture rex::runtime)
+rexglue_apply_target_settings(rex_gpu_hook_tests)
+# Both tests share the Release output directory; let one target stage SDK DLLs
+# to avoid concurrent writes of the same DLL from two post-build commands.
+add_dependencies(rex_gpu_hook_tests rex_host_contract_tests)
+add_test(NAME rex_gpu_hooks COMMAND rex_gpu_hook_tests)
 
 option(SONIC_REX_BUILD_GAME "Build the actual game host from external ReXGlue-generated PPC" OFF)
 set(SONIC_REX_GENERATED_DIR "" CACHE PATH "Directory containing sonicgenerations_init.h and sources.cmake")
@@ -41,7 +57,7 @@ if(SONIC_REX_BUILD_GAME)
     endif()
     # Fail quickly on host API / generated ABI mismatch, before the large PPC build.
     add_library(sonic_rex_api_probe OBJECT EXCLUDE_FROM_ALL
-        src/main.cpp "${SONIC_REX_GENERATED_DIR}/sonicgenerations_recomp.0.cpp")
+        src/main.cpp src/gpu_hooks.cpp "${SONIC_REX_GENERATED_DIR}/sonicgenerations_recomp.0.cpp")
     target_include_directories(sonic_rex_api_probe PRIVATE src "${SONIC_REX_GENERATED_DIR}")
     target_link_libraries(sonic_rex_api_probe PRIVATE rex::runtime)
     rexglue_apply_target_settings(sonic_rex_api_probe)
@@ -62,8 +78,8 @@ if(SONIC_REX_BUILD_GAME)
         target_compile_options(sonic_rex_ppc PRIVATE -fasync-exceptions)
     endif()
     target_precompile_headers(sonic_rex_ppc PRIVATE "${SONIC_REX_GENERATED_DIR}/sonicgenerations_pch.h")
-    add_executable(SonicGenerationsRecomp-ReXGlue WIN32 src/main.cpp)
+    add_executable(SonicGenerationsRecomp-ReXGlue WIN32 src/main.cpp src/gpu_hooks.cpp)
     target_include_directories(SonicGenerationsRecomp-ReXGlue PRIVATE src "${SONIC_REX_GENERATED_DIR}")
-    target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_ppc sonic_rex_math rex::runtime)
+    target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_ppc sonic_rex_math sonic_rex_capture rex::runtime)
     rexglue_configure_target(SonicGenerationsRecomp-ReXGlue GPU_PLUGINS xenos)
 endif()
