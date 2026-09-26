@@ -1,6 +1,8 @@
 #include <gpu/vulkan_backend.h>
+#ifndef SONIC_VULKAN_HEADLESS
 #include <SDL.h>
 #include <SDL_vulkan.h>
+#endif
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -35,6 +37,9 @@ bool VulkanBackend::InitWithShaderCache(const VideoMode& mode,GuestGpu::ShaderCa
     config.validation = validation;
     if (window)
     {
+#ifdef SONIC_VULKAN_HEADLESS
+        return Fail("Headless Vulkan backend cannot own an SDL window");
+#else
         if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_VULKAN)) return Fail("Window was not created with SDL_WINDOW_VULKAN");
         unsigned count = 0;
         if (!SDL_Vulkan_GetInstanceExtensions(window, &count, nullptr)) return Fail(SDL_GetError());
@@ -48,6 +53,7 @@ bool VulkanBackend::InitWithShaderCache(const VideoMode& mode,GuestGpu::ShaderCa
         int w = 0, h = 0;
         SDL_Vulkan_GetDrawableSize(window, &w, &h);
         width = uint32_t(std::max(0, w)); height = uint32_t(std::max(0, h));
+#endif
     }
     std::string cacheError;
     if (!shaderCache.Initialize(cache, cacheError))

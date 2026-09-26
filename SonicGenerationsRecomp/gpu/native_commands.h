@@ -17,6 +17,10 @@ namespace GuestGpu
     struct MemoryView
     {
         std::span<const uint8_t> bytes;
+        // Optional SDK reader: do not model sparse/protected guest mappings as
+        // one readable 4 GiB span. Existing legacy/test span users are unchanged.
+        bool (*reader)(const void*, uint32_t, std::span<uint8_t>) noexcept = nullptr;
+        const void* readerContext = nullptr;
         bool Copy(uint32_t address, std::span<uint8_t> destination) const noexcept;
     };
 

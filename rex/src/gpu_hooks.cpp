@@ -1,4 +1,8 @@
 #include "gpu_capture.h"
+#include "guest_memory.h"
+#ifdef SONIC_REX_NATIVE_RENDERER
+#include "native_gpu.h"
+#endif
 #include <rex/hook.h>
 #include <bit>
 #include <atomic>
@@ -40,13 +44,7 @@ void CaptureGpuEntry(GpuEntry entry, const CaptureArguments& args, uint8_t* base
         std::lock_guard lock(captureMutex);
         if (!captureEnabled.load(std::memory_order_relaxed)) return;
         const auto reader = [base](uint32_t address, std::span<uint8_t> destination) {
-            uint64_t offset;
-            if (!base || !CaptureHostOffset(address, destination.size(), offset)) return false;
-            SIZE_T copied = 0;
-            // Avoid crashing the guest on stale/uncommitted device pointers.
-            // ReadProcessMemory is used only in opt-in diagnostic capture.
-            return ReadProcessMemory(GetCurrentProcess(), base + offset,
-                destination.data(), destination.size(), &copied) && copied == destination.size();
+            return ReadGuestMemory(base, address, destination);
         };
         if (!captureWriter->Record(entry, args, reader) ||
             captureWriter->Count() == GpuCaptureWriter::MaxRecords)
@@ -58,12 +56,21 @@ void CaptureGpuEntry(GpuEntry entry, const CaptureArguments& args, uint8_t* base
 }
 }
 
+namespace sonic::rex_host {
+void ObserveGpuEntry(GpuEntry entry, const CaptureArguments& args, uint8_t* base) noexcept {
+    CaptureGpuEntry(entry, args, base);
+#ifdef SONIC_REX_NATIVE_RENDERER
+    CaptureNativeGpu(entry, args, base);
+#endif
+}
+}
+
 // Strong public hooks override only generated weak aliases. Never replace the
 // __imp__ bodies or suppress their GPU/fence/ring-buffer side effects.
 #define SONIC_GPU_ENTRY(name, symbol) \
     REX_EXTERN(__imp__##symbol); \
     REX_HOOK_RAW(symbol) { \
-        sonic::rex_host::CaptureGpuEntry(sonic::rex_host::GpuEntry::name, \
+        sonic::rex_host::ObserveGpuEntry(sonic::rex_host::GpuEntry::name, \
             {ctx.r3.u64, ctx.r4.u64, ctx.r5.u64, ctx.r6.u64, ctx.r7.u64, \
              ctx.r8.u64, ctx.r9.u64, ctx.r10.u64, std::bit_cast<uint64_t>(ctx.f1.f64)}, base); \
         __imp__##symbol(ctx, base); \

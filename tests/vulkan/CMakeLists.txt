@@ -48,3 +48,13 @@ add_custom_command(OUTPUT "${MULTI_STREAM_SHADER}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/multi_stream.vert" VERBATIM)
 add_custom_target(vulkan_multi_stream_shader DEPENDS "${MULTI_STREAM_SHADER}")
 add_dependencies(vulkan_host_tests vulkan_multi_stream_shader)
+
+# Exercise the same bridge used by the Windows ReXGlue host against a real
+# software Vulkan device, without bringing in the SDK or Windows process reader.
+add_executable(rex_bridge_vulkan_tests rex_bridge_vulkan_tests.cpp
+    ../../rex/src/native_gpu_bridge.cpp
+    ../../SonicGenerationsRecomp/gpu/native_commands.cpp
+    ../../SonicGenerationsRecomp/gpu/native_resources.cpp)
+target_link_libraries(rex_bridge_vulkan_tests PRIVATE SonicVulkanHost Threads::Threads)
+add_test(NAME rex_bridge_vulkan COMMAND rex_bridge_vulkan_tests)
+set_tests_properties(rex_bridge_vulkan PROPERTIES TIMEOUT 120)

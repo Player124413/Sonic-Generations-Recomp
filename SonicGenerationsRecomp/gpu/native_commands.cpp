@@ -10,8 +10,9 @@ bool GuestGpu::MemoryView::Copy(uint32_t address, std::span<uint8_t> destination
     // Guest page zero is protected by Memory::Memory. Reject it and wraparound
     // even when a host test view is larger than guest space.
     constexpr uint64_t guestEnd = uint64_t{1} << 32;
-    if (address < 4096 || destination.size() > guestEnd - address ||
-        address > bytes.size() || destination.size() > bytes.size() - address)
+    if (address < 4096 || destination.size() > guestEnd - address) return false;
+    if (reader) return reader(readerContext, address, destination);
+    if (address > bytes.size() || destination.size() > bytes.size() - address)
         return false;
     std::memcpy(destination.data(), bytes.data() + address, destination.size());
     return true;

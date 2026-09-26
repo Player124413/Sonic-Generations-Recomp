@@ -9,7 +9,10 @@ on:
   push:
     paths:
       - 'rex/**'
-      - 'SonicGenerationsRecomp/gpu/guest_entries.inc'
+      - 'SonicGenerationsRecomp/gpu/**'
+      - 'cmake/VulkanHost.cmake'
+      - 'cmake/ShaderCache.cmake'
+      - 'cmake/GpuResources.cmake'
       - '.github/workflows/windows-rexglue.yml'
 permissions:
   contents: read
@@ -39,6 +42,12 @@ jobs:
           if ($configs.Count -ne 1) { throw 'Expected one SDK package configuration' }
           $prefix = $configs[0].Directory.Parent.Parent.Parent.FullName
           "REXSDK_PREFIX=$prefix" | Add-Content $env:GITHUB_ENV
+      - name: Fetch pinned shader codecs and resource hashing
+        run: |
+          git submodule update --init tools/XenosRecomp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C tools/XenosRecomp submodule update --init thirdparty/smol-v thirdparty/zstd thirdparty/xxHash
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Configure SDK integration contracts
         run: >-
           cmake -S rex -B build-rex-contract -G "Visual Studio 17 2022" -A x64 -T ClangCL
@@ -68,15 +77,30 @@ jobs:
           path: build-rex-source
           sparse-checkout: ${{ steps.source.outputs.directory }}
           persist-credentials: false
+      - name: Install native Vulkan build dependencies
+        if: github.event_name == 'push' || inputs.build_game
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install vulkan-headers:x64-windows vulkan-loader:x64-windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Configure the separate game host
         if: github.event_name == 'push' || inputs.build_game
         run: >-
           cmake -S rex -B build-rex-game -G "Visual Studio 17 2022" -A x64 -T ClangCL
           "-DCMAKE_PREFIX_PATH=$env:REXSDK_PREFIX" -DSONIC_REX_BUILD_GAME=ON
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows
           "-DSONIC_REX_GENERATED_DIR=${{ github.workspace }}/build-rex-source/${{ steps.source.outputs.directory }}"
       - name: Compile real host and first generated TU before the full game
         if: github.event_name == 'push' || inputs.build_game
         run: cmake --build build-rex-game --config Release --target sonic_rex_api_probe --parallel 2
+      - name: Link native Vulkan backend and decode embedded SPIR-V before PPC build
+        if: github.event_name == 'push' || inputs.build_game
+        run: |
+          cmake --build build-rex-game --config Release --target rex_native_backend_link_test --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/vulkan-1.dll" build-rex-game/Release/
+          ctest --test-dir build-rex-game -C Release -R '^rex_native_backend_link$' --output-on-failure --timeout 120
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build the candidate (fail on incompatible generated ABI)
         if: github.event_name == 'push' || inputs.build_game
         run: cmake --build build-rex-game --config Release --parallel 2
@@ -95,6 +119,12 @@ jobs:
           Copy-Item rex/tools package-rex/tools -Recurse
           Copy-Item rex/windows/*.cmd,rex/README.md,rex/dependencies.json,COPYING,THIRD_PARTY.md package-rex/
           Copy-Item licenses package-rex/licenses -Recurse
+          foreach ($port in @('vulkan-headers','vulkan-loader')) {
+            Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/share/$port/copyright" "package-rex/licenses/$port-copyright.txt"
+          }
+          Copy-Item tools/XenosRecomp/thirdparty/xxHash/LICENSE package-rex/licenses/xxHash-LICENSE.txt
+          Copy-Item tools/XenosRecomp/thirdparty/smol-v/license.txt package-rex/licenses/smol-v-LICENSE.txt
+          Copy-Item tools/XenosRecomp/thirdparty/zstd/LICENSE package-rex/licenses/zstd-LICENSE.txt
           # Preserve the SDK's redistributed notices/resources, rather than stripping them.
           Copy-Item "$env:REXSDK_PREFIX/share" package-rex/sdk-share -Recurse
           Get-ChildItem "$env:REXSDK_PREFIX" -File | Where-Object { $_.Name -match 'LICENSE|COPYING|NOTICE' } | Copy-Item -Destination package-rex/

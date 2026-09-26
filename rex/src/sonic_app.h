@@ -7,6 +7,9 @@
 #include "graphics_bridge.h"
 #include "host_policy.h"
 #include "gpu_capture.h"
+#ifdef SONIC_REX_NATIVE_RENDERER
+#include "native_gpu.h"
+#endif
 
 namespace sonic::rex_host {
 class SonicApp final : public rex::ReXApp {
@@ -18,6 +21,9 @@ public:
     }
     void OnPreSetup(rex::RuntimeConfig& config) override {
         InitializeGpuCapture(BuildPaths(rex::filesystem::GetExecutableFolder()).cache);
+#ifdef SONIC_REX_NATIVE_RENDERER
+        InitializeNativeGpu(BuildPaths(rex::filesystem::GetExecutableFolder()).cache);
+#endif
         const char* requested = std::getenv("SONIC_REX_GRAPHICS_MODE");
         const auto mode = ParseGraphicsMode(requested ? requested : "");
         // Explicit Vulkan selection: Windows must not default to the SDK's D3D12 backend.
@@ -31,6 +37,9 @@ public:
         // Intentionally leave audio_factory, input_factory, kernel_init and
         // tool_mode untouched. ReXApp configures those to the SDK defaults.
     }
+#ifdef SONIC_REX_NATIVE_RENDERER
+    void OnShutdown() override { ShutdownNativeGpu(); }
+#endif
     void OnConfigurePaths(rex::PathConfig& paths) override {
         const auto local = BuildPaths(rex::filesystem::GetExecutableFolder());
         paths.game_data_root = local.game;

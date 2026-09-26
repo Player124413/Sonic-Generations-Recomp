@@ -13,6 +13,7 @@ if not defined SONIC_REX_GRAPHICS_MODE set "SONIC_REX_GRAPHICS_MODE=reference"
 set "result=%errorlevel%"
 > "diagnostics\rex-exit-code.txt" echo %result%
 echo Exit code: %result%
-echo ReXGlue Xenos/Vulkan reference path. No native shadow rendering yet.
+echo Visible rendering: ReXGlue Xenos/Vulkan reference.
+if "%SONIC_REX_NATIVE_RENDER%"=="offscreen" echo Native offscreen results: assets\rex-cache\native\latest-session.txt
 pause
 exit /b %result%
