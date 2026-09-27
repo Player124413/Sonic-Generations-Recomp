@@ -10,6 +10,9 @@ if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "Use Clang/ClangCL with the pinned ReXGlue SDK.")
 endif()
 find_package(rexglue 0.10.0 EXACT CONFIG REQUIRED)
+if(NOT REXGLUE_USE_VULKAN)
+    message(FATAL_ERROR "This SDK has no Vulkan backend. Build pinned ReXGlue with REXGLUE_USE_VULKAN=ON and REXGLUE_USE_D3D12=OFF; the official Windows 0.10.0 ZIP is D3D12-only.")
+endif()
 enable_testing()
 
 add_library(sonic_rex_math STATIC src/roundeven.cpp)
@@ -33,6 +36,19 @@ add_custom_command(TARGET rex_host_contract_tests POST_BUILD
         $<TARGET_RUNTIME_DLLS:rex_host_contract_tests> $<TARGET_FILE_DIR:rex_host_contract_tests>
     COMMAND_EXPAND_LISTS VERBATIM)
 add_test(NAME rex_host_contract COMMAND rex_host_contract_tests)
+
+# This is a real DLL factory test, unlike the fake-backend interface contracts.
+# Construction does not initialize a Vulkan device, so CI needs no physical GPU.
+add_executable(rex_vulkan_plugin_tests tests/vulkan_plugin_tests.cpp)
+target_link_libraries(rex_vulkan_plugin_tests PRIVATE rex::runtime)
+rexglue_apply_target_settings(rex_vulkan_plugin_tests)
+add_dependencies(rex_vulkan_plugin_tests rex_host_contract_tests)
+add_custom_command(TARGET rex_vulkan_plugin_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:rex::gpu-xenos> $<TARGET_FILE_DIR:rex_vulkan_plugin_tests>
+    VERBATIM)
+add_test(NAME rex_vulkan_plugin COMMAND rex_vulkan_plugin_tests)
+
 
 # Link the actual SDK hook translation unit against test originals before the
 # multi-minute PPC build. This catches hook API and missing-symbol regressions.

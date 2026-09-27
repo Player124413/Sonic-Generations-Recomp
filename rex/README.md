@@ -29,7 +29,7 @@
 ## Сборка
 
 Workflow **Windows ReXGlue migration** по push проверяет host-контракты с
-закреплённым официальным SDK (SHA256 проверяется) и пытается собрать настоящий
+SDK, собранным из закреплённого исходного commit с Vulkan=ON / D3D12=OFF и пытается собрать настоящий
 EXE с PPC-кандидатом. Ручной запуск с `build_game=false` ограничивается контрактами;
 `build_game=true` включает также EXE. Используется PPC-кандидат
 из указанного пользователем проекта, также закреплённым на commit SHA.
@@ -48,7 +48,7 @@ EXE с PPC-кандидатом. Ручной запуск с `build_game=false`
 
 ```powershell
 cmake -S rex -B build-rex -G "Visual Studio 17 2022" -A x64 -T ClangCL `
-  -DCMAKE_PREFIX_PATH="C:/SDK/rexglue-sdk-0.10.0" `
+  -DCMAKE_PREFIX_PATH="C:/SDK/rexglue-vulkan-install" `
   -DSONIC_REX_BUILD_GAME=ON `
   -DSONIC_REX_GENERATED_DIR="C:/reference/port/generated/default"
 cmake --build build-rex --config Release --parallel 2
@@ -218,3 +218,33 @@ shader ABI это видно в логе. При ошибке session выклю
 эталонном окне — полезный результат теста, но не успешный нативный рендеринг.
 Из-за двойной отрисовки, безопасного чтения памяти и синхронного Vulkan submission
 этот диагностический режим может заметно снижать FPS.
+
+
+## Исправление отсутствующего Vulkan backend в Windows-плагине
+
+Сообщение `requested backend 'vulkan' is not compiled into this plugin` означает,
+что DLL загрузилась, но её factory не содержит Vulkan-ветку. Это не ошибка
+выбора видеокарты. У SDK 0.10.0 Windows defaults — `REXGLUE_USE_D3D12=ON`,
+`REXGLUE_USE_VULKAN=OFF`; ранее используемый готовый Windows ZIP не подходил.
+Проверка `--help` этого не обнаруживала.
+
+Workflow теперь собирает **весь SDK** из закреплённого commit, а не смешивает
+новый GPU DLL со старым runtime:
+
+```powershell
+# В checkout ReXGlue нужного commit с инициализированными submodules,
+# из x64 developer shell с Clang >=18, CMake >=3.25 и Ninja:
+cmake --preset win-amd64 -DCMAKE_INSTALL_PREFIX=C:/SDK/rexglue-vulkan-install `
+  -DREXGLUE_USE_VULKAN=ON -DREXGLUE_USE_D3D12=OFF
+cmake --build out/build/win-amd64 --config Release --target install --parallel 2
+```
+
+CMake host отклоняет SDK с отключённым Vulkan. Дополнительно
+`rex_vulkan_plugin_tests.exe` реально загружает DLL **рядом с собой** и вызывает
+`LoadGpuPlugin("xenos", "vulkan")`. CI выполняет его до PPC-сборки и ещё раз из
+готового пакета перед публикацией. Тест не требует GPU: проверяется factory,
+а не создание Vulkan device/запуск игры.
+
+При обновлении заменять EXE и DLL комплектом; не переносить старый
+`rexgpu-xenos.dll` в новую сборку. Каталог `assets` и сохранения не удалять.
+Параметры и commit сборки SDK записаны в `sonic-sdk-build.json` внутри пакета.

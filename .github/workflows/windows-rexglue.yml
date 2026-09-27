@@ -23,25 +23,59 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Fetch and verify pinned Windows SDK
-        shell: pwsh
+      # The official Windows 0.10.0 ZIP builds D3D12 only. Build the entire SDK
+      # consistently, not a Vulkan DLL mixed with a differently configured runtime.
+      - name: Read Vulkan-only SDK source pin
+        id: sdk
         run: |
           $pins = Get-Content rex/dependencies.json -Raw | ConvertFrom-Json
-          $url = "https://github.com/$($pins.sdk.repository)/releases/download/$($pins.sdk.tag)/$($pins.sdk.windows_asset)"
-          Invoke-WebRequest $url -OutFile sdk.zip
-          if ((Get-FileHash sdk.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $pins.sdk.sha256) {
-            throw 'SDK checksum mismatch'
+          "repository=$($pins.sdk.repository)" | Add-Content $env:GITHUB_OUTPUT
+          "commit=$($pins.sdk.commit)" | Add-Content $env:GITHUB_OUTPUT
+          "REXSDK_PREFIX=$env:GITHUB_WORKSPACE/build-rex-sdk-install" | Add-Content $env:GITHUB_ENV
+      - uses: actions/cache@v4
+        id: sdk-cache
+        with:
+          path: build-rex-sdk-install
+          key: windows-2022-rex-vulkan-only-release-v1-${{ steps.sdk.outputs.commit }}-${{ env.ImageVersion }}
+      - name: Fetch exact SDK source and dependencies
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.sdk.outputs.repository }}
+          ref: ${{ steps.sdk.outputs.commit }}
+          path: build-rex-sdk-source
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build and install matching Vulkan-only SDK runtime and plugin
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        working-directory: build-rex-sdk-source
+        run: |
+          if ((git rev-parse HEAD) -ne '${{ steps.sdk.outputs.commit }}') { throw 'SDK source pin mismatch' }
+          cmake --preset win-amd64 "-DCMAKE_INSTALL_PREFIX=$env:REXSDK_PREFIX" -DREXGLUE_USE_VULKAN=ON -DREXGLUE_USE_D3D12=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build out/build/win-amd64 --config Release --target install --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @{
+            commit = '${{ steps.sdk.outputs.commit }}'
+            configuration = 'Release'
+            REXGLUE_USE_VULKAN = 'ON'
+            REXGLUE_USE_D3D12 = 'OFF'
+          } | ConvertTo-Json | Set-Content "$env:REXSDK_PREFIX/sonic-sdk-build.json"
+      - name: Verify SDK build provenance
+        run: |
+          $built = Get-Content "$env:REXSDK_PREFIX/sonic-sdk-build.json" -Raw | ConvertFrom-Json
+          if ($built.commit -ne '${{ steps.sdk.outputs.commit }}' -or $built.REXGLUE_USE_VULKAN -ne 'ON' -or $built.REXGLUE_USE_D3D12 -ne 'OFF') {
+            throw 'Wrong SDK configuration in install/cache'
           }
-          Expand-Archive sdk.zip sdk-extract
-          $configs = @(Get-ChildItem sdk-extract -Recurse -Filter rexglueConfig.cmake)
-          if ($configs.Count -ne 1) { throw 'Expected one SDK package configuration' }
-          $prefix = $configs[0].Directory.Parent.Parent.Parent.FullName
-          "REXSDK_PREFIX=$prefix" | Add-Content $env:GITHUB_ENV
       - name: Fetch pinned shader codecs and resource hashing
         run: |
           git submodule update --init tools/XenosRecomp
@@ -114,6 +148,8 @@ jobs:
         run: |
           New-Item -ItemType Directory package-rex | Out-Null
           Copy-Item build-rex-game/Release/SonicGenerationsRecomp-ReXGlue.exe package-rex/
+          Copy-Item build-rex-game/Release/rex_vulkan_plugin_tests.exe package-rex/
+          Copy-Item "$env:REXSDK_PREFIX/sonic-sdk-build.json" package-rex/
           Get-ChildItem build-rex-game/Release/*.dll | Copy-Item -Destination package-rex/
           if (!(Test-Path package-rex/rexgpu-xenos.dll)) { throw 'Xenos reference plugin missing' }
           Copy-Item rex/tools package-rex/tools -Recurse
@@ -129,6 +165,11 @@ jobs:
           Copy-Item "$env:REXSDK_PREFIX/share" package-rex/sdk-share -Recurse
           Get-ChildItem "$env:REXSDK_PREFIX" -File | Where-Object { $_.Name -match 'LICENSE|COPYING|NOTICE' } | Copy-Item -Destination package-rex/
           git rev-parse HEAD | Set-Content package-rex/revision.txt
+      - name: Check the actual packaged Xenos Vulkan factory (no GPU required)
+        if: github.event_name == 'push' || inputs.build_game
+        run: |
+          & ./package-rex/rex_vulkan_plugin_tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push' || inputs.build_game
         with:
@@ -139,7 +180,8 @@ jobs:
         run: |
           @'
           ## ReXGlue migration gate
-          Passed: host forwarding/path/mode contracts against pinned SDK 0.10.0.
+          Passed: host contracts and actual staged Xenos Vulkan factory against source-built SDK 0.10.0.
+          SDK configuration: Vulkan ON, D3D12 OFF; source commit and recipe included in package.
           Optional game build uses the pinned external generated-code candidate; no original XEX is uploaded.
           A built EXE / --help does NOT prove title boot, gameplay, shadow rendering or native GPU replacement.
           Reference Xenos plugin is retained and explicitly selected with Vulkan.

@@ -4,7 +4,12 @@
     "tag": "v0.10.0",
     "commit": "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2",
     "windows_asset": "rexglue-sdk-0.10.0-win-amd64.zip",
-    "sha256": "ad4485da853fbe932e9f5dbb643f9b5fe85dc73775ebbad4df6879fe6df0c11b"
+    "sha256": "ad4485da853fbe932e9f5dbb643f9b5fe85dc73775ebbad4df6879fe6df0c11b",
+    "windows_distribution": "source-build; official 0.10.0 Windows ZIP does not include Vulkan",
+    "windows_cmake_options": {
+      "REXGLUE_USE_VULKAN": "ON",
+      "REXGLUE_USE_D3D12": "OFF"
+    }
   },
   "generated_candidate": {
     "repository": "Player124413/Sonic-Generations-recomp-android-and-pc-edition",
