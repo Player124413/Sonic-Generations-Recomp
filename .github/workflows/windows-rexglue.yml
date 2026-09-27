@@ -41,7 +41,7 @@ jobs:
         id: sdk-cache
         with:
           path: build-rex-sdk-install
-          key: windows-2022-rex-vulkan-only-release-v1-${{ steps.sdk.outputs.commit }}-${{ env.ImageVersion }}
+          key: windows-2022-rex-vulkan-only-release-v2-${{ steps.sdk.outputs.commit }}-${{ hashFiles('rex/patches/pin_gpu_plugin_lifetime.py') }}-${{ env.ImageVersion }}
       - name: Fetch exact SDK source and dependencies
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
@@ -64,7 +64,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build out/build/win-amd64 --config Release --target install --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Keep the original runtime for a controlled teardown regression.
+          New-Item -ItemType Directory -Force "$env:REXSDK_PREFIX/diagnostics" | Out-Null
+          Copy-Item "$env:REXSDK_PREFIX/bin/rexruntime.dll" "$env:REXSDK_PREFIX/diagnostics/rexruntime-unpatched.dll"
+          python "$env:GITHUB_WORKSPACE/rex/patches/pin_gpu_plugin_lifetime.py" .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build out/build/win-amd64 --config Release --target install --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           @{
+            plugin_lifetime_patch = (Get-FileHash "$env:GITHUB_WORKSPACE/rex/patches/pin_gpu_plugin_lifetime.py" -Algorithm SHA256).Hash
             commit = '${{ steps.sdk.outputs.commit }}'
             configuration = 'Release'
             REXGLUE_USE_VULKAN = 'ON'
@@ -73,7 +81,8 @@ jobs:
       - name: Verify SDK build provenance
         run: |
           $built = Get-Content "$env:REXSDK_PREFIX/sonic-sdk-build.json" -Raw | ConvertFrom-Json
-          if ($built.commit -ne '${{ steps.sdk.outputs.commit }}' -or $built.REXGLUE_USE_VULKAN -ne 'ON' -or $built.REXGLUE_USE_D3D12 -ne 'OFF') {
+          $patchHash = (Get-FileHash rex/patches/pin_gpu_plugin_lifetime.py -Algorithm SHA256).Hash
+          if ($built.plugin_lifetime_patch -ne $patchHash -or $built.commit -ne '${{ steps.sdk.outputs.commit }}' -or $built.REXGLUE_USE_VULKAN -ne 'ON' -or $built.REXGLUE_USE_D3D12 -ne 'OFF') {
             throw 'Wrong SDK configuration in install/cache'
           }
       - name: Fetch pinned shader codecs and resource hashing
@@ -90,8 +99,36 @@ jobs:
         run: |
           cmake --build build-rex-contract --config Release --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Both executions use exactly the same test EXE and GPU plugin. Only
+          # rexruntime's loader lifetime differs. Always restore the fixed DLL.
+          $PSNativeCommandUseErrorActionPreference = $false
+          Write-Host 'Negative control: original SDK should fail only after successful factory/destruction'
+          $runtime = 'build-rex-contract/Release/rexruntime.dll'
+          Copy-Item $runtime "$runtime.fixed"
+          try {
+            Copy-Item "$env:REXSDK_PREFIX/diagnostics/rexruntime-unpatched.dll" $runtime -Force
+            & ./build-rex-contract/Release/rex_vulkan_plugin_tests.exe 2>&1 | Tee-Object build-rex-contract/factory-unpatched.log
+            $baselineExit = $LASTEXITCODE
+            $baselineExit | Set-Content build-rex-contract/factory-unpatched-exit.txt
+          } finally {
+            Copy-Item "$runtime.fixed" $runtime -Force
+            Remove-Item "$runtime.fixed"
+          }
+          $trace = Get-Content build-rex-contract/factory-unpatched.log -Raw
+          if ($baselineExit -eq 0 -or $trace -notmatch 'returning through normal CRT teardown') {
+            throw 'Original failure was not reproduced as post-factory CRT teardown; inspect the stage trace before claiming a fix'
+          }
           ctest --test-dir build-rex-contract -C Release --output-on-failure --timeout 30
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve plugin regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rex-vulkan-plugin-diagnostics
+          path: |
+            build-rex-contract/factory-unpatched*
+            build-rex-contract/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
       - name: Test bounded GPU capture inspection
         run: python -m unittest discover -s rex/tests -p "test_*.py" -v
       - name: Read generated-code pin

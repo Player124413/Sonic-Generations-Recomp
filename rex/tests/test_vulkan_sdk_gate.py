@@ -14,7 +14,7 @@ class VulkanSdkGateTests(unittest.TestCase):
         self.assertIn("-DREXGLUE_USE_VULKAN=ON -DREXGLUE_USE_D3D12=OFF", workflow)
         self.assertNotIn("Invoke-WebRequest $url -OutFile sdk.zip", workflow)
         self.assertLess(workflow.index("& ./package-rex/rex_vulkan_plugin_tests.exe"),
-                        workflow.index("uses: actions/upload-artifact@"))
+                        workflow.index("name: windows-x64-rexglue-reference-candidate"))
 
     def test_factory_not_only_help(self):
         source = (ROOT / "rex/tests/vulkan_plugin_tests.cpp").read_text()
