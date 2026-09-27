@@ -115,7 +115,7 @@ jobs:
             Remove-Item "$runtime.fixed"
           }
           $trace = Get-Content build-rex-contract/factory-unpatched.log -Raw
-          if ($baselineExit -eq 0 -or $trace -notmatch 'returning through normal CRT teardown') {
+          if ($baselineExit -eq 0 -or $trace -notmatch 'CRT_TEARDOWN_BEGIN') {
             throw 'Original failure was not reproduced as post-factory CRT teardown; inspect the stage trace before claiming a fix'
           }
           ctest --test-dir build-rex-contract -C Release --output-on-failure --timeout 30

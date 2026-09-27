@@ -26,7 +26,8 @@ int main() {
         graphics.reset();
         Stage("graphics destroyed; shutting down logging");
         rex::ShutdownLogging();
-        Stage("factory/ABI/destruction passed; returning through normal CRT teardown (no device/boot tested)");
+        Stage("factory/ABI/destruction passed; no device/game boot tested");
+        Stage("CRT_TEARDOWN_BEGIN");
         return 0;
     } catch (const std::exception& error) {
         std::fprintf(stderr, "[vulkan-plugin-test] exception: %s\n", error.what());
