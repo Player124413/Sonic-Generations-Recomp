@@ -37,11 +37,11 @@ jobs:
           "repository=$($pins.sdk.repository)" | Add-Content $env:GITHUB_OUTPUT
           "commit=$($pins.sdk.commit)" | Add-Content $env:GITHUB_OUTPUT
           "REXSDK_PREFIX=$env:GITHUB_WORKSPACE/build-rex-sdk-install" | Add-Content $env:GITHUB_ENV
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         id: sdk-cache
         with:
           path: build-rex-sdk-install
-          key: windows-2022-rex-vulkan-only-release-v2-${{ steps.sdk.outputs.commit }}-${{ hashFiles('rex/patches/pin_gpu_plugin_lifetime.py') }}-${{ env.ImageVersion }}
+          key: windows-2022-rex-vulkan-only-release-v3-unmodified-${{ steps.sdk.outputs.commit }}-${{ env.ImageVersion }}
       - name: Fetch exact SDK source and dependencies
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
@@ -64,15 +64,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build out/build/win-amd64 --config Release --target install --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # Keep the original runtime for a controlled teardown regression.
-          New-Item -ItemType Directory -Force "$env:REXSDK_PREFIX/diagnostics" | Out-Null
-          Copy-Item "$env:REXSDK_PREFIX/bin/rexruntime.dll" "$env:REXSDK_PREFIX/diagnostics/rexruntime-unpatched.dll"
-          python "$env:GITHUB_WORKSPACE/rex/patches/pin_gpu_plugin_lifetime.py" .
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build out/build/win-amd64 --config Release --target install --parallel 2
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           @{
-            plugin_lifetime_patch = (Get-FileHash "$env:GITHUB_WORKSPACE/rex/patches/pin_gpu_plugin_lifetime.py" -Algorithm SHA256).Hash
+            loader_patch = 'none'
             commit = '${{ steps.sdk.outputs.commit }}'
             configuration = 'Release'
             REXGLUE_USE_VULKAN = 'ON'
@@ -81,10 +74,16 @@ jobs:
       - name: Verify SDK build provenance
         run: |
           $built = Get-Content "$env:REXSDK_PREFIX/sonic-sdk-build.json" -Raw | ConvertFrom-Json
-          $patchHash = (Get-FileHash rex/patches/pin_gpu_plugin_lifetime.py -Algorithm SHA256).Hash
-          if ($built.plugin_lifetime_patch -ne $patchHash -or $built.commit -ne '${{ steps.sdk.outputs.commit }}' -or $built.REXGLUE_USE_VULKAN -ne 'ON' -or $built.REXGLUE_USE_D3D12 -ne 'OFF') {
+          if ($built.loader_patch -ne 'none' -or $built.commit -ne '${{ steps.sdk.outputs.commit }}' -or $built.REXGLUE_USE_VULKAN -ne 'ON' -or $built.REXGLUE_USE_D3D12 -ne 'OFF') {
             throw 'Wrong SDK configuration in install/cache'
           }
+      # Cache a successfully built SDK even if a later runtime test fails.
+      # This is a build cache, NOT a certification or a distributable game artifact.
+      - uses: actions/cache/save@v4
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        with:
+          path: build-rex-sdk-install
+          key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
       - name: Fetch pinned shader codecs and resource hashing
         run: |
           git submodule update --init tools/XenosRecomp
@@ -96,37 +95,32 @@ jobs:
           cmake -S rex -B build-rex-contract -G "Visual Studio 17 2022" -A x64 -T ClangCL
           "-DCMAKE_PREFIX_PATH=$env:REXSDK_PREFIX" -DSONIC_REX_BUILD_GAME=OFF
       - name: Build and test forwarding contracts against the real SDK
+        id: contracts
         run: |
           cmake --build build-rex-contract --config Release --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # Both executions use exactly the same test EXE and GPU plugin. Only
-          # rexruntime's loader lifetime differs. Always restore the fixed DLL.
-          $PSNativeCommandUseErrorActionPreference = $false
-          Write-Host 'Negative control: original SDK should fail only after successful factory/destruction'
-          $runtime = 'build-rex-contract/Release/rexruntime.dll'
-          Copy-Item $runtime "$runtime.fixed"
-          try {
-            Copy-Item "$env:REXSDK_PREFIX/diagnostics/rexruntime-unpatched.dll" $runtime -Force
-            & ./build-rex-contract/Release/rex_vulkan_plugin_tests.exe 2>&1 | Tee-Object build-rex-contract/factory-unpatched.log
-            $baselineExit = $LASTEXITCODE
-            $baselineExit | Set-Content build-rex-contract/factory-unpatched-exit.txt
-          } finally {
-            Copy-Item "$runtime.fixed" $runtime -Force
-            Remove-Item "$runtime.fixed"
-          }
-          $trace = Get-Content build-rex-contract/factory-unpatched.log -Raw
-          if ($baselineExit -eq 0 -or $trace -notmatch 'CRT_TEARDOWN_BEGIN') {
-            throw 'Original failure was not reproduced as post-factory CRT teardown; inspect the stage trace before claiming a fix'
-          }
           ctest --test-dir build-rex-contract -C Release --output-on-failure --timeout 30
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Trace plugin failure under the Windows debugger
+        if: failure() && steps.contracts.outcome == 'failure'
+        run: |
+          $tracer = './build-rex-contract/Release/windows_crash_trace.exe'
+          $test = './build-rex-contract/Release/rex_vulkan_plugin_tests.exe'
+          if ((Test-Path $tracer) -and (Test-Path $test)) {
+            $PSNativeCommandUseErrorActionPreference = $false
+            & $tracer (Resolve-Path $test).Path 2>&1 | Tee-Object build-rex-contract/plugin-crash-trace.log
+            $LASTEXITCODE | Set-Content build-rex-contract/plugin-debuggee-exit.txt
+          }
+          # Diagnostics never change the preceding failed CTest step.
+          exit 0
       - name: Preserve plugin regression diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rex-vulkan-plugin-diagnostics
           path: |
-            build-rex-contract/factory-unpatched*
+            build-rex-contract/plugin-crash-trace.log
+            build-rex-contract/plugin-debuggee-exit.txt
             build-rex-contract/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
       - name: Test bounded GPU capture inspection

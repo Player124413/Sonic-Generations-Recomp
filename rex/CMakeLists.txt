@@ -48,6 +48,8 @@ add_custom_command(TARGET rex_vulkan_plugin_tests POST_BUILD
         $<TARGET_FILE:rex::gpu-xenos> $<TARGET_FILE_DIR:rex_vulkan_plugin_tests>
     VERBATIM)
 add_test(NAME rex_vulkan_plugin COMMAND rex_vulkan_plugin_tests)
+add_executable(windows_crash_trace tests/windows_crash_trace.cpp)
+target_link_libraries(windows_crash_trace PRIVATE dbghelp)
 
 
 # Link the actual SDK hook translation unit against test originals before the

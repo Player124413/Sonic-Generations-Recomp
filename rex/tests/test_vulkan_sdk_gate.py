@@ -16,6 +16,14 @@ class VulkanSdkGateTests(unittest.TestCase):
         self.assertLess(workflow.index("& ./package-rex/rex_vulkan_plugin_tests.exe"),
                         workflow.index("name: windows-x64-rexglue-reference-candidate"))
 
+    def test_runtime_failure_is_not_replaced_by_a_teardown_assumption(self):
+        workflow = (ROOT / ".github/workflows/windows-rexglue.yml").read_text()
+        self.assertNotIn("$baselineExit", workflow)
+        self.assertNotIn("pin_gpu_plugin_lifetime.py", workflow)
+        self.assertIn("ctest --test-dir build-rex-contract", workflow)
+        self.assertIn("steps.contracts.outcome == 'failure'", workflow)
+        self.assertLess(workflow.index("uses: actions/cache/save@"), workflow.index("id: contracts"))
+
     def test_factory_not_only_help(self):
         source = (ROOT / "rex/tests/vulkan_plugin_tests.cpp").read_text()
         self.assertIn('LoadGpuPlugin("xenos", "vulkan")', source)
