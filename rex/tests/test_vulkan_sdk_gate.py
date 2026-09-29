@@ -24,6 +24,14 @@ class VulkanSdkGateTests(unittest.TestCase):
         self.assertIn("steps.contracts.outcome == 'failure'", workflow)
         self.assertLess(workflow.index("uses: actions/cache/save@"), workflow.index("id: contracts"))
 
+    def test_probe_uses_the_wide_crt_required_by_sdk_paths(self):
+        source = (ROOT / "rex/tests/vulkan_plugin_tests.cpp").read_text()
+        self.assertIn("int wmain()", source)
+        self.assertNotIn("int main()", source)
+        self.assertIn("GetModuleFileNameW", source)
+        self.assertIn("rex::filesystem::GetExecutablePath()", source)
+        self.assertNotIn("_set_invalid_parameter_handler", source)
+
     def test_factory_not_only_help(self):
         source = (ROOT / "rex/tests/vulkan_plugin_tests.cpp").read_text()
         self.assertIn('LoadGpuPlugin("xenos", "vulkan")', source)

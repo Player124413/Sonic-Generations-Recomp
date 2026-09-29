@@ -262,5 +262,13 @@ Windows debugger supervisor записывает исключения, пара�
 загруженные DLL и стек. Он не обрабатывает исключение вместо программы и не
 превращает провал теста в успех. Артефакт `rex-vulkan-plugin-diagnostics`
 содержит `plugin-crash-trace.log`, exit code и `LastTest.log`.
+Установлена ошибка точки входа probe: `rex::filesystem::GetExecutablePath()`
+в SDK 0.10.0 вызывает `_get_wpgmptr`. Эта CRT-функция разрешена только при
+`wmain`/`wWinMain` (см. [Microsoft](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/get-wpgmptr?view=msvc-170)).
+Probe ошибочно использовал `main`, тогда как настоящий SDK host использует
+`wWinMain`. Probe переведён на `wmain`; перед загрузкой плагина теперь сравниваются
+SDK-путь и `GetModuleFileNameW`. Обработчики invalid parameter не подменяются,
+проверка factory и нормальное завершение процесса остаются обязательными.
+
 SDK сохраняется в build cache после успешной компиляции, до runtime-проверок;
 наличие cache не означает работоспособность игры или разрешение выдачи пакета.
