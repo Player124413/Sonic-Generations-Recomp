@@ -118,4 +118,32 @@ inline std::vector<std::string> DuplicateBareInputKeys() {
     }
     return conflicts;
 }
+
+//=============================================================================
+// Native diagnostics cost control
+//=============================================================================
+// SONIC_REX_NATIVE_RENDER=offscreen replays every guest frame a second time, on
+// top of the Xenos renderer that draws the visible game, and the replay waits
+// for its own GPU work. That is a deliberate diagnostic, not a faster path: two
+// renderers cost roughly twice as much. Sampling frames keeps the same evidence
+// at a fraction of the cost, so it can be left on while playing.
+inline uint32_t ParseNativeFrameStride(std::string_view value) {
+    if (value.empty()) return 1;
+    uint32_t parsed = 0;
+    for (const char digit : value) {
+        if (digit < '0' || digit > '9')
+            throw std::invalid_argument("SONIC_REX_NATIVE_FRAME_STRIDE must be a positive integer");
+        parsed = parsed * 10 + uint32_t(digit - '0');
+        if (parsed > 1000000)
+            throw std::invalid_argument("SONIC_REX_NATIVE_FRAME_STRIDE must be at most 1000000");
+    }
+    if (parsed == 0)
+        throw std::invalid_argument("SONIC_REX_NATIVE_FRAME_STRIDE must be at least 1");
+    return parsed;
+}
+inline bool ParseNativeReadback(std::string_view value) {
+    if (value.empty() || value == "0" || value == "false") return false;
+    if (value == "1" || value == "true") return true;
+    throw std::invalid_argument("SONIC_REX_NATIVE_READBACK must be 0 or 1");
+}
 } // namespace sonic::rex_host

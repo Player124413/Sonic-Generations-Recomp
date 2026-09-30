@@ -124,5 +124,22 @@ int main() {
     const auto second=ApplyKeyboardInputDefaults();
     CHECK(second.applied==0 && second.rejected==0 && second.kept_explicit==expected);
     CHECK(rex::cvar::GetFlagByName("keybind_a")=="K");
+    // Native diagnostics cost control: sampling and readback are opt in, and a
+    // typo is rejected instead of silently replaying every frame.
+    CHECK(ParseNativeFrameStride("")==1);
+    CHECK(ParseNativeFrameStride("1")==1);
+    CHECK(ParseNativeFrameStride("30")==30);
+    CHECK(ParseNativeFrameStride("1000000")==1000000);
+    for(const char* bad : {"0","00","-1","1.5","1e3","abc"," 30","30 ","1000001","99999999999"}) {
+        try { ParseNativeFrameStride(bad); CHECK(false); } catch(const std::invalid_argument&) {}
+    }
+    CHECK(!ParseNativeReadback(""));
+    CHECK(!ParseNativeReadback("0"));
+    CHECK(!ParseNativeReadback("false"));
+    CHECK(ParseNativeReadback("1"));
+    CHECK(ParseNativeReadback("true"));
+    for(const char* bad : {"yes","2","TRUE"}) {
+        try { ParseNativeReadback(bad); CHECK(false); } catch(const std::invalid_argument&) {}
+    }
     return failures ? 1 : 0;
 }

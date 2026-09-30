@@ -2,6 +2,7 @@
 #include "native_gpu_bridge.h"
 #include "guest_memory.h"
 #include <gpu/vulkan_backend.h>
+#include <algorithm>
 #include <atomic>
 #include <cfenv>
 #include <chrono>
@@ -20,9 +21,14 @@ std::atomic<bool> enabled{false};
 std::unique_ptr<NativeGpuBridge> bridge;
 std::unique_ptr<VulkanBackend> backend;
 std::filesystem::path directory;
-uint64_t batches = 0, submitted = 0, rejected = 0;
+uint64_t batches = 0, submitted = 0, rejected = 0, skipped = 0;
+uint64_t replayMicros = 0, replayMaxMicros = 0;
 unsigned images = 0;
+uint32_t frameStride = 1;
+bool readbackEnabled = false;
 bool initialized = false;
+
+void WriteStatus();
 // Native conversion/driver work must not leak FP flags or rounding mode into
 // the guest's live PPC execution on the same thread (including FTZ/DAZ).
 struct HostFloatScope {
@@ -54,6 +60,19 @@ void InitializeNativeGpu(const std::filesystem::path& cacheDirectory) {
     if (!requested || !*requested || std::string_view(requested) == "off") return;
     if (std::string_view(requested) != "offscreen")
         throw std::invalid_argument("SONIC_REX_NATIVE_RENDER must be off or offscreen; native replacement is not enabled");
+    // A typo in a diagnostic knob must not be able to kill a play session, so the
+    // mode turns itself off with a message instead of failing the whole app.
+    uint32_t stride = 1;
+    bool readback = false;
+    try {
+        const char* strideText = std::getenv("SONIC_REX_NATIVE_FRAME_STRIDE");
+        stride = ParseNativeFrameStride(strideText ? strideText : "");
+        const char* readbackText = std::getenv("SONIC_REX_NATIVE_READBACK");
+        readback = ParseNativeReadback(readbackText ? readbackText : "");
+    } catch (const std::invalid_argument& error) {
+        std::fprintf(stderr, "[native] %s. Offscreen replay stays off; Xenos remains the renderer.\n", error.what());
+        return;
+    }
     std::lock_guard lock(mutex);
     if (enabled.load()) return;
     const auto run = std::chrono::system_clock::now().time_since_epoch().count();
@@ -64,9 +83,15 @@ void InitializeNativeGpu(const std::filesystem::path& cacheDirectory) {
     if (!latest) throw std::runtime_error("Cannot write native session marker");
     bridge = std::make_unique<NativeGpuBridge>();
     backend = std::make_unique<VulkanBackend>(nullptr, false, true);
-    batches = submitted = rejected = 0; images = 0; initialized = false;
+    batches = submitted = rejected = skipped = 0;
+    replayMicros = replayMaxMicros = 0; images = 0; initialized = false;
+    frameStride = stride; readbackEnabled = readback;
     enabled.store(true, std::memory_order_release);
-    std::fputs("[native] Offscreen Sonic Vulkan replay enabled; Xenos remains the visible reference.\n", stderr);
+    std::fprintf(stderr,
+        "[native] Offscreen Sonic Vulkan replay enabled (every %u frame(s), readback %s); "
+        "Xenos remains the visible reference. Every replayed frame is a second full render, "
+        "so a larger stride costs less.\n",
+        frameStride, readbackEnabled ? "on" : "off");
 }
 void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* base) noexcept {
     if (!enabled.load(std::memory_order_acquire)) return;
@@ -82,9 +107,22 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
         auto batch = bridge->Capture(entry, args, {{}, ReadGuestMemory, base});
         if (!batch) return;
         ++batches;
+        // Sampling happens after the stream drained, so skipped frames release
+        // their memory instead of piling up behind the replay.
+        if (frameStride > 1 && (batches - 1) % frameStride != 0) return;
+        // Nothing to render: do not open a submission, a fence wait or a readback.
+        if (batch->draws.empty() && batch->clears.empty() && batch->resolves.empty()) {
+            ++skipped;
+            return;
+        }
+        const auto started = std::chrono::steady_clock::now();
         const auto result = backend->SubmitGuestBatch(*batch);
         const bool success = result == GuestGpu::SubmissionResult::Submitted;
         if (success) ++submitted; else ++rejected;
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - started).count();
+        replayMicros += uint64_t(elapsed);
+        replayMaxMicros = std::max(replayMaxMicros, uint64_t(elapsed));
         if (batches <= 16 || batches % 60 == 0) {
             const auto stats = backend->GetHostStats();
             std::fprintf(stderr, "[native] batch=%llu result=%u draws=%zu submitted=%llu rejected=%llu vkDraws=%llu payload=%zu error=%s\n",
@@ -97,12 +135,11 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
                     (unsigned long long)d.vertexShader.hash, unsigned(d.vertexShader.status),
                     (unsigned long long)d.pixelShader.hash, unsigned(d.pixelShader.status), unsigned(d.resources.status));
             }
-            std::ofstream report(directory / "status.txt", std::ios::trunc);
-            report << "batches=" << batches << "\nsubmitted=" << submitted << "\nrejected=" << rejected
-                   << "\nvulkan_draws=" << stats.indexedDraws << "\nlast_error=" << backend->GetLastError() << '\n';
+            WriteStatus();
         }
-        // Bound diagnostics: at most eight actual Vulkan readbacks, not placeholders.
-        if (success && images < 8 && (submitted == 1 || submitted % 60 == 0)) {
+        // Bound diagnostics: at most eight actual Vulkan readbacks, not placeholders,
+        // and only when asked, because each one waits for the GPU.
+        if (readbackEnabled && success && images < 8 && (submitted == 1 || submitted % 60 == 0)) {
             std::vector<uint8_t> rgba;
             if (backend->ReadDiagnosticFrame(rgba)) {
                 WriteBmp(directory / ("frame-" + std::to_string(submitted) + ".bmp"),
@@ -121,6 +158,34 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
 void ShutdownNativeGpu() noexcept {
     enabled.store(false, std::memory_order_release);
     std::lock_guard lock(mutex);
+    try {
+        if (initialized) WriteStatus();
+    } catch (...) {}
+
+    // Final cost report: the number that decides whether this diagnostic can be
+    // left on while playing.
+    if (batches) {
+        const double replayed = double(submitted ? submitted : 1);
+        std::fprintf(stderr,
+            "[native] frames=%llu replayed=%llu skipped=%llu rejected=%llu average=%.2fms max=%.2fms "
+            "stride=%u\n",
+            (unsigned long long)batches, (unsigned long long)submitted, (unsigned long long)skipped,
+            (unsigned long long)rejected, double(replayMicros) / 1000.0 / replayed,
+            double(replayMaxMicros) / 1000.0, frameStride);
+    }
     backend.reset(); bridge.reset(); initialized = false;
+}
+
+void WriteStatus() {
+    const auto stats = backend->GetHostStats();
+    std::ofstream report(directory / "status.txt", std::ios::trunc);
+    report << "frames=" << batches << "\nreplayed=" << submitted << "\nskipped=" << skipped
+           << "\nrejected=" << rejected << "\nstride=" << frameStride
+           << "\nreadback=" << (readbackEnabled ? 1 : 0)
+           << "\naverage_replay_ms=" << (submitted ? double(replayMicros) / 1000.0 / double(submitted) : 0.0)
+           << "\nmax_replay_ms=" << double(replayMaxMicros) / 1000.0
+           << "\nvulkan_draws=" << stats.indexedDraws
+           << "\nnote=every replayed frame is a second full render on top of Xenos"
+           << "\nlast_error=" << backend->GetLastError() << '\n';
 }
 }
