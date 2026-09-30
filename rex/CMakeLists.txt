@@ -27,9 +27,15 @@ add_executable(rex_gpu_capture_tests tests/gpu_capture_tests.cpp)
 target_link_libraries(rex_gpu_capture_tests PRIVATE sonic_rex_capture)
 add_test(NAME rex_gpu_capture COMMAND rex_gpu_capture_tests)
 
+# Host-side policy that talks to the SDK cvar registry (keyboard defaults).
+add_library(sonic_rex_host_policy STATIC src/input_defaults.cpp)
+target_include_directories(sonic_rex_host_policy PUBLIC src)
+target_link_libraries(sonic_rex_host_policy PUBLIC rex::runtime)
+rexglue_apply_target_settings(sonic_rex_host_policy)
+
 add_executable(rex_host_contract_tests tests/host_contract_tests.cpp)
 target_include_directories(rex_host_contract_tests PRIVATE src)
-target_link_libraries(rex_host_contract_tests PRIVATE rex::runtime)
+target_link_libraries(rex_host_contract_tests PRIVATE rex::runtime sonic_rex_host_policy)
 rexglue_apply_target_settings(rex_host_contract_tests)
 add_custom_command(TARGET rex_host_contract_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -153,7 +159,7 @@ if(SONIC_REX_BUILD_GAME)
     target_precompile_headers(sonic_rex_ppc PRIVATE "${SONIC_REX_GENERATED_DIR}/sonicgenerations_pch.h")
     add_executable(SonicGenerationsRecomp-ReXGlue WIN32 src/main.cpp src/gpu_hooks.cpp)
     target_include_directories(SonicGenerationsRecomp-ReXGlue PRIVATE src "${SONIC_REX_GENERATED_DIR}")
-    target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_ppc sonic_rex_math sonic_rex_capture rex::runtime)
+    target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_ppc sonic_rex_math sonic_rex_capture sonic_rex_host_policy rex::runtime)
     target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_RENDERER=1)
     target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_native)
     rexglue_configure_target(SonicGenerationsRecomp-ReXGlue GPU_PLUGINS xenos)

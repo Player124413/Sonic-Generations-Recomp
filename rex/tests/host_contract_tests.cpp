@@ -1,6 +1,9 @@
 #include "graphics_bridge.h"
 #include "host_policy.h"
+#include "input_defaults.h"
 #include <cstdio>
+#include <iterator>
+#include <rex/cvar.h>
 
 namespace {
 int failures=0;
@@ -95,5 +98,31 @@ int main() {
     CHECK(paths.user==root/"assets/rex-user");
     CHECK(paths.config==root/"assets/rex-runtime.toml");
     CHECK(paths.update==root/"assets/update" && paths.cache==root/"assets/rex-cache");
+    // Keyboard layout: verifiable without a window, a pad or the guest.
+    const auto tokens=SplitInputBinding(" W , Up ,, ");
+    CHECK(tokens.size()==2 && tokens[0]=="W" && tokens[1]=="Up");
+    CHECK(SplitInputBinding("").empty());
+    CHECK(DuplicateBareInputKeys().empty());
+    for(const auto& entry : kKeyboardDefaults) {
+        if(entry.name=="mnk_mode") continue;
+        for(const auto token : SplitInputBinding(entry.value))
+            CHECK(!InputKeyIsReserved(token));
+    }
+    // Contract with the pinned SDK: every name and value must be accepted by the
+    // real cvar registry, otherwise the layout silently loses keys.
+    const auto expected=uint32_t(std::size(kKeyboardDefaults));
+    const auto applied=ApplyKeyboardInputDefaults();
+    CHECK(applied.rejected==0);
+    CHECK(applied.kept_explicit==0);
+    CHECK(applied.applied==expected);
+    CHECK(KeyboardInputEnabled());
+    CHECK(rex::cvar::GetFlagByName("keybind_a")=="Space");
+    CHECK(rex::cvar::GetFlagByName("keybind_lstick_up")=="W,Up");
+    // A value the player set must survive a re-apply: our defaults never fight
+    // an explicit choice from the config file, the environment or the overlay.
+    CHECK(rex::cvar::SetFlagByName("keybind_a","K"));
+    const auto second=ApplyKeyboardInputDefaults();
+    CHECK(second.applied==0 && second.rejected==0 && second.kept_explicit==expected);
+    CHECK(rex::cvar::GetFlagByName("keybind_a")=="K");
     return failures ? 1 : 0;
 }

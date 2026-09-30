@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include "graphics_bridge.h"
 #include "host_policy.h"
+#include "input_defaults.h"
 #include "gpu_capture.h"
 #ifdef SONIC_REX_NATIVE_RENDERER
 #include "native_gpu.h"
@@ -20,6 +21,10 @@ public:
         return std::make_unique<SonicApp>(context);
     }
     void OnPreSetup(rex::RuntimeConfig& config) override {
+        // Runs before Runtime::Setup builds the input system, so the keyboard
+        // driver and its layout are in place when the guest first polls a pad.
+        // An explicit choice by the player always wins.
+        ApplyKeyboardInputDefaults();
         InitializeGpuCapture(BuildPaths(rex::filesystem::GetExecutableFolder()).cache);
 #ifdef SONIC_REX_NATIVE_RENDERER
         InitializeNativeGpu(BuildPaths(rex::filesystem::GetExecutableFolder()).cache);
