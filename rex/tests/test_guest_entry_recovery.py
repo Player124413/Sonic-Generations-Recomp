@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -7,6 +9,16 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('recovery', ROOT / 'rex/tools/recover_guest_entries.py')
 recovery = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(recovery)
+
+
+def _load(name, relative):
+    spec = importlib.util.spec_from_file_location(name, ROOT / relative)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+audit = _load('validate_guest_entry_audit', 'rex/tools/validate_guest_entry_audit.py')
 
 
 class RecoveryTests(unittest.TestCase):
@@ -36,6 +48,37 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn(0x8310C868, {t['address'] for t in thunks})
         self.assertGreater(padding, 10000)
         self.assertTrue(unresolved)
+
+    def test_audit_report_is_validated_not_just_counted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = root / 'ppc'
+            legacy.mkdir()
+            shutil.copy(ROOT / 'ppc/ppc_recomp.372.cpp', legacy / 'ppc_recomp.372.cpp')
+            shutil.copy(ROOT / 'ppc/ppc_func_mapping.cpp', legacy / 'ppc_func_mapping.cpp')
+            # Emulate the external inventory: same code, two entries not exported,
+            # which is exactly the gap that crashed the game at 0x8310BEE0.
+            registered = dict(recovery.mappings(
+                (ROOT / 'ppc/ppc_func_mapping.cpp').read_text()))
+            missing = {0x8310BEE0, 0x8310C868}
+            self.assertTrue(missing <= set(registered))
+            for address in missing:
+                registered.pop(address)
+            found, unresolved, padding = recovery.discover(legacy, registered)
+            self.assertTrue(found)
+            report = {'recovered': found, 'excluded_padding': padding or 1, 'unresolved': unresolved}
+            self.assertEqual(audit.validate(report, legacy), [])
+            for tamper in (
+                lambda r: r['recovered'].pop(0),
+                lambda r: r['recovered'].append(dict(r['recovered'][0])),
+                lambda r: r['recovered'][0].update(words=[0]),
+                lambda r: r['recovered'][0].update(ops=['blr ']),
+                lambda r: r['recovered'][0].update(symbol=''),
+                lambda r: r.update(excluded_padding=0),
+            ):
+                broken = json.loads(json.dumps(report))
+                tamper(broken)
+                self.assertTrue(audit.validate(broken, legacy))
 
     def test_no_override_no_unknown_callee_no_mid_branch(self):
         with tempfile.TemporaryDirectory() as directory:
