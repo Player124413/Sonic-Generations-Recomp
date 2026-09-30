@@ -172,7 +172,6 @@ jobs:
         run: |
           cmake --build build-rex-game --config Release --target rex_guest_entry_recovery_tests --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir build-rex-game -C Release -R '^rex_guest_entry_recovery$' --output-on-failure --timeout 60
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # The artifact must be checked, not just uploaded and admired.

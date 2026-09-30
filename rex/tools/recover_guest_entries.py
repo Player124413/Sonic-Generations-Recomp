@@ -76,27 +76,49 @@ def emit(legacy, generated, output):
     if 0x8310BEE0 not in registered and not any(t['address'] == 0x8310BEE0 for t in thunks):
         raise ValueError('Known missing entry 0x8310BEE0 was not recovered')
     output.mkdir(parents=True, exist_ok=True)
-    header = '#pragma once\n'
+    # Exceptions must not cross these extern "C" wrappers: the SDK compiles
+    # generated code with /EHsc, which assumes extern "C" never throws and would
+    # call terminate() with an unhelpful code. A mismatch is fatal by default and
+    # can be observed instead of fatal by installing a handler (used by the test).
+    header = '''#pragma once
+#include <cstddef>
+#include <cstdint>
+using GuestEntryMismatchHandler = void (*)(uint32_t address, size_t instruction, uint32_t expected, uint32_t actual);
+void SetGuestEntryMismatchHandler(GuestEntryMismatchHandler handler);
+GuestEntryMismatchHandler GetGuestEntryMismatchHandler();
+'''
     cpp = '''// Generated from legacy disassembly, with mandatory live-XEX validation.
 #include "sonicgenerations_pch.h"
 #include "guest_entry_recovery.h"
 #include <cstdio>
-#include <stdexcept>
+#include <cstdlib>
+#include <cstddef>
 #include <cstdint>
 namespace {
-template<size_t N> void CheckCode(const uint8_t* base, uint32_t address, const uint32_t (&words)[N]) {
-    if (!base) throw std::runtime_error("Missing guest memory for entry recovery");
-    for (size_t i = 0; i < N; ++i) {
+GuestEntryMismatchHandler mismatch_handler = nullptr;
+void ReportMismatch(uint32_t address, size_t instruction, uint32_t expected, uint32_t actual) {
+    std::fprintf(stderr, "Guest entry 0x%08X instruction %zu mismatch: expected %08X, got %08X; incompatible XEX or code inventory\\n",
+                 address, instruction, expected, actual);
+}
+[[noreturn]] void AbortOnMismatch(uint32_t address, size_t instruction, uint32_t expected, uint32_t actual) {
+    ReportMismatch(address, instruction, expected, actual);
+    std::abort();
+}
+bool CheckCode(const uint8_t* base, uint32_t address, const uint32_t* words, size_t count) {
+    if (!base) AbortOnMismatch(address, 0, count ? words[0] : 0, 0);
+    for (size_t i = 0; i < count; ++i) {
         const auto* p = base + address + i * 4;
         uint32_t actual = uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
         if (actual != words[i]) {
-            char message[160];
-            std::snprintf(message, sizeof(message), "Guest entry 0x%08X instruction %zu mismatch: expected %08X, got %08X; incompatible XEX or code inventory", address, i, words[i], actual);
-            throw std::runtime_error(message);
+            if (mismatch_handler) { mismatch_handler(address, i, words[i], actual); return false; }
+            AbortOnMismatch(address, i, words[i], actual);
         }
     }
+    return true;
 }
 }
+void SetGuestEntryMismatchHandler(GuestEntryMismatchHandler handler) { mismatch_handler = handler; }
+GuestEntryMismatchHandler GetGuestEntryMismatchHandler() { return mismatch_handler; }
 '''
     for target in sorted({t['symbol'] for t in thunks}):
         cpp += f'REX_EXTERN({target});\n'
@@ -106,7 +128,9 @@ template<size_t N> void CheckCode(const uint8_t* base, uint32_t address, const u
         name = f"sonic_recovered_{t['address']:08X}"
         header += f'REX_EXTERN({name});\n'
         words = ', '.join(f'0x{w:08X}' for w in t['words'])
-        cpp += f'REX_EXTERN({name}) {{\n    static constexpr uint32_t words[] = {{{words}}};\n    CheckCode(base, 0x{t["address"]:08X}, words);\n'
+        cpp += (f'REX_EXTERN({name}) {{\n'
+                f'    static constexpr uint32_t words[] = {{{words}}};\n'
+                f'    if (!CheckCode(base, 0x{t["address"]:08X}, words, {len(t["words"])})) return;\n')
         cpp += ''.join(f'    {s}\n' for s in t['statements'])
         cpp += f'    {t["symbol"]}(ctx, base);\n}}\n'
         entries.append(f'    {{ 0x{t["address"]:08X}, {name} }},')
@@ -151,10 +175,18 @@ def emit_tests(thunks, output):
 #endif
 #include <windows.h>
 #include <cstring>
-#include <stdexcept>
 #include <cstdio>
 static unsigned calls;
 static uint32_t called;
+static unsigned mismatches;
+static uint32_t mismatch_address, mismatch_instruction, mismatch_expected, mismatch_actual;
+static void RecordMismatch(uint32_t address, size_t instruction, uint32_t expected, uint32_t actual) {
+    ++mismatches;
+    mismatch_address = address;
+    mismatch_instruction = uint32_t(instruction);
+    mismatch_expected = expected;
+    mismatch_actual = actual;
+}
 '''
     for t in {t['symbol']: t for t in thunks}.values():
         text += f'REX_EXTERN({t["symbol"]}) {{ ++calls; called = 0x{t["target"]:08X}; }}\n'
@@ -172,7 +204,8 @@ static uint32_t called;
         for i, word in enumerate(t['words']):
             for j in range(4):
                 text += f'    base[0x{addr+i*4+j:08X}] = {(word >> (24-8*j)) & 255};\n'
-        text += '''    for (auto seed : {uint64_t(0), uint64_t(0x7FFFFFFFFFFFFFFF), ~uint64_t(0)}) {
+        text += '''    SetGuestEntryMismatchHandler(RecordMismatch);
+    for (auto seed : {uint64_t(0), uint64_t(0x7FFFFFFFFFFFFFFF), ~uint64_t(0)}) {
         PPCContext ctx{}, expected{};
 '''
         # Initialize all bytes to expose unintended state mutation; seed all GPRs.
@@ -187,24 +220,28 @@ static uint32_t called;
             elif op.startswith('li '): expr = f'uint64_t(int64_t({nums[1]}))'
             else: expr = (f'expected.r{nums[1]}.u64' if nums[1] else 'uint64_t(0)') + f' + uint64_t(int64_t({nums[2]}))'
             text += f'        expected.r{dst}.u64 = {expr};\n'
-        text += f'''        calls = 0; called = 0;
+        text += f'''        calls = 0; called = 0; mismatches = 0;
         sonic_recovered_{addr:08X}(ctx, base);
-        if (calls != 1 || called != 0x{t['target']:08X} || std::memcmp(&ctx, &expected, sizeof(ctx))) ++failed;
+        if (calls != 1 || called != 0x{t['target']:08X} || mismatches || std::memcmp(&ctx, &expected, sizeof(ctx))) ++failed;
     }}
 '''
         # Reject a mismatch in EVERY instruction before touching any context.
-        for i in range(len(t['words'])):
+        for i, word in enumerate(t['words']):
+            flipped = word ^ 1
             text += f'''    {{
-        PPCContext ctx{{}}, before{{}}; calls = 0;
+        PPCContext ctx{{}}, before{{}}; calls = 0; mismatches = 0;
         std::memcpy(&before, &ctx, sizeof(ctx));
         base[0x{addr+i*4:08X}] ^= 1;
-        bool rejected = false;
-        try {{ sonic_recovered_{addr:08X}(ctx, base); }} catch (const std::runtime_error&) {{ rejected = true; }}
-        if (!rejected || calls || std::memcmp(&ctx, &before, sizeof(ctx))) ++failed;
+        sonic_recovered_{addr:08X}(ctx, base);
+        if (calls || mismatches != 1 || mismatch_address != 0x{addr:08X} || mismatch_instruction != {i}
+            || mismatch_expected != 0x{word:08X} || mismatch_actual != 0x{flipped:08X}
+            || std::memcmp(&ctx, &before, sizeof(ctx))) ++failed;
         base[0x{addr+i*4:08X}] ^= 1;
     }}
 '''
-    text += '''    VirtualFree(base, 0, MEM_RELEASE);
+    text += '''    SetGuestEntryMismatchHandler(nullptr);
+    if (GetGuestEntryMismatchHandler()) ++failed;  // Production must abort on a mismatch.
+    VirtualFree(base, 0, MEM_RELEASE);
     std::fprintf(stderr, "Guest entry recovery failures: %u\\n", failed);
     return failed ? 1 : 0;
 }

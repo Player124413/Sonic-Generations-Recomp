@@ -119,12 +119,17 @@ PPC_FUNC_IMPL(__imp__sub_00001014) {
             cpp = (output / 'guest_entry_recovery.cpp').read_text()
             self.assertIn('0x3863000C, 0x4BFE7BF4', cpp)
             self.assertLess(cpp.index('CheckCode(base,'), cpp.index('ctx.r3.u64 ='))
-            self.assertIn('throw std::runtime_error', cpp)
+            # A throw inside an extern "C" wrapper would call terminate() under /EHsc.
+            self.assertNotIn('throw', cpp)
+            self.assertIn('std::abort();', cpp)
+            self.assertIn('if (!CheckCode(', cpp)
             self.assertNotIn('ctx.lr =', cpp)
             tests = (output / 'guest_entry_recovery_tests.cpp').read_text()
             # SDK path resolution during startup requires the wide CRT entry point.
             self.assertIn('int wmain()', tests)
             self.assertIn('guest-entry-recovery: begin', tests)
+            self.assertNotIn('catch', tests)
+            self.assertIn('SetGuestEntryMismatchHandler(nullptr)', tests)
 
 
 if __name__ == '__main__':
