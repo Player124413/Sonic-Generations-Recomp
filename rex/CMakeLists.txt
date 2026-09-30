@@ -106,9 +106,15 @@ if(SONIC_REX_BUILD_GAME)
     if(NOT ENTRY_RECOVERY_RESULT EQUAL 0)
         message(FATAL_ERROR "Guest entry inventory audit failed")
     endif()
+    list(LENGTH GENERATED_SOURCES ENTRY_SOURCE_COUNT_BEFORE)
     list(REMOVE_ITEM GENERATED_SOURCES
         "${SONIC_REX_GENERATED_DIR}/sonicgenerations_init.cpp"
         "${SONIC_REX_GENERATED_DIR}/sonicgenerations_register.cpp")
+    list(LENGTH GENERATED_SOURCES ENTRY_SOURCE_COUNT_AFTER)
+    math(EXPR ENTRY_SOURCE_COUNT_EXPECTED "${ENTRY_SOURCE_COUNT_BEFORE} - 2")
+    if(NOT ENTRY_SOURCE_COUNT_AFTER EQUAL ENTRY_SOURCE_COUNT_EXPECTED)
+        message(FATAL_ERROR "Expected exactly two generated registration sources to replace")
+    endif()
     list(APPEND GENERATED_SOURCES
         "${ENTRY_RECOVERY_DIR}/sonicgenerations_init.cpp"
         "${ENTRY_RECOVERY_DIR}/sonicgenerations_register.cpp"
@@ -119,6 +125,7 @@ if(SONIC_REX_BUILD_GAME)
     target_include_directories(rex_guest_entry_recovery_tests PRIVATE "${SONIC_REX_GENERATED_DIR}" "${ENTRY_RECOVERY_DIR}")
     target_link_libraries(rex_guest_entry_recovery_tests PRIVATE rex::runtime)
     rexglue_apply_target_settings(rex_guest_entry_recovery_tests)
+    add_dependencies(rex_guest_entry_recovery_tests rex_host_contract_tests)
     add_test(NAME rex_guest_entry_recovery COMMAND rex_guest_entry_recovery_tests)
     # Fail quickly on host API / generated ABI mismatch, before the large PPC build.
     add_library(sonic_rex_api_probe OBJECT EXCLUDE_FROM_ALL
