@@ -166,6 +166,21 @@ jobs:
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/vulkan-1.dll" build-rex-game/Release/
           ctest --test-dir build-rex-game -C Release -R '^rex_native_backend_link$' --output-on-failure --timeout 120
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build our own GPU plugin against the SDK (experimental)
+        # Non-blocking on purpose: the plugin is our replacement for the SDK's
+        # Xenos plugin and is still being written. This step exists so every run
+        # reports whether the plugin still compiles against the pinned SDK, while
+        # the reference path keeps shipping. Once it is green here and has been
+        # run on a real machine, it becomes blocking and the host switches to it.
+        continue-on-error: true
+        if: github.event_name == 'push' || inputs.build_game
+        run: |
+          cmake -S rex -B build-rex-plugin -G "Visual Studio 17 2022" -A x64 -T ClangCL `
+            "-DCMAKE_PREFIX_PATH=$env:REXSDK_PREFIX" -DSONIC_REX_BUILD_NATIVE_PLUGIN=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-rex-plugin --config Release --target rexgpu-native --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem build-rex-plugin/Release/rexgpu-native.dll | Select-Object Name, Length
       - name: Test recovered guest entries before PPC build
         id: entries
         if: github.event_name == 'push' || inputs.build_game

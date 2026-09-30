@@ -518,3 +518,23 @@ set SONIC_REX_PM4_DUMP=1
 (`rex_gpu_create`/`IGraphicsSystem`, MMIO-окно `0x7FC80000`, vblank-поток,
 провайдер и презентер) и рендер (EDRAM/resolve, кэши, пайплайны, шейдеры) — ещё
 впереди, порядок в `docs/OWN_GPU_PLAN.md`.
+
+### Плагин `rexgpu-native` (наш, вместо SDK-плагина)
+
+`rex/plugins/native/` собирает **нашу** реализацию `IGraphicsSystem`: экспорты
+`rex_gpu_abi_version`/`rex_gpu_create`, MMIO-окно `0x7FC80000`, kick
+`CP_RB_WPTR` только из MMIO, ring buffer и writeback read-pointer, swap-токен,
+прерывание по колбэку гостя и vblank-поток. Вся логика — в
+`rex/src/gpu_native/` (без кода SDK), плагин лишь транслирует типы рантайма.
+
+```bat
+cmake -S rex -B build-rex-plugin -G "Visual Studio 17 2022" -A x64 -T ClangCL ^
+  "-DCMAKE_PREFIX_PATH=%REXSDK_PREFIX%" -DSONIC_REX_BUILD_NATIVE_PLUGIN=ON
+cmake --build build-rex-plugin --config Release --target rexgpu-native
+```
+
+Загрузить его вместо Xenos можно через `-DSONIC_REX_GPU_PLUGINS=native` (по
+умолчанию `xenos`). Пока `provider()`/`presenter()` возвращают `nullptr`, а
+`SetupPresentation` отвечает неуспехом: **своего Vulkan-презентера ещё нет**, и
+плагин не притворяется, что окно есть. Рендер-опкоды — после него. Порядок в
+`docs/OWN_GPU_PLAN.md`.

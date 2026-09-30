@@ -90,6 +90,19 @@ rexglue_apply_target_settings(rex_gpu_hook_tests)
 add_dependencies(rex_gpu_hook_tests rex_host_contract_tests)
 add_test(NAME rex_gpu_hooks COMMAND rex_gpu_hook_tests)
 
+# Our own GPU plugin (rexgpu-native). Off by default: it is the replacement for
+# the SDK's Xenos plugin and is still being written, so the game host keeps
+# loading Xenos until it is finished and verified.
+set(SONIC_REX_GPU_PLUGINS "xenos" CACHE STRING
+    "GPU plugins the game host loads: xenos (SDK reference) or native (ours)")
+option(SONIC_REX_BUILD_NATIVE_PLUGIN "Build our own rexgpu-native GPU plugin" OFF)
+if(SONIC_REX_BUILD_NATIVE_PLUGIN)
+    add_subdirectory(plugins/native)
+    if(NOT TARGET rexgpu-native)
+        message(FATAL_ERROR "rexgpu-native target was not created")
+    endif()
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/../cmake/GpuResources.cmake")
 add_library(sonic_rex_native_core STATIC
     src/native_gpu_bridge.cpp
@@ -184,5 +197,5 @@ if(SONIC_REX_BUILD_GAME)
     target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_ppc sonic_rex_math sonic_rex_capture sonic_rex_pm4 sonic_rex_host_policy rex::runtime)
     target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_RENDERER=1)
     target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_native)
-    rexglue_configure_target(SonicGenerationsRecomp-ReXGlue GPU_PLUGINS xenos)
+    rexglue_configure_target(SonicGenerationsRecomp-ReXGlue GPU_PLUGINS ${SONIC_REX_GPU_PLUGINS})
 endif()

@@ -39,6 +39,12 @@ std::atomic<bool> pm4Enabled{false};
 std::filesystem::path pm4Directory;
 unsigned pm4Dumps = 0;
 constexpr unsigned kMaxPm4Dumps = 8;
+/// Every swap helper call is logged with its raw arguments before the scan. If
+/// the token is not among them -- the reason the first attempt produced no
+/// dumps at all -- this file still says what the arguments actually are, which
+/// is the only way to find the stream without guessing.
+constexpr unsigned kMaxArgumentLogs = 32;
+unsigned pm4ArgumentLogs = 0;
 constexpr size_t kScanWords = 1024;         // 4 KiB per candidate argument
 constexpr size_t kRingWindowWords = 2048;   // 8 KiB of stream before the token
 constexpr size_t kLoggedPackets = 64;
@@ -92,11 +98,38 @@ void ProbeSwapCommandStream(const CaptureArguments& args, uint8_t* base) noexcep
     const auto read = [base](uint32_t address, std::span<uint8_t> destination) {
         return ReadGuestMemory(base, address, destination);
     };
+    {
+        // Arguments first, unconditionally: a swap call we cannot decode is
+        // still evidence, and a silent probe was the previous bug.
+        std::lock_guard lock(pm4Mutex);
+        if (pm4ArgumentLogs < kMaxArgumentLogs) {
+            std::string line = "swap";
+            for (size_t index = 0; index < args.size(); ++index) {
+                char argument[24];
+                std::snprintf(argument, sizeof(argument), " r%zu=%08X", index + 3,
+                              uint32_t(args[index]));
+                line += argument;
+            }
+            line += "\n";
+            std::fputs(("[pm4] " + line).c_str(), stderr);
+            std::error_code error;
+            std::filesystem::create_directories(pm4Directory, error);
+            std::ofstream log(pm4Directory / "arguments.txt", std::ios::app);
+            log << line;
+            ++pm4ArgumentLogs;
+            if (pm4ArgumentLogs == kMaxArgumentLogs) {
+                std::fputs("[pm4] argument log cap reached\n", stderr);
+                std::ofstream tail(pm4Directory / "arguments.txt", std::ios::app);
+                tail << "cap reached\n";
+            }
+        }
+    }
     for (size_t index = 0; index < args.size(); ++index) {
         const uint32_t candidate = uint32_t(args[index]);
         if (!candidate || (candidate & 3u)) continue;
         const auto found = pm4::ProbeSwapToken(candidate, kScanWords, read);
         if (!found.found) continue;
+        // Found: the dump path below decides what to do with it.
         const uint32_t tokenAddress = candidate + found.signatureIndex * 4u;
         const size_t windowWords = kRingWindowWords < size_t(tokenAddress / 4u)
                                        ? kRingWindowWords : size_t(tokenAddress / 4u);
@@ -149,16 +182,24 @@ void ProbeSwapCommandStream(const CaptureArguments& args, uint8_t* base) noexcep
 }
 }
 void InitializeGpuCapture(const std::filesystem::path& cacheDirectory) {
+    // Enabled by SONIC_REX_PM4_DUMP=1, or by dropping an "enable" file into
+    // assets/rex-cache/pm4 for people who would rather not touch their
+    // environment. Both paths land in the same read-only probe.
     const char* dump = std::getenv("SONIC_REX_PM4_DUMP");
-    if (dump && *dump) {
-        if (std::string_view(dump) == "1") {
-            pm4Directory = cacheDirectory / "pm4";
-            pm4Enabled.store(true, std::memory_order_release);
-            std::fputs("[pm4] Command-stream probe enabled: swap tokens are dumped to "
-                       "assets/rex-cache/pm4 (read-only)\n", stderr);
-        } else {
-            std::fputs("[pm4] SONIC_REX_PM4_DUMP must be 1; the probe stays off\n", stderr);
-        }
+    const bool marker = std::filesystem::exists(cacheDirectory / "pm4" / "enable");
+    if (dump && *dump && std::string_view(dump) != "1") {
+        std::fputs("[pm4] SONIC_REX_PM4_DUMP must be 1; the probe stays off\n", stderr);
+    } else if ((dump && *dump) || marker) {
+        pm4Directory = cacheDirectory / "pm4";
+        std::error_code error;
+        std::filesystem::create_directories(pm4Directory, error);
+        pm4Enabled.store(true, std::memory_order_release);
+        char line[512];
+        std::snprintf(line, sizeof(line),
+                      "[pm4] Command-stream probe enabled; dumps go to %s "
+                      "(enable=env or file)\n",
+                      pm4Directory.string().c_str());
+        std::fputs(line, stderr);
     }
     const char* value = std::getenv("SONIC_REX_GPU_CAPTURE");
     if (!value || std::string_view(value) != "1") return;

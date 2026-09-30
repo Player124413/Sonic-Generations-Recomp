@@ -75,6 +75,21 @@ class Pm4PolicyTests(unittest.TestCase):
         for forbidden in ('WriteGuestMemory', 'TranslateVirtual(', 'std::memcpy(base'):
             self.assertNotIn(forbidden, HOOKS)
 
+    def test_a_silent_probe_is_a_bug(self):
+        # The first capture attempt produced no dumps at all because nothing said
+        # whether the probe was on, where it writes, or what the swap arguments
+        # were. All three are now stated unconditionally.
+        self.assertIn('arguments.txt', HOOKS)
+        self.assertIn('kMaxArgumentLogs', HOOKS)
+        self.assertIn('pm4Directory.string().c_str()', HOOKS)
+        self.assertIn('std::fputs(("[pm4] " + line).c_str(), stderr);', HOOKS)
+        self.assertIn('r%zu=%08X', HOOKS)
+        self.assertIn('enable', HOOKS)  # marker file as well as the variable
+
+    def test_the_probe_can_be_enabled_without_touching_the_environment(self):
+        self.assertIn('std::filesystem::exists(cacheDirectory / "pm4" / "enable")', HOOKS)
+        self.assertIn('(dump && *dump) || marker', HOOKS)
+
     def test_probe_runs_after_the_swap_helper_only(self):
         # VdSwap writes the token inside the call, so the probe must be post-call.
         self.assertIn('__imp__##symbol(ctx, base); \\\n        '
