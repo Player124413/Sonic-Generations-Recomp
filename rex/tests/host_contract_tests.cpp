@@ -1,8 +1,11 @@
 #include "graphics_bridge.h"
 #include "host_policy.h"
 #include "input_defaults.h"
+#include "native_coverage.h"
 #include <cstdio>
+#include <cmath>
 #include <iterator>
+#include <string>
 #include <rex/cvar.h>
 
 namespace {
@@ -140,6 +143,42 @@ int main() {
     CHECK(ParseNativeReadback("true"));
     for(const char* bad : {"yes","2","TRUE"}) {
         try { ParseNativeReadback(bad); CHECK(false); } catch(const std::invalid_argument&) {}
+    }
+    // The Xenos-free decision is driven by this ledger, so its arithmetic and
+    // its round trip have to be exact.
+    CHECK(ClassifyDraw(true,true,true)==DrawSupport::BackendRefused);
+    CHECK(ClassifyDraw(false,true,true)==DrawSupport::VertexShaderUnresolved);
+    CHECK(ClassifyDraw(true,false,true)==DrawSupport::PixelShaderUnresolved);
+    CHECK(ClassifyDraw(true,true,false)==DrawSupport::ResourcesUnsupported);
+    {
+        Coverage empty;
+        CHECK(empty.SupportedRatio()==0.0); // no draws must never read as 100%
+        Coverage c;
+        c.frames=3; c.clears=4; c.resolves=1; c.skippedFrames=2; c.submissions=1;
+        c.Record(DrawSupport::Supported);
+        c.Record(DrawSupport::Supported);
+        c.Record(DrawSupport::VertexShaderUnresolved);
+        c.Record(DrawSupport::BackendRefused);
+        CHECK(c.draws==4 && c.Supported()==2);
+        CHECK(std::abs(c.SupportedRatio()-0.5)<1e-9);
+        const std::string text=c.Format();
+        Coverage parsed;
+        CHECK(ParseCoverage(text,parsed));
+        CHECK(parsed.frames==3 && parsed.draws==4 && parsed.Supported()==2);
+        CHECK(parsed.Reason(DrawSupport::VertexShaderUnresolved)==1);
+        CHECK(parsed.Reason(DrawSupport::PixelShaderUnresolved)==0);
+        CHECK(parsed.Reason(DrawSupport::BackendRefused)==1);
+        CHECK(parsed.clears==4 && parsed.resolves==1 && parsed.skippedFrames==2 && parsed.submissions==1);
+        CHECK(text.find("supported_ratio=0.5000")!=std::string::npos);
+        CHECK(text.find("Xenos-free")!=std::string::npos);
+        // A truncated or doctored file must not be readable as success.
+        // A fully supported session legitimately has no reason lines; a count
+        // that does not add up does not.
+        CHECK(ParseCoverage("frames=1\ndraws=2\nsupported=2\n",parsed) && parsed.Supported()==2);
+        CHECK(!ParseCoverage("frames=1\ndraws=2\nsupported=1\n",parsed));
+        CHECK(!ParseCoverage("draws=2\n",parsed));
+        CHECK(!ParseCoverage("draws=2\nsupported=2\nvertex_shader_unresolved=1\nbackend_refused=0\n",parsed));
+        CHECK(ParseCoverage("",parsed)==false);
     }
     return failures ? 1 : 0;
 }

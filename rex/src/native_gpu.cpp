@@ -1,5 +1,6 @@
 #include "native_gpu.h"
 #include "native_gpu_bridge.h"
+#include "native_coverage.h"
 #include "guest_memory.h"
 #include <gpu/vulkan_backend.h>
 #include <algorithm>
@@ -27,6 +28,7 @@ unsigned images = 0;
 uint32_t frameStride = 1;
 bool readbackEnabled = false;
 bool initialized = false;
+Coverage coverage;
 
 void WriteStatus();
 // Native conversion/driver work must not leak FP flags or rounding mode into
@@ -86,6 +88,7 @@ void InitializeNativeGpu(const std::filesystem::path& cacheDirectory) {
     batches = submitted = rejected = skipped = 0;
     replayMicros = replayMaxMicros = 0; images = 0; initialized = false;
     frameStride = stride; readbackEnabled = readback;
+    coverage = Coverage{};
     enabled.store(true, std::memory_order_release);
     std::fprintf(stderr,
         "[native] Offscreen Sonic Vulkan replay enabled (every %u frame(s), readback %s); "
@@ -107,18 +110,32 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
         auto batch = bridge->Capture(entry, args, {{}, ReadGuestMemory, base});
         if (!batch) return;
         ++batches;
+        ++coverage.frames;
         // Sampling happens after the stream drained, so skipped frames release
         // their memory instead of piling up behind the replay.
         if (frameStride > 1 && (batches - 1) % frameStride != 0) return;
         // Nothing to render: do not open a submission, a fence wait or a readback.
         if (batch->draws.empty() && batch->clears.empty() && batch->resolves.empty()) {
             ++skipped;
+            ++coverage.skippedFrames;
             return;
         }
         const auto started = std::chrono::steady_clock::now();
         const auto result = backend->SubmitGuestBatch(*batch);
         const bool success = result == GuestGpu::SubmissionResult::Submitted;
         if (success) ++submitted; else ++rejected;
+        // Ledger for the Xenos-free decision: a resolved shader/resource pair
+        // still refused by the backend means missing renderer features, not a
+        // missing resource.
+        for (const auto& draw : batch->draws) {
+            coverage.Record(success ? DrawSupport::Supported
+                : ClassifyDraw(draw.vertexShader.status == GuestGpu::ShaderReadStatus::Success,
+                               draw.pixelShader.status == GuestGpu::ShaderReadStatus::Success,
+                               draw.resources.captured));
+        }
+        coverage.clears += batch->clears.size();
+        coverage.resolves += batch->resolves.size();
+        coverage.submissions += success ? 1 : 0;
         const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - started).count();
         replayMicros += uint64_t(elapsed);
@@ -162,6 +179,19 @@ void ShutdownNativeGpu() noexcept {
         if (initialized) WriteStatus();
     } catch (...) {}
 
+    // Coverage summary: the number that decides whether the native renderer can
+    // replace Xenos yet.
+    if (coverage.draws) {
+        std::fprintf(stderr,
+            "[native] coverage: draws=%llu supported=%llu (%.2f%%) vs_unresolved=%llu "
+            "ps_unresolved=%llu resources=%llu backend=%llu\n",
+            (unsigned long long)coverage.draws, (unsigned long long)coverage.Supported(),
+            coverage.SupportedRatio() * 100.0,
+            (unsigned long long)coverage.Reason(DrawSupport::VertexShaderUnresolved),
+            (unsigned long long)coverage.Reason(DrawSupport::PixelShaderUnresolved),
+            (unsigned long long)coverage.Reason(DrawSupport::ResourcesUnsupported),
+            (unsigned long long)coverage.Reason(DrawSupport::BackendRefused));
+    }
     // Final cost report: the number that decides whether this diagnostic can be
     // left on while playing.
     if (batches) {
@@ -176,7 +206,14 @@ void ShutdownNativeGpu() noexcept {
     backend.reset(); bridge.reset(); initialized = false;
 }
 
+void WriteCoverage() {
+    std::ofstream file(directory / "coverage.txt", std::ios::trunc);
+    file << coverage.Format();
+    if (!file) std::fputs("[native] Cannot write coverage.txt\n", stderr);
+}
+
 void WriteStatus() {
+    WriteCoverage();
     const auto stats = backend->GetHostStats();
     std::ofstream report(directory / "status.txt", std::ios::trunc);
     report << "frames=" << batches << "\nreplayed=" << submitted << "\nskipped=" << skipped

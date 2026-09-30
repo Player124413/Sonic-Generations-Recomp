@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = (ROOT / 'rex/src/host_policy.h').read_text()
+COVERAGE = (ROOT / 'rex/src/native_coverage.h').read_text()
 NATIVE = (ROOT / 'rex/src/native_gpu.cpp').read_text()
 TEST_SCRIPT = (ROOT / 'rex/windows/Run-Native-GPU-Test.cmd').read_text()
 FAST_SCRIPT = (ROOT / 'rex/windows/Run-ReXGlue-Fast.cmd').read_text()
@@ -79,6 +80,29 @@ class NativeReplayPolicyTests(unittest.TestCase):
                 self.assertRegex(stripped, r'^set "(REX_[A-Z0-9_]+|SONIC_[A-Z0-9_]+)=.*"$',
                                  f'{stripped} must only set documented REX_/SONIC_ variables')
 
+    def test_coverage_ledger_drives_the_xenos_free_decision(self):
+        # Order matters: a resolved shader pair plus captured resources that the
+        # backend still refuses means a missing renderer feature, not a resource.
+        order = [
+            COVERAGE.index('if (!vertexShaderResolved) return DrawSupport::VertexShaderUnresolved;'),
+            COVERAGE.index('if (!pixelShaderResolved) return DrawSupport::PixelShaderUnresolved;'),
+            COVERAGE.index('if (!resourcesCaptured) return DrawSupport::ResourcesUnsupported;'),
+            COVERAGE.index('return DrawSupport::BackendRefused;'),
+        ]
+        self.assertEqual(order, sorted(order))
+        self.assertIn('Xenos-free renderer would show today', COVERAGE)
+        self.assertIn('return draws ? double(Supported()) / double(draws) : 0.0;', COVERAGE)
+
+    def test_runtime_writes_the_ledger_and_reports_it(self):
+        self.assertIn('coverage.txt', NATIVE)
+        self.assertIn('coverage.Record(', NATIVE)
+        self.assertIn('coverage.SupportedRatio()', NATIVE)
+        self.assertIn('[native] coverage: draws=', NATIVE)
+        for reason in ('vertexShader.status == GuestGpu::ShaderReadStatus::Success',
+                       'pixelShader.status == GuestGpu::ShaderReadStatus::Success',
+                       'draw.resources.captured'):
+            self.assertIn(reason, NATIVE)
+
     def test_readme_explains_the_cost_and_the_knobs(self):
         readme = (ROOT / 'rex/README.md').read_text()
         self.assertIn('SONIC_REX_NATIVE_FRAME_STRIDE', readme)
@@ -89,7 +113,16 @@ class NativeReplayPolicyTests(unittest.TestCase):
         self.assertIn('REX_<ИМЯ_КАПСОМ>', readme)
         for cvar in ('vsync', 'native_2x_msaa', 'vulkan_pipeline_creation_threads'):
             self.assertIn(cvar, readme)
+        # The takeover question must be answered with data, in the README, not
+        # with a promise.
+        self.assertIn('coverage.txt', readme)
+        self.assertIn('IGraphicsSystem', readme)
+        self.assertIn('SONIC_REX_GRAPHICS_MODE=native', readme)
         self.assertIn('REX_VSYNC=false', FAST_SCRIPT)
+        # The takeover question must be answered with data, in the README, not
+        # with a promise.
+        self.assertIn('coverage.txt', readme)
+        self.assertIn('IGraphicsSystem', readme)
 
 
 if __name__ == '__main__':
