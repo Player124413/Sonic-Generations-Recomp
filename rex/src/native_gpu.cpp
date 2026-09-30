@@ -210,6 +210,10 @@ void ShutdownNativeGpu() noexcept {
     backend.reset(); bridge.reset(); initialized = false;
 }
 
+// Helpers stay in the anonymous namespace they were declared in: a definition
+// outside it would satisfy the header but leave the internal declaration that the
+// callers above resolve to undefined, which only the linker ever notices.
+namespace {
 void WriteCoverage() {
     std::ofstream file(directory / "coverage.txt", std::ios::trunc);
     file << coverage.Format();
@@ -229,4 +233,5 @@ void WriteStatus() {
            << "\nnote=every replayed frame is a second full render on top of Xenos"
            << "\nlast_error=" << backend->GetLastError() << '\n';
 }
+}  // namespace
 }
