@@ -4,6 +4,11 @@
 #include <rex/system/xmemory.h>
 #include <rex/system/xtypes.h>
 
+// The SDK's X_STATUS_SUCCESS / X_STATUS_UNSUCCESSFUL macros expand to
+// `((X_STATUS)0x...)`, and bare `X_STATUS` must resolve here too: our namespace
+// is not rex::system.
+using rex::X_STATUS;
+
 #include <algorithm>
 #include <chrono>
 #include <cstdarg>
@@ -138,7 +143,8 @@ void NativeGraphicsSystem::StartVblankWorker(rex::system::KernelState* kernel_st
 void NativeGraphicsSystem::StopVblankWorker() {
     vblankRunning_.store(false, std::memory_order_release);
     if (vblankThread_) {
-        vblankThread_->Wait(0, 0, 0, nullptr);
+        vblankThread_->Wait(0 /* wait_reason */, 0 /* processor_mode */, 0 /* alertable */,
+                            nullptr /* no timeout: join */);
         vblankThread_.reset();
     }
 }

@@ -18,6 +18,10 @@ namespace sonic::rex_host::gpu {
 /// pointer into guest memory across a guest thread switch.
 class SdkGuestMemory final : public GuestMemory {
 public:
+    /// The graphics system owns the adapter before the runtime hands it a memory
+    /// subsystem, so a null default state is part of the contract: reads and
+    /// writes answer false until SetMemory has been called.
+    SdkGuestMemory() noexcept = default;
     explicit SdkGuestMemory(rex::memory::Memory* memory) noexcept : memory_(memory) {}
     void SetMemory(rex::memory::Memory* memory) noexcept { memory_ = memory; }
 
