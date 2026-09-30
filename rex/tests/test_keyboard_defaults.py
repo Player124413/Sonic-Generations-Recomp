@@ -21,7 +21,7 @@ RESERVED = {'F3', 'F4', 'F7', 'Backtick'}
 
 
 def parse_defaults():
-    text = HEADER.read_text()
+    text = HEADER.read_text(encoding='utf-8')
     block = re.search(r'kKeyboardDefaults\[\] = \{(.*?)\n\};', text, re.S)
     assert block, 'kKeyboardDefaults table is missing'
     entries = []
@@ -98,7 +98,7 @@ class KeyboardDefaultsTests(unittest.TestCase):
         self.assertIn('Space', tokens(self.defaults['keybind_a']))
 
     def test_layout_is_applied_before_the_input_system_exists(self):
-        app = (ROOT / 'rex/src/sonic_app.h').read_text()
+        app = (ROOT / 'rex/src/sonic_app.h').read_text(encoding='utf-8')
         call = app.index('ApplyKeyboardInputDefaults()')
         # Runtime::Setup builds the input system from config_; OnPreSetup runs
         # before that, and nothing may clear the plugin/graphics afterwards.
@@ -106,7 +106,7 @@ class KeyboardDefaultsTests(unittest.TestCase):
         self.assertLess(call, app.index('LoadGpuPlugin'))
 
     def test_defaults_never_override_an_explicit_choice(self):
-        source = (ROOT / 'rex/src/input_defaults.cpp').read_text()
+        source = (ROOT / 'rex/src/input_defaults.cpp').read_text(encoding='utf-8')
         self.assertIn('rex::cvar::GetFlagSource', source)
         self.assertIn('rex::cvar::Source::kDefault', source)
         self.assertNotIn('REXCVAR_SET', source)  # direct writes would skip precedence

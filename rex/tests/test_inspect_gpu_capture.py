@@ -22,7 +22,7 @@ def record(sequence=0, entry=6, status=1):
 class CaptureTests(unittest.TestCase):
     def test_entry_inventory(self):
         source = Path(__file__).parents[2] / "SonicGenerationsRecomp/gpu/guest_entries.inc"
-        names = re.findall(r"^SONIC_GPU_ENTRY\((\w+),", source.read_text(), re.MULTILINE)
+        names = re.findall(r"^SONIC_GPU_ENTRY\((\w+),", source.read_text(encoding='utf-8'), re.MULTILINE)
         self.assertEqual(tuple(names), capture.ENTRIES)
 
     def test_sonic_bindings(self):

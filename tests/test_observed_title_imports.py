@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ObservedTitleImportsTests(unittest.TestCase):
     def test_user_report_inventory(self):
-        fixture = json.loads((ROOT / 'tests/fixtures/observed_title_imports.json').read_text())
+        fixture = json.loads((ROOT / 'tests/fixtures/observed_title_imports.json').read_text(encoding='utf-8'))
         entries = fixture['imports']
         self.assertEqual(fixture['xex_size'], 8773632)
         self.assertEqual(fixture['xxh64'], 'BC88D51CE0755637')
@@ -22,9 +22,9 @@ class ObservedTitleImportsTests(unittest.TestCase):
             0x156: 'XboxHardwareInfo', 0x193: 'XexExecutableModuleHandle', 0x1AE: 'ExLoadedCommandLine',
             0x1B: 'ExThreadObjectType', 0xAD: 'KeTimeStampBundle', 0x59: 'KeDebugMonitorData'})
         compiled = re.findall(r'SONIC_IMPORT\("([^"]+)", (0x\w+), (0x\w+), (\w+)\)',
-                              (ROOT / 'SonicGenerationsRecomp/kernel/title_function_imports.inc').read_text())
+                              (ROOT / 'SonicGenerationsRecomp/kernel/title_function_imports.inc').read_text(encoding='utf-8'))
         self.assertEqual({(e['library'], e['ordinal'], e['thunk'], e['name']) for e in entries if e['kind'] == 'function'}, set(compiled))
-        inc = (ROOT / 'tests/fixtures/observed_title_imports.inc').read_text()
+        inc = (ROOT / 'tests/fixtures/observed_title_imports.inc').read_text(encoding='utf-8')
         rows = re.findall(r'^TITLE_IMPORT\(.*\)$', inc, re.M)
         expected = [f'TITLE_IMPORT("{e["library"]}", {e["ordinal"]}, {str(e["kind"] == "variable").lower()}, {e["iat"]}, {e["thunk"] or "0"}, {e["name"]})' for e in entries]
         self.assertEqual(rows, expected)

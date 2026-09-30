@@ -16,7 +16,7 @@ SUITES = {'windows', 'kernel', 'gpu', 'vulkan', 'audio', 'cache', 'shader-tools'
 
 class VerificationReportTests(unittest.TestCase):
     def run_report(self, results):
-        match = re.search(r"python3 - <<'PY'\n(.*?)^          PY$", WORKFLOW.read_text(), re.M | re.S)
+        match = re.search(r"python3 - <<'PY'\n(.*?)^          PY$", WORKFLOW.read_text(encoding='utf-8'), re.M | re.S)
         self.assertIsNotNone(match)
         script = textwrap.dedent(match.group(1))
         with tempfile.TemporaryDirectory() as directory:
@@ -25,7 +25,7 @@ class VerificationReportTests(unittest.TestCase):
                        GITHUB_SHA='test-revision', GITHUB_STEP_SUMMARY=str(summary))
             result = subprocess.run([sys.executable, '-c', script], env=env,
                                     capture_output=True, text=True, timeout=10)
-            return result.returncode, summary.read_text() if summary.exists() else ''
+            return result.returncode, summary.read_text(encoding='utf-8') if summary.exists() else ''
 
     def test_all_suites_pass(self):
         code, report = self.run_report({name: {'result': 'success'} for name in SUITES})

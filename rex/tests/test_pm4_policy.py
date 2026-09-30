@@ -10,17 +10,17 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PM4_HEADER = (ROOT / 'rex/src/pm4.h').read_text()
-PM4 = (ROOT / 'rex/src/pm4.cpp').read_text()
-HOOKS = (ROOT / 'rex/src/gpu_hooks.cpp').read_text()
-TESTS = (ROOT / 'rex/tests/pm4_tests.cpp').read_text()
-DEVICE = (ROOT / 'rex/src/gpu_native/command_processor.cpp').read_text()
-DEVICE_HEADER = (ROOT / 'rex/src/gpu_native/command_processor.h').read_text()
-REGISTERS = (ROOT / 'rex/src/gpu_native/register_file.cpp').read_text()
-DEVICE_TESTS = (ROOT / 'rex/tests/gpu_device_tests.cpp').read_text()
-CMAKE = (ROOT / 'rex/CMakeLists.txt').read_text()
-README = (ROOT / 'rex/README.md').read_text()
-PLAN = (ROOT / 'docs/OWN_GPU_PLAN.md').read_text()
+PM4_HEADER = (ROOT / 'rex/src/pm4.h').read_text(encoding='utf-8')
+PM4 = (ROOT / 'rex/src/pm4.cpp').read_text(encoding='utf-8')
+HOOKS = (ROOT / 'rex/src/gpu_hooks.cpp').read_text(encoding='utf-8')
+TESTS = (ROOT / 'rex/tests/pm4_tests.cpp').read_text(encoding='utf-8')
+DEVICE = (ROOT / 'rex/src/gpu_native/command_processor.cpp').read_text(encoding='utf-8')
+DEVICE_HEADER = (ROOT / 'rex/src/gpu_native/command_processor.h').read_text(encoding='utf-8')
+REGISTERS = (ROOT / 'rex/src/gpu_native/register_file.cpp').read_text(encoding='utf-8')
+DEVICE_TESTS = (ROOT / 'rex/tests/gpu_device_tests.cpp').read_text(encoding='utf-8')
+CMAKE = (ROOT / 'rex/CMakeLists.txt').read_text(encoding='utf-8')
+README = (ROOT / 'rex/README.md').read_text(encoding='utf-8')
+PLAN = (ROOT / 'docs/OWN_GPU_PLAN.md').read_text(encoding='utf-8')
 
 
 class Pm4PolicyTests(unittest.TestCase):
@@ -95,7 +95,7 @@ class Pm4PolicyTests(unittest.TestCase):
         self.assertIn('memory_->Write32(readPointerWriteback_, readPointer_)', DEVICE)
         self.assertIn('guestAddress & 0x1FFFFFFFu', DEVICE)
         self.assertIn('sizeLog2 > kMaxRingSizeLog2', DEVICE)
-        self.assertIn('kCpRbWptr', (ROOT / 'rex/src/gpu_native/registers.h').read_text())
+        self.assertIn('kCpRbWptr', (ROOT / 'rex/src/gpu_native/registers.h').read_text(encoding='utf-8'))
         # A packet writing the write pointer must not kick the processor.
         self.assertIn('origin == WriteOrigin::kMmio', REGISTERS)
 

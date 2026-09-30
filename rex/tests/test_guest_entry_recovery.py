@@ -60,7 +60,7 @@ class RecoveryTests(unittest.TestCase):
             # Emulate the external inventory: same code, two entries not exported,
             # which is exactly the gap that crashed the game at 0x8310BEE0.
             registered = dict(recovery.mappings(
-                (ROOT / 'ppc/ppc_func_mapping.cpp').read_text()))
+                (ROOT / 'ppc/ppc_func_mapping.cpp').read_text(encoding='utf-8')))
             missing = {0x8310BEE0, 0x8310C868}
             self.assertTrue(missing <= set(registered))
             for address in missing:
@@ -114,10 +114,10 @@ PPC_FUNC_IMPL(__imp__sub_00001014) {
             generated.joinpath('sonicgenerations_register.cpp').write_text(include + 'void sonicgenerations_RegisterFunctions(rex::runtime::IModuleRegistrar* registrar) {\nregistrar->SetFunction(0x830F3AD8, sub_830F3AD8);\nregistrar->SetFunction(0x83FFFFFC, end_marker);\n}')
             output = root / 'output'
             recovery.emit(ROOT / 'ppc', generated, output)
-            mapping = recovery.mappings((output / 'sonicgenerations_init.cpp').read_text())
-            self.assertEqual(mapping, recovery.mappings((output / 'sonicgenerations_register.cpp').read_text()))
+            mapping = recovery.mappings((output / 'sonicgenerations_init.cpp').read_text(encoding='utf-8'))
+            self.assertEqual(mapping, recovery.mappings((output / 'sonicgenerations_register.cpp').read_text(encoding='utf-8')))
             self.assertEqual(mapping[0x8310BEE0], 'sonic_recovered_8310BEE0')
-            cpp = (output / 'guest_entry_recovery.cpp').read_text()
+            cpp = (output / 'guest_entry_recovery.cpp').read_text(encoding='utf-8')
             self.assertIn('0x3863000C, 0x4BFE7BF4', cpp)
             self.assertLess(cpp.index('CheckCode(base,'), cpp.index('ctx.r3.u64 ='))
             # A throw inside an extern "C" wrapper would call terminate() under /EHsc.
@@ -125,7 +125,7 @@ PPC_FUNC_IMPL(__imp__sub_00001014) {
             self.assertIn('std::abort();', cpp)
             self.assertIn('if (!CheckCode(', cpp)
             self.assertNotIn('ctx.lr =', cpp)
-            tests = (output / 'guest_entry_recovery_tests.cpp').read_text()
+            tests = (output / 'guest_entry_recovery_tests.cpp').read_text(encoding='utf-8')
             # SDK path resolution during startup requires the wide CRT entry point.
             self.assertIn('int wmain()', tests)
             self.assertIn('guest-entry-recovery: begin', tests)

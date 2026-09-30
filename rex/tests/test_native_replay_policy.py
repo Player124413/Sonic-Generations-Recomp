@@ -9,11 +9,11 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-POLICY = (ROOT / 'rex/src/host_policy.h').read_text()
-COVERAGE = (ROOT / 'rex/src/native_coverage.h').read_text()
-NATIVE = (ROOT / 'rex/src/native_gpu.cpp').read_text()
-TEST_SCRIPT = (ROOT / 'rex/windows/Run-Native-GPU-Test.cmd').read_text()
-FAST_SCRIPT = (ROOT / 'rex/windows/Run-ReXGlue-Fast.cmd').read_text()
+POLICY = (ROOT / 'rex/src/host_policy.h').read_text(encoding='utf-8')
+COVERAGE = (ROOT / 'rex/src/native_coverage.h').read_text(encoding='utf-8')
+NATIVE = (ROOT / 'rex/src/native_gpu.cpp').read_text(encoding='utf-8')
+TEST_SCRIPT = (ROOT / 'rex/windows/Run-Native-GPU-Test.cmd').read_text(encoding='utf-8')
+FAST_SCRIPT = (ROOT / 'rex/windows/Run-ReXGlue-Fast.cmd').read_text(encoding='utf-8')
 
 
 class NativeReplayPolicyTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class NativeReplayPolicyTests(unittest.TestCase):
         self.assertIn('must be at least 1', POLICY)
 
     def test_parsing_is_checked_on_windows(self):
-        contract = (ROOT / 'rex/tests/host_contract_tests.cpp').read_text()
+        contract = (ROOT / 'rex/tests/host_contract_tests.cpp').read_text(encoding='utf-8')
         for expected in ('ParseNativeFrameStride("30")==30', 'ParseNativeFrameStride("")==1',
                          'ParseNativeReadback("true")'):
             self.assertIn(expected, contract)
@@ -104,7 +104,7 @@ class NativeReplayPolicyTests(unittest.TestCase):
             self.assertIn(reason, NATIVE)
 
     def test_readme_explains_the_cost_and_the_knobs(self):
-        readme = (ROOT / 'rex/README.md').read_text()
+        readme = (ROOT / 'rex/README.md').read_text(encoding='utf-8')
         self.assertIn('SONIC_REX_NATIVE_FRAME_STRIDE', readme)
         self.assertIn('SONIC_REX_NATIVE_READBACK', readme)
         # The README documents the SDK-side knobs by their real cvar names and

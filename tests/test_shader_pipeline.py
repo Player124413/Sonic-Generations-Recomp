@@ -101,7 +101,7 @@ class ShaderPipelineTests(unittest.TestCase):
                 if mode in ('report_warning', 'invalid_cache'):
                     self.assertTrue((args.work/'diagnostics/compiler-report.json').is_file())
                 elif mode == 'forced_hlsl':
-                    diagnostic = json.loads((args.work/'diagnostics/report.json').read_text())
+                    diagnostic = json.loads((args.work/'diagnostics/report.json').read_text(encoding='utf-8'))
                     self.assertEqual(diagnostic['forced_boolean_registers'], ['b160'])
 
     def test_optional_checksum(self):
