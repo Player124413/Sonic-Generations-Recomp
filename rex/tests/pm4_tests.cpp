@@ -170,6 +170,23 @@ void TestGuestEndianness() {
     CHECK(SwapGuestDword(signature, 1) == 0);  // out of range reads nothing
 }
 
+void TestZeroWordsArePadding() {
+    // Idle ring space is zeroed. A zero word is not a Type-0 write of register 0:
+    // reading it as one consumes the next word as its value, shifts every later
+    // packet by one word and writes registers the guest never wrote.
+    VecSource source(std::vector<uint32_t>{0, 0, MakePacketType0(0x123, 1), 0xABCDEF01u, 0, 0});
+    RecordingSink sink;
+    const Stats stats = Walk(source, sink);
+    CHECK(stats.registerWrites == 1);
+    CHECK(sink.writes.size() == 1);
+    CHECK(sink.writes[0].first == 0x123u);
+    CHECK(sink.writes[0].second == 0xABCDEF01u);
+    CHECK(stats.nops == 4);
+    CHECK(stats.consumedWords == 6);
+    CHECK(stats.completedWords == 6);
+    CHECK(!stats.truncated);
+}
+
 void TestTruncatedStreamIsReported() {
     VecSource source({MakeType0(0x100, 4), 0x1, 0x2});
     RecordingSink sink;
@@ -384,6 +401,7 @@ int main() {
     TestWalkEmitsRegisterWrites();
     TestWriteOneIndexRepeats();
     TestGuestEndianness();
+    TestZeroWordsArePadding();
     TestTruncatedStreamIsReported();
     TestSwapTokenPresents();
     TestBogusSwapNeverPresents();

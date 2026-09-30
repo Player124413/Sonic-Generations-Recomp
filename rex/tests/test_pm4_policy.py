@@ -51,6 +51,14 @@ class Pm4PolicyTests(unittest.TestCase):
         self.assertIn('width > 8192', PM4)
         self.assertIn('height > 8192', PM4)
 
+    def test_zero_words_are_padding_not_register_writes(self):
+        # Idle ring space is zeroed. Treating a zero word as a Type-0 header would
+        # consume the next word as its value and shift the whole stream.
+        self.assertIn('if (word == 0) {', PM4)
+        self.assertIn('++stats.nops;', PM4)
+        self.assertIn('uint64_t nops = 0;', PM4_HEADER)
+        self.assertIn('TestZeroWordsArePadding();', TESTS)
+
     def test_walk_is_bounded(self):
         for lock in ('maxPackets', 'maxRegisterWrites', 'maxIndirectDepth',
                      'maxIndirectBuffers', 'maxPayloadWords'):

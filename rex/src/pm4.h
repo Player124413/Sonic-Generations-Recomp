@@ -157,6 +157,10 @@ struct Stats {
     uint64_t consumedWords = 0, completedWords = 0;
     uint64_t perAction[static_cast<size_t>(Action::Count)]{};
     uint64_t predicates = 0;   // packets carrying the predicate bit
+    /// Type-2 packets and zero-word padding. A zeroed ring word is not a Type-0
+    /// write of register 0, and counting it keeps the padding visible instead of
+    /// letting it look like guest register traffic.
+    uint64_t nops = 0;
     bool truncated = false;    // the source ended mid-packet
     bool limitsHit = false;    // a limit stopped the walk; the stream is untrusted
     bool indirectNotFollowed = false;

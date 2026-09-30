@@ -68,6 +68,18 @@ void WalkSource(PacketSource& source, Sink& sink, const Limits& limits, Stats& s
     while (!ShouldStop(stats, limits)) {
         uint32_t word = 0;
         if (!source.ReadDword(word)) return;
+        // A zero word is padding, not a Type 0 write of register 0. Ring space the
+        // guest has not filled yet is zeroed, and treating each zero as a header
+        // would consume the next word as its value: the whole stream would shift
+        // and the device would write registers the guest never wrote. The
+        // reference processor returns early on a zero packet for the same reason.
+        if (word == 0) {
+            ++stats.packets;
+            ++stats.nops;
+            consumed += 1;
+            completed += 1;
+            continue;
+        }
         const Header header = DecodeHeader(word);
         const uint32_t count = PayloadWords(header);
         ++stats.packets;
@@ -113,6 +125,7 @@ void WalkSource(PacketSource& source, Sink& sink, const Limits& limits, Stats& s
             break;
         }
         case PacketType::kType2:
+            ++stats.nops;
             ++stats.perAction[static_cast<size_t>(Action::Unsupported)];
             sink.OnPacket(header, Action::Unsupported, {});
             completed += 1 + count;

@@ -2,6 +2,10 @@
 #include "native_gpu_bridge.h"
 #include "native_coverage.h"
 #include "guest_memory.h"
+// Cost knobs live with the rest of the host policy; the parsers are inline there
+// and must stay reachable from this translation unit (the game build compiles it
+// on Windows, the contract build does not).
+#include "host_policy.h"
 #include <gpu/vulkan_backend.h>
 #include <algorithm>
 #include <atomic>
