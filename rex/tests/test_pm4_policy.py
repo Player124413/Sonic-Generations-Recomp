@@ -14,6 +14,10 @@ PM4_HEADER = (ROOT / 'rex/src/pm4.h').read_text()
 PM4 = (ROOT / 'rex/src/pm4.cpp').read_text()
 HOOKS = (ROOT / 'rex/src/gpu_hooks.cpp').read_text()
 TESTS = (ROOT / 'rex/tests/pm4_tests.cpp').read_text()
+DEVICE = (ROOT / 'rex/src/gpu_native/command_processor.cpp').read_text()
+DEVICE_HEADER = (ROOT / 'rex/src/gpu_native/command_processor.h').read_text()
+REGISTERS = (ROOT / 'rex/src/gpu_native/register_file.cpp').read_text()
+DEVICE_TESTS = (ROOT / 'rex/tests/gpu_device_tests.cpp').read_text()
 CMAKE = (ROOT / 'rex/CMakeLists.txt').read_text()
 README = (ROOT / 'rex/README.md').read_text()
 PLAN = (ROOT / 'docs/OWN_GPU_PLAN.md').read_text()
@@ -77,6 +81,37 @@ class Pm4PolicyTests(unittest.TestCase):
                      'TestIndirectBufferRecursion', 'TestTruncatedStreamIsReported',
                      'TestGuestEndianness', 'TestProbeFindsRealToken'):
             self.assertIn(case, TESTS)
+
+    def test_device_layer_has_no_sdk_dependency(self):
+        for text in (DEVICE, DEVICE_HEADER, REGISTERS):
+            self.assertNotIn('rex/', text)
+            self.assertNotIn('rexglue', text)
+            self.assertNotIn('LoadGpuPlugin', text)
+
+    def test_guest_visible_device_contract_is_implemented(self):
+        # The ring is indexed in dwords, the writeback is a guest byte-order
+        # store, and the CP window masks CPU addresses into GPU space.
+        self.assertIn('(write - readPointer_) & ringMaskDwords_', DEVICE)
+        self.assertIn('memory_->Write32(readPointerWriteback_, readPointer_)', DEVICE)
+        self.assertIn('guestAddress & 0x1FFFFFFFu', DEVICE)
+        self.assertIn('sizeLog2 > kMaxRingSizeLog2', DEVICE)
+        self.assertIn('kCpRbWptr', (ROOT / 'rex/src/gpu_native/registers.h').read_text())
+        # A packet writing the write pointer must not kick the processor.
+        self.assertIn('origin == WriteOrigin::kMmio', REGISTERS)
+
+    def test_incomplete_packets_are_never_consumed(self):
+        self.assertIn('readPointer_ = (readPointer_ + uint32_t(walked.completedWords)) & ringMaskDwords_;',
+                      DEVICE)
+        self.assertIn('truncatedDrains', DEVICE_HEADER)
+
+    def test_device_layer_has_contract_tests(self):
+        self.assertIn('add_library(sonic_rex_gpu_device STATIC', CMAKE)
+        self.assertIn('add_test(NAME rex_gpu_device COMMAND rex_gpu_device_tests)', CMAKE)
+        for case in ('TestReadPointerWriteback', 'TestSwapPresentsThroughOurPresenter',
+                     'TestInterruptPacketDispatchesPerCpu', 'TestRingWrapsAround',
+                     'TestTruncatedPacketIsNotExecutedAndResumes', 'TestIndirectBufferIsExecuted',
+                     'TestInvalidRingIsRefused', 'TestEmptyKickDoesNothing'):
+            self.assertIn(case, DEVICE_TESTS)
 
     def test_readme_and_plan_explain_the_path_off_xenos(self):
         for document in (README, PLAN):

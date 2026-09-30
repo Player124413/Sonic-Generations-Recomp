@@ -90,6 +90,13 @@ enum class Opcode : uint32_t {
 const char* OpcodeName(uint32_t opcode) noexcept;
 Action ClassifyOpcode(uint32_t opcode) noexcept;
 
+/// Packet encoders. The guest writes streams like these through VdSwap and the
+/// D3D driver, and tests use them to build streams that must decode identically.
+uint32_t MakePacketType0(uint32_t index, uint32_t count, bool oneIndex = false) noexcept;
+uint32_t MakePacketType1(uint32_t index1, uint32_t index2) noexcept;
+uint32_t MakePacketType2() noexcept;
+uint32_t MakePacketType3(uint32_t opcode, uint32_t count, bool predicate = false) noexcept;
+
 struct Header {
     PacketType type = PacketType::kType2;
     /// Number of dwords that follow the header.
@@ -141,11 +148,21 @@ struct Limits {
 
 struct Stats {
     uint64_t packets = 0, registerWrites = 0, payloadWords = 0, indirectBuffers = 0;
+    /// Dwords read from the walked source, and how many of those belong to
+    /// packets that completed. A command processor must resume at the last
+    /// complete packet, not at whatever a truncated read happened to consume.
+    /// Irreversible packets (draws, presents, interrupts) are never reported
+    /// when truncated, but Type-0 register writes are applied as they are read:
+    /// the rewind makes the guest's final register state identical either way.
+    uint64_t consumedWords = 0, completedWords = 0;
     uint64_t perAction[static_cast<size_t>(Action::Count)]{};
     uint64_t predicates = 0;   // packets carrying the predicate bit
     bool truncated = false;    // the source ended mid-packet
     bool limitsHit = false;    // a limit stopped the walk; the stream is untrusted
     bool indirectNotFollowed = false;
+    /// Buffers we followed but that yielded nothing: unreadable memory, or a
+    /// chain that failed before its first packet. Counted, never ignored.
+    uint64_t emptyIndirectBuffers = 0;
 
     uint64_t Of(Action action) const { return perAction[static_cast<size_t>(action)]; }
     uint64_t Executed() const {

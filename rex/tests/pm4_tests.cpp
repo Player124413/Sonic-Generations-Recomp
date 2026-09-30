@@ -23,16 +23,14 @@ int failures = 0;
         }                                                                      \
     } while (0)
 
+// The module's own encoders, so the tests and the writer cannot drift apart.
 uint32_t MakeType0(uint32_t index, uint32_t count, bool oneIndex = false) {
-    return (((count - 1) & 0x3FFF) << 16) | (oneIndex ? 0x8000u : 0u) | (index & 0x7FFF);
+    return MakePacketType0(index, count, oneIndex);
 }
-uint32_t MakeType1(uint32_t index1, uint32_t index2) {
-    return (1u << 30) | ((index2 & 0x7FF) << 11) | (index1 & 0x7FF);
-}
-uint32_t MakeType2() { return 2u << 30; }
+uint32_t MakeType1(uint32_t index1, uint32_t index2) { return MakePacketType1(index1, index2); }
+uint32_t MakeType2() { return MakePacketType2(); }
 uint32_t MakeType3(uint32_t opcode, uint32_t count, bool predicate = false) {
-    return (3u << 30) | (((count - 1) & 0x3FFF) << 16) | ((opcode & 0x7F) << 8) |
-           (predicate ? 1u : 0u);
+    return MakePacketType3(opcode, count, predicate);
 }
 
 class VecSource final : public PacketSource {
@@ -239,6 +237,16 @@ void TestIndirectBufferRecursion() {
     const Stats stats2 = Walk(unresolved, sink2);
     CHECK(stats2.indirectNotFollowed);
     CHECK(stats2.Of(Action::IndirectBuffer) == 1);
+
+    // A buffer that resolves to nothing is a different failure and must be
+    // reported as such.
+    VecSource empty({MakeType3(0x3F, 2), VecSource::kIndirectAddress, 0});
+    empty.FollowIndirectWith({});
+    RecordingSink sink3;
+    const Stats stats3 = Walk(empty, sink3);
+    CHECK(!stats3.indirectNotFollowed);
+    CHECK(stats3.emptyIndirectBuffers == 1);
+    CHECK(stats3.Format().find("empty_indirect_buffers=1") != std::string::npos);
 }
 
 void TestIndirectDepthLimitStops() {
@@ -298,6 +306,21 @@ void TestOversizedPacketIsNotMisread() {
     CHECK(!stats.truncated);
     CHECK(sink.Count(Action::Present) == 0);
     CHECK(stats.Of(Action::Unsupported) == 1);
+}
+
+void TestPacketEncodersAreSymmetric() {
+    // Encoding then decoding must round trip, including the boundaries.
+    const Header t0 = DecodeHeader(MakePacketType0(0x7FFF, 0x4000));
+    CHECK(t0.count == 0x4000 && t0.index == 0x7FFF && !t0.writeOneIndex);
+    const Header t3 = DecodeHeader(MakePacketType3(0x7F, 0x4000, true));
+    CHECK(t3.opcode == 0x7F && t3.count == 0x4000 && t3.predicate);
+    // Out-of-range requests are clamped, never wrapped into another packet.
+    CHECK(DecodeHeader(MakePacketType0(0, 0)).count == 1);
+    CHECK(DecodeHeader(MakePacketType3(0, 0)).count == 1);
+    CHECK(DecodeHeader(MakePacketType3(0x22, 0x9999)).count == 0x4000);
+    const Header t1 = DecodeHeader(MakePacketType1(0x7FF, 0x7FF));
+    CHECK(t1.index == 0x7FF && t1.index2 == 0x7FF);
+    CHECK(DecodeHeader(MakePacketType2()).type == PacketType::kType2);
 }
 
 void TestOpcodeAndActionNames() {
@@ -369,6 +392,7 @@ int main() {
     TestIndirectBudgetStops();
     TestLimitsStopTheWalk();
     TestOversizedPacketIsNotMisread();
+    TestPacketEncodersAreSymmetric();
     TestOpcodeAndActionNames();
     TestStatsReporting();
     TestProbeFindsRealToken();

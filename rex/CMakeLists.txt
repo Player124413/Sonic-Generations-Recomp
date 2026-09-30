@@ -36,6 +36,19 @@ add_executable(rex_pm4_tests tests/pm4_tests.cpp)
 target_link_libraries(rex_pm4_tests PRIVATE sonic_rex_pm4)
 add_test(NAME rex_pm4 COMMAND rex_pm4_tests)
 
+# Our own GPU device: register file, ring buffer, read-pointer writeback, swap
+# token handling. This is the piece that has to exist before the Xenos plugin can
+# be removed from the build, so it must not depend on any SDK graphics code.
+add_library(sonic_rex_gpu_device STATIC
+    src/gpu_native/register_file.cpp
+    src/gpu_native/command_processor.cpp)
+target_include_directories(sonic_rex_gpu_device PUBLIC src)
+target_compile_features(sonic_rex_gpu_device PUBLIC cxx_std_20)
+target_link_libraries(sonic_rex_gpu_device PUBLIC sonic_rex_pm4)
+add_executable(rex_gpu_device_tests tests/gpu_device_tests.cpp)
+target_link_libraries(rex_gpu_device_tests PRIVATE sonic_rex_gpu_device)
+add_test(NAME rex_gpu_device COMMAND rex_gpu_device_tests)
+
 # Host-side policy that talks to the SDK cvar registry (keyboard defaults).
 add_library(sonic_rex_host_policy STATIC src/input_defaults.cpp)
 target_include_directories(sonic_rex_host_policy PUBLIC src)

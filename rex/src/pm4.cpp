@@ -63,7 +63,8 @@ bool ShouldStop(const Stats& stats, const Limits& limits) noexcept {
 }
 
 void WalkSource(PacketSource& source, Sink& sink, const Limits& limits, Stats& stats,
-                uint32_t depth, uint32_t& indirectUsed) noexcept {
+                uint32_t depth, uint32_t& indirectUsed, uint64_t& consumed,
+                uint64_t& completed) noexcept {
     while (!ShouldStop(stats, limits)) {
         uint32_t word = 0;
         if (!source.ReadDword(word)) return;
@@ -71,6 +72,7 @@ void WalkSource(PacketSource& source, Sink& sink, const Limits& limits, Stats& s
         const uint32_t count = PayloadWords(header);
         ++stats.packets;
         stats.payloadWords += count;
+        consumed += 1 + count;
         if (header.predicate) ++stats.predicates;
 
         switch (header.type) {
@@ -93,6 +95,7 @@ void WalkSource(PacketSource& source, Sink& sink, const Limits& limits, Stats& s
             }
             ++stats.perAction[static_cast<size_t>(action)];
             sink.OnPacket(header, action, {});
+            completed += 1 + count;
             break;
         }
         case PacketType::kType1: {
@@ -106,11 +109,13 @@ void WalkSource(PacketSource& source, Sink& sink, const Limits& limits, Stats& s
             stats.registerWrites += 2;
             ++stats.perAction[static_cast<size_t>(Action::RegisterWrite)];
             sink.OnPacket(header, Action::RegisterWrite, {});
+            completed += 1 + count;
             break;
         }
         case PacketType::kType2:
             ++stats.perAction[static_cast<size_t>(Action::Unsupported)];
             sink.OnPacket(header, Action::Unsupported, {});
+            completed += 1 + count;
             break;
         case PacketType::kType3: {
             Action action = ClassifyOpcode(header.opcode);
@@ -149,9 +154,14 @@ void WalkSource(PacketSource& source, Sink& sink, const Limits& limits, Stats& s
                 if (!nested) {
                     stats.indirectNotFollowed = true;
                 } else {
-                    WalkSource(*nested, sink, limits, stats, depth + 1, indirectUsed);
+                    // Words of another buffer are not the walked source's words.
+                    uint64_t nestedConsumed = 0, nestedCompleted = 0;
+                    WalkSource(*nested, sink, limits, stats, depth + 1, indirectUsed,
+                               nestedConsumed, nestedCompleted);
+                    if (nestedConsumed == 0) ++stats.emptyIndirectBuffers;
                 }
             }
+            completed += 1 + count;
             break;
         }
         }
@@ -159,6 +169,26 @@ void WalkSource(PacketSource& source, Sink& sink, const Limits& limits, Stats& s
     if (ShouldStop(stats, limits)) stats.limitsHit = true;
 }
 } // namespace
+
+uint32_t MakePacketType0(uint32_t index, uint32_t count, bool oneIndex) noexcept {
+    const uint32_t bounded = count < 1 ? 1 : (count > 0x4000 ? 0x4000 : count);
+    return (((bounded - 1) & kCountMask) << 16) | (oneIndex ? (1u << kType0OneIndexBit) : 0u) |
+           (index & kType0IndexMask);
+}
+
+uint32_t MakePacketType1(uint32_t index1, uint32_t index2) noexcept {
+    return (1u << kTypeShift) | ((index2 & kType1IndexMask) << 11) | (index1 & kType1IndexMask);
+}
+
+uint32_t MakePacketType2() noexcept {
+    return 2u << kTypeShift;
+}
+
+uint32_t MakePacketType3(uint32_t opcode, uint32_t count, bool predicate) noexcept {
+    const uint32_t bounded = count < 1 ? 1 : (count > 0x4000 ? 0x4000 : count);
+    return (3u << kTypeShift) | (((bounded - 1) & kCountMask) << 16) |
+           ((opcode & kOpcodeMask) << kOpcodeShift) | (predicate ? kPredicateBit : 0u);
+}
 
 const char* ActionName(Action value) noexcept {
     switch (value) {
@@ -338,7 +368,8 @@ uint32_t PayloadWords(const Header& header) noexcept {
 Stats Walk(PacketSource& source, Sink& sink, const Limits& limits) noexcept {
     Stats stats;
     uint32_t indirectUsed = 0;
-    WalkSource(source, sink, limits, stats, 1, indirectUsed);
+    WalkSource(source, sink, limits, stats, 1, indirectUsed, stats.consumedWords,
+               stats.completedWords);
     return stats;
 }
 
@@ -359,6 +390,9 @@ std::string Stats::Format() const {
                   (unsigned long long)registerWrites, (unsigned long long)payloadWords,
                   (unsigned long long)indirectBuffers, (unsigned long long)predicates);
     text += line;
+    text += std::string("consumed_words=") + std::to_string(consumedWords) +
+            " completed_words=" + std::to_string(completedWords) + "\n";
+    text += std::string("empty_indirect_buffers=") + std::to_string(emptyIndirectBuffers) + "\n";
     text += std::string("truncated=") + (truncated ? "yes" : "no") +
             " limits_hit=" + (limitsHit ? "yes" : "no") +
             " indirect_not_followed=" + (indirectNotFollowed ? "yes" : "no") + "\n";

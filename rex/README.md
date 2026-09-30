@@ -499,3 +499,22 @@ set SONIC_REX_PM4_DUMP=1
 
 Полный разбор «что рисует кадр сейчас и что нужно, чтобы рисовал наш код» —
 `docs/OWN_GPU_PLAN.md`.
+
+### Своё GPU-устройство (ядро замены Xenos)
+
+`rex/src/gpu_native/` — наш собственный гостевой GPU-девайс, без кода SDK:
+
+| Файл | Что делает |
+| --- | --- |
+| `registers.h`, `register_file.{h,cpp}` | регистровый файл: гостевые чтения (EDRAM timing, BC control, v-counter, interrupt status, viewport size) и записи (kick `CP_RB_WPTR` только из MMIO, значения выше окна сохраняются) |
+| `command_processor.{h,cpp}` | ring buffer в dword-индексах с переносом, writeback read-pointer в гостевую память, регистровые записи, swap-токен через собственный презентер, `PM4_INTERRUPT` по маске CPU, vblank-прерывание, пул INDIRECT_BUFFER, счётчики всего неисполненного |
+
+Недописанный пакет не потребляется: чтение возвращается к последнему целому
+пакету, поэтому кадр, который гость ещё пишет, не исполняется ни частично, ни
+дважды. Проверки — `rex/tests/gpu_device_tests.cpp` (цель `rex_gpu_device_tests`),
+рядом с ними политика в `rex/tests/test_pm4_policy.py`.
+
+Это ядро устройства, а не готовая картинка: SDK-оболочка плагина
+(`rex_gpu_create`/`IGraphicsSystem`, MMIO-окно `0x7FC80000`, vblank-поток,
+провайдер и презентер) и рендер (EDRAM/resolve, кэши, пайплайны, шейдеры) — ещё
+впереди, порядок в `docs/OWN_GPU_PLAN.md`.
