@@ -200,6 +200,26 @@ void TestReadPointerWriteback() {
     CHECK(device.processor.GetStats().readPointerWrites == 1);
 }
 
+void TestWritebackIsOptIn() {
+    // Until VdEnableRingBufferRPtrWriteBack runs, the guest has not told us
+    // where to publish progress, so the device must not write anywhere.
+    Device device;
+    device.Initialize(0x3800, 8);
+    device.Submit({pm4::MakePacketType0(0x0500, 1), 0x00C0FFEE});
+    device.Kick();
+    device.processor.Tick();
+    CHECK(device.processor.registers().Raw(0x0500) == 0x00C0FFEEu);
+    CHECK(device.processor.GetStats().readPointerWrites == 0);
+    // Enabling it later is honoured on the next drain without replaying state.
+    device.processor.EnableReadPointerWriteBack(0x8100, 3);
+    device.Submit({pm4::MakePacketType0(0x0501, 1), 0x00C0FFEF});
+    device.Kick();
+    device.processor.Tick();
+    CHECK(device.memory.Load(0x8100) == device.processor.ReadPointer());
+    CHECK(device.processor.GetStats().readPointerWrites == 1);
+    CHECK(device.processor.GetStats().drains == 2);
+}
+
 void TestSwapPresentsThroughOurPresenter() {
     Device device;
     device.Initialize(0x4000, 8);
@@ -368,6 +388,7 @@ int main() {
     TestWritePointerKickOnlyFromMmio();
     TestDrainAppliesRegisterWrites();
     TestReadPointerWriteback();
+    TestWritebackIsOptIn();
     TestSwapPresentsThroughOurPresenter();
     TestBogusSwapDoesNotPresent();
     TestInterruptPacketDispatchesPerCpu();
