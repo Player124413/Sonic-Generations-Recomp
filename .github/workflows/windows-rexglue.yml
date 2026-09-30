@@ -181,6 +181,21 @@ jobs:
           cmake --build build-rex-plugin --config Release --target rexgpu-native --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem build-rex-plugin/Release/rexgpu-native.dll | Select-Object Name, Length
+      - name: Report our plugin built
+        # The marker artifact is how a non-blocking step tells us it passed:
+        # `gh api .../artifacts` answers instantly, while a failed non-blocking
+        # step is otherwise indistinguishable in the API from a passing one.
+        if: success() && (github.event_name == 'push' || inputs.build_game)
+        run: |
+          "rexgpu-native.dll built against the pinned SDK" | Out-File -Encoding utf8 build-rex-plugin/plugin-ok.txt
+        continue-on-error: true
+      - name: Upload our plugin build marker
+        if: success() && (github.event_name == 'push' || inputs.build_game)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rex-native-plugin-built
+          path: build-rex-plugin/plugin-ok.txt
+        continue-on-error: true
       - name: Test recovered guest entries before PPC build
         id: entries
         if: github.event_name == 'push' || inputs.build_game
