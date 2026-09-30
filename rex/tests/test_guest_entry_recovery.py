@@ -78,6 +78,10 @@ PPC_FUNC_IMPL(__imp__sub_00001014) {
             self.assertLess(cpp.index('CheckCode(base,'), cpp.index('ctx.r3.u64 ='))
             self.assertIn('throw std::runtime_error', cpp)
             self.assertNotIn('ctx.lr =', cpp)
+            tests = (output / 'guest_entry_recovery_tests.cpp').read_text()
+            # SDK path resolution during startup requires the wide CRT entry point.
+            self.assertIn('int wmain()', tests)
+            self.assertIn('guest-entry-recovery: begin', tests)
 
 
 if __name__ == '__main__':

@@ -139,10 +139,16 @@ template<size_t N> void CheckCode(const uint8_t* base, uint32_t address, const u
 
 def emit_tests(thunks, output):
     # Compile the actual wrappers against SDK PPCContext; fake ONLY final callees.
+    # The SDK headers the generated PCH pulls in resolve the executable path during
+    # startup, so this console test must use the wide entry point like the SDK host.
     text = '''#include "sonicgenerations_pch.h"
 #include "guest_entry_recovery.h"
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <cstring>
 #include <stdexcept>
@@ -152,13 +158,16 @@ static uint32_t called;
 '''
     for t in {t['symbol']: t for t in thunks}.values():
         text += f'REX_EXTERN({t["symbol"]}) {{ ++calls; called = 0x{t["target"]:08X}; }}\n'
-    text += '''int main() {
+    text += '''int wmain() {
+    std::fprintf(stderr, "guest-entry-recovery: begin\\n");
     auto* base = static_cast<uint8_t*>(VirtualAlloc(nullptr, size_t(1) << 32, MEM_RESERVE, PAGE_NOACCESS));
-    if (!base) return 1;
+    if (!base) { std::fprintf(stderr, "guest-entry-recovery: reservation failed\\n"); return 1; }
+    std::fprintf(stderr, "guest-entry-recovery: memory reserved\\n");
     unsigned failed = 0;
 '''
     for t in thunks:
         addr = t['address']
+        text += f'    std::fprintf(stderr, "guest-entry-recovery: entry 0x{addr:08X}\\n");\n'
         text += f'    if (!VirtualAlloc(base + 0x{addr & ~4095:08X}, 8192, MEM_COMMIT, PAGE_READWRITE)) return 2;\n'
         for i, word in enumerate(t['words']):
             for j in range(4):
@@ -196,7 +205,7 @@ static uint32_t called;
     }}
 '''
     text += '''    VirtualFree(base, 0, MEM_RELEASE);
-    std::printf("Guest entry recovery failures: %u\\n", failed);
+    std::fprintf(stderr, "Guest entry recovery failures: %u\\n", failed);
     return failed ? 1 : 0;
 }
 '''

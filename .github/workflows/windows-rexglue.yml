@@ -167,12 +167,24 @@ jobs:
           ctest --test-dir build-rex-game -C Release -R '^rex_native_backend_link$' --output-on-failure --timeout 120
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test recovered guest entries before PPC build
+        id: entries
         if: github.event_name == 'push' || inputs.build_game
         run: |
           cmake --build build-rex-game --config Release --target rex_guest_entry_recovery_tests --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir build-rex-game -C Release -R '^rex_guest_entry_recovery$' --output-on-failure --timeout 60
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Trace recovered-entry test failure under the Windows debugger
+        if: failure() && steps.entries.outcome == 'failure'
+        run: |
+          $tracer = './build-rex-contract/Release/windows_crash_trace.exe'
+          $test = (Resolve-Path ./build-rex-game/Release/rex_guest_entry_recovery_tests.exe).Path
+          if (Test-Path $tracer) {
+            $PSNativeCommandUseErrorActionPreference = $false
+            & $tracer $test 2>&1 | Tee-Object build-rex-game/entry-recovery/entry-recovery-trace.log
+          }
+          # Diagnostics never change the preceding failed step.
+          exit 0
       - name: Preserve guest entry audit
         if: always()
         uses: actions/upload-artifact@v4
@@ -180,6 +192,7 @@ jobs:
           name: rex-guest-entry-audit
           path: |
             build-rex-game/entry-recovery/guest-entry-audit.json
+            build-rex-game/entry-recovery/entry-recovery-trace.log
             build-rex-game/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
       - name: Build the candidate (fail on incompatible generated ABI)
