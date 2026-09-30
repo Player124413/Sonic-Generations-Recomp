@@ -166,6 +166,22 @@ jobs:
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/vulkan-1.dll" build-rex-game/Release/
           ctest --test-dir build-rex-game -C Release -R '^rex_native_backend_link$' --output-on-failure --timeout 120
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test recovered guest entries before PPC build
+        if: github.event_name == 'push' || inputs.build_game
+        run: |
+          cmake --build build-rex-game --config Release --target rex_guest_entry_recovery_tests --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build-rex-game -C Release -R '^rex_guest_entry_recovery$' --output-on-failure --timeout 60
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve guest entry audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rex-guest-entry-audit
+          path: |
+            build-rex-game/entry-recovery/guest-entry-audit.json
+            build-rex-game/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
       - name: Build the candidate (fail on incompatible generated ABI)
         if: github.event_name == 'push' || inputs.build_game
         run: cmake --build build-rex-game --config Release --parallel 2
@@ -183,6 +199,7 @@ jobs:
           Copy-Item "$env:REXSDK_PREFIX/sonic-sdk-build.json" package-rex/
           Get-ChildItem build-rex-game/Release/*.dll | Copy-Item -Destination package-rex/
           if (!(Test-Path package-rex/rexgpu-xenos.dll)) { throw 'Xenos reference plugin missing' }
+          Copy-Item build-rex-game/entry-recovery/guest-entry-audit.json package-rex/
           Copy-Item rex/tools package-rex/tools -Recurse
           Copy-Item rex/windows/*.cmd,rex/README.md,rex/dependencies.json,COPYING,THIRD_PARTY.md package-rex/
           Copy-Item licenses package-rex/licenses -Recurse

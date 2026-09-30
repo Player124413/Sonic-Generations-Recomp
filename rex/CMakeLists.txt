@@ -92,6 +92,34 @@ if(SONIC_REX_BUILD_GAME)
     if(NOT GENERATED_SOURCES)
         message(FATAL_ERROR "Empty generated source inventory")
     endif()
+    # Recover audited entry thunks, never the legacy runtime or arbitrary missing code.
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(ENTRY_RECOVERY_DIR "${CMAKE_CURRENT_BINARY_DIR}/entry-recovery")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_LIST_DIR}/tools/recover_guest_entries.py")
+    execute_process(COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_LIST_DIR}/tools/recover_guest_entries.py"
+        --legacy-root "${CMAKE_CURRENT_LIST_DIR}/../ppc"
+        --generated-dir "${SONIC_REX_GENERATED_DIR}"
+        --output-dir "${ENTRY_RECOVERY_DIR}"
+        RESULT_VARIABLE ENTRY_RECOVERY_RESULT)
+    if(NOT ENTRY_RECOVERY_RESULT EQUAL 0)
+        message(FATAL_ERROR "Guest entry inventory audit failed")
+    endif()
+    list(REMOVE_ITEM GENERATED_SOURCES
+        "${SONIC_REX_GENERATED_DIR}/sonicgenerations_init.cpp"
+        "${SONIC_REX_GENERATED_DIR}/sonicgenerations_register.cpp")
+    list(APPEND GENERATED_SOURCES
+        "${ENTRY_RECOVERY_DIR}/sonicgenerations_init.cpp"
+        "${ENTRY_RECOVERY_DIR}/sonicgenerations_register.cpp"
+        "${ENTRY_RECOVERY_DIR}/guest_entry_recovery.cpp")
+    add_executable(rex_guest_entry_recovery_tests
+        "${ENTRY_RECOVERY_DIR}/guest_entry_recovery.cpp"
+        "${ENTRY_RECOVERY_DIR}/guest_entry_recovery_tests.cpp")
+    target_include_directories(rex_guest_entry_recovery_tests PRIVATE "${SONIC_REX_GENERATED_DIR}" "${ENTRY_RECOVERY_DIR}")
+    target_link_libraries(rex_guest_entry_recovery_tests PRIVATE rex::runtime)
+    rexglue_apply_target_settings(rex_guest_entry_recovery_tests)
+    add_test(NAME rex_guest_entry_recovery COMMAND rex_guest_entry_recovery_tests)
     # Fail quickly on host API / generated ABI mismatch, before the large PPC build.
     add_library(sonic_rex_api_probe OBJECT EXCLUDE_FROM_ALL
         src/main.cpp src/gpu_hooks.cpp "${SONIC_REX_GENERATED_DIR}/sonicgenerations_recomp.0.cpp")
@@ -105,7 +133,7 @@ if(SONIC_REX_BUILD_GAME)
         target_compile_options(sonic_rex_api_probe PRIVATE -fasync-exceptions)
     endif()
     add_library(sonic_rex_ppc OBJECT ${GENERATED_SOURCES})
-    target_include_directories(sonic_rex_ppc PRIVATE "${SONIC_REX_GENERATED_DIR}")
+    target_include_directories(sonic_rex_ppc PRIVATE "${SONIC_REX_GENERATED_DIR}" "${ENTRY_RECOVERY_DIR}")
     target_link_libraries(sonic_rex_ppc PRIVATE rex::runtime)
     rexglue_apply_target_settings(sonic_rex_ppc)
     # Generated dead labels / release-only lock counters are noisy, not errors.
