@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import shutil
 from pathlib import Path
 import tempfile
@@ -130,6 +131,13 @@ PPC_FUNC_IMPL(__imp__sub_00001014) {
             self.assertIn('guest-entry-recovery: begin', tests)
             self.assertNotIn('catch', tests)
             self.assertIn('SetGuestEntryMismatchHandler(nullptr)', tests)
+            # Each corruption must flip the low byte, matching the "word ^ 1" expectation.
+            flips = re.findall(r'base\[(0x[0-9A-F]+)\] \^= 1;', tests)
+            self.assertTrue(flips)
+            self.assertTrue(all(int(address, 16) % 4 == 3 for address in flips))
+            for expected, actual in re.findall(
+                    r'mismatch_expected != 0x([0-9A-F]{8}) \|\| mismatch_actual != 0x([0-9A-F]{8})', tests):
+                self.assertEqual(int(expected, 16) ^ 1, int(actual, 16))
 
 
 if __name__ == '__main__':

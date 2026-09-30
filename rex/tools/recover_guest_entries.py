@@ -231,12 +231,12 @@ static void RecordMismatch(uint32_t address, size_t instruction, uint32_t expect
             text += f'''    {{
         PPCContext ctx{{}}, before{{}}; calls = 0; mismatches = 0;
         std::memcpy(&before, &ctx, sizeof(ctx));
-        base[0x{addr+i*4:08X}] ^= 1;
+        base[0x{addr+i*4+3:08X}] ^= 1;  // Lowest byte of the big-endian instruction: word ^ 1.
         sonic_recovered_{addr:08X}(ctx, base);
         if (calls || mismatches != 1 || mismatch_address != 0x{addr:08X} || mismatch_instruction != {i}
             || mismatch_expected != 0x{word:08X} || mismatch_actual != 0x{flipped:08X}
             || std::memcmp(&ctx, &before, sizeof(ctx))) ++failed;
-        base[0x{addr+i*4:08X}] ^= 1;
+        base[0x{addr+i*4+3:08X}] ^= 1;
     }}
 '''
     text += '''    SetGuestEntryMismatchHandler(nullptr);
