@@ -27,6 +27,15 @@ add_executable(rex_gpu_capture_tests tests/gpu_capture_tests.cpp)
 target_link_libraries(rex_gpu_capture_tests PRIVATE sonic_rex_capture)
 add_test(NAME rex_gpu_capture COMMAND rex_gpu_capture_tests)
 
+# Our own Xenos-free command-stream front end. No SDK graphics code: this is the
+# first module of the renderer that is meant to replace the Xenos plugin.
+add_library(sonic_rex_pm4 STATIC src/pm4.cpp)
+target_include_directories(sonic_rex_pm4 PUBLIC src)
+target_compile_features(sonic_rex_pm4 PUBLIC cxx_std_20)
+add_executable(rex_pm4_tests tests/pm4_tests.cpp)
+target_link_libraries(rex_pm4_tests PRIVATE sonic_rex_pm4)
+add_test(NAME rex_pm4 COMMAND rex_pm4_tests)
+
 # Host-side policy that talks to the SDK cvar registry (keyboard defaults).
 add_library(sonic_rex_host_policy STATIC src/input_defaults.cpp)
 target_include_directories(sonic_rex_host_policy PUBLIC src)
@@ -61,7 +70,7 @@ target_link_libraries(windows_crash_trace PRIVATE dbghelp)
 # Link the actual SDK hook translation unit against test originals before the
 # multi-minute PPC build. This catches hook API and missing-symbol regressions.
 add_executable(rex_gpu_hook_tests tests/gpu_hook_tests.cpp src/gpu_hooks.cpp)
-target_link_libraries(rex_gpu_hook_tests PRIVATE sonic_rex_capture rex::runtime)
+target_link_libraries(rex_gpu_hook_tests PRIVATE sonic_rex_capture sonic_rex_pm4 rex::runtime)
 rexglue_apply_target_settings(rex_gpu_hook_tests)
 # Both tests share the Release output directory; let one target stage SDK DLLs
 # to avoid concurrent writes of the same DLL from two post-build commands.
@@ -137,7 +146,7 @@ if(SONIC_REX_BUILD_GAME)
     add_library(sonic_rex_api_probe OBJECT EXCLUDE_FROM_ALL
         src/main.cpp src/gpu_hooks.cpp "${SONIC_REX_GENERATED_DIR}/sonicgenerations_recomp.0.cpp")
     target_include_directories(sonic_rex_api_probe PRIVATE src "${SONIC_REX_GENERATED_DIR}")
-    target_link_libraries(sonic_rex_api_probe PRIVATE rex::runtime)
+    target_link_libraries(sonic_rex_api_probe PRIVATE sonic_rex_pm4 rex::runtime)
     target_compile_definitions(sonic_rex_api_probe PRIVATE SONIC_REX_NATIVE_RENDERER=1)
     rexglue_apply_target_settings(sonic_rex_api_probe)
     if(MSVC)
@@ -159,7 +168,7 @@ if(SONIC_REX_BUILD_GAME)
     target_precompile_headers(sonic_rex_ppc PRIVATE "${SONIC_REX_GENERATED_DIR}/sonicgenerations_pch.h")
     add_executable(SonicGenerationsRecomp-ReXGlue WIN32 src/main.cpp src/gpu_hooks.cpp)
     target_include_directories(SonicGenerationsRecomp-ReXGlue PRIVATE src "${SONIC_REX_GENERATED_DIR}")
-    target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_ppc sonic_rex_math sonic_rex_capture sonic_rex_host_policy rex::runtime)
+    target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_ppc sonic_rex_math sonic_rex_capture sonic_rex_pm4 sonic_rex_host_policy rex::runtime)
     target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_RENDERER=1)
     target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_native)
     rexglue_configure_target(SonicGenerationsRecomp-ReXGlue GPU_PLUGINS xenos)
