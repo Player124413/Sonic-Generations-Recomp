@@ -213,9 +213,17 @@ struct SwapProbeResult {
     bool found = false;
     SwapToken token{};
     uint32_t signatureIndex = 0;
+    /// How many dwords were actually readable. A guest buffer is usually much
+    /// smaller than the window a probe wants to scan, so the read must stop at
+    /// the first unreadable dword and still inspect what it got: requiring the
+    /// whole window to be readable is how the first live probe found nothing
+    /// while the token was sitting in the first dword it asked for.
+    uint32_t wordsRead = 0;
 };
 /// Reads the first `words` dwords at `guestAddress` through `read` and looks for
 /// a swap token. Used by the diagnostic probe that captures real command streams.
+/// The read is per dword, so an unreadable dword past the guest's reservation
+/// shortens the scan instead of voiding it.
 SwapProbeResult ProbeSwapToken(uint32_t guestAddress, size_t words,
     const std::function<bool(uint32_t, std::span<uint8_t>)>& read) noexcept;
 

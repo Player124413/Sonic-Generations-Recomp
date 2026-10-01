@@ -129,13 +129,16 @@ pm4::PacketSource* CommandProcessor::TakeIndirectSource(uint32_t guestAddress,
 
 void CommandProcessor::Sink::OnRegisterWrite(uint32_t index, uint32_t value) {
     owner_.registers_.Write(index, value, RegisterFile::WriteOrigin::kPacket);
+    if (owner_.observer_) owner_.observer_->OnRegisterWrite(index, value);
 }
 
 void CommandProcessor::Sink::OnPacket(const pm4::Header& header, pm4::Action action,
                                       std::span<const uint32_t> payload) {
+    if (owner_.observer_) owner_.observer_->OnPacket(header, action, payload);
     switch (action) {
     case pm4::Action::Present:
         // The decoder already verified the token signature and size.
+        owner_.drainHadSwap_ = true;
         if (payload.size() < 4) break;
         ++owner_.stats_.swaps;
         if (owner_.presenter_)
@@ -183,6 +186,7 @@ void CommandProcessor::Tick() noexcept {
     if (!available) return;
     ++stats_.drains;
     indirectUsed_ = 0;
+    drainHadSwap_ = false;
     ring_.Begin(readPointer_, available);
     Sink sink(*this);
     pm4::Limits limits;
@@ -204,6 +208,17 @@ void CommandProcessor::Tick() noexcept {
     }
     if (readPointerWriteback_) {
         if (memory_->Write32(readPointerWriteback_, readPointer_)) ++stats_.readPointerWrites;
+    }
+    if (observer_) {
+        DrainInfo drain;
+        drain.ringBase = ringBase_;
+        drain.ringMaskDwords = ringMaskDwords_;
+        drain.readPointer = (write - available) & ringMaskDwords_;
+        drain.availableWords = available;
+        drain.completedWords = walked.truncated ? uint32_t(walked.completedWords) : available;
+        drain.truncated = walked.truncated;
+        drain.hadSwap = drainHadSwap_;
+        observer_->OnDrain(drain);
     }
 }
 

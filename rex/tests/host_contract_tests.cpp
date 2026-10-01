@@ -92,7 +92,8 @@ int main() {
     CHECK(ParseGraphicsMode("")==GraphicsMode::Reference);
     CHECK(ParseGraphicsMode("reference")==GraphicsMode::Reference);
     CHECK(ParseGraphicsMode("forward")==GraphicsMode::Forward);
-    for(const char* mode : {"shadow","native","d3d12","typo"}) {
+    CHECK(ParseGraphicsMode("native")==GraphicsMode::Native);
+    for(const char* mode : {"shadow","d3d12","typo"}) {
         try { ParseGraphicsMode(mode); CHECK(false); } catch(const std::invalid_argument&) {}
     }
     const auto root=std::filesystem::path("C:/runtime with spaces");

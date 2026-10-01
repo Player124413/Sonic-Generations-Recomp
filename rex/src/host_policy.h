@@ -7,11 +7,18 @@
 #include <vector>
 
 namespace sonic::rex_host {
-enum class GraphicsMode { Reference, Forward };
+enum class GraphicsMode { Reference, Forward, Native };
 inline GraphicsMode ParseGraphicsMode(std::string_view mode) {
     if (mode.empty() || mode == "reference") return GraphicsMode::Reference;
     if (mode == "forward") return GraphicsMode::Forward;
-    throw std::invalid_argument("SONIC_REX_GRAPHICS_MODE must be reference or forward; shadow/native are not implemented");
+    // Our own GPU plugin. It renders nothing yet (the presenter shows the frame
+    // the guest swapped, straight from guest memory), but it is a real device:
+    // ring buffer, writeback, interrupts, swap and its own Vulkan presenter. It
+    // is also the only way to record the real command stream (SONIC_REX_GPU_DUMP=1),
+    // because our command processor is the component that walks it.
+    if (mode == "native") return GraphicsMode::Native;
+    throw std::invalid_argument(
+        "SONIC_REX_GRAPHICS_MODE must be reference, forward or native; shadow is not implemented");
 }
 struct Paths {
     std::filesystem::path game, user, update, cache, metadata, config;

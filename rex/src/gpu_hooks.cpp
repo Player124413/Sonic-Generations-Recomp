@@ -45,9 +45,14 @@ constexpr unsigned kMaxPm4Dumps = 8;
 /// is the only way to find the stream without guessing.
 constexpr unsigned kMaxArgumentLogs = 32;
 unsigned pm4ArgumentLogs = 0;
-constexpr size_t kScanWords = 1024;         // 4 KiB per candidate argument
+constexpr size_t kScanWords = 256;          // 1 KiB per candidate argument
 constexpr size_t kRingWindowWords = 2048;   // 8 KiB of stream before the token
 constexpr size_t kLoggedPackets = 64;
+/// How many "this argument is not the stream" lines are written. Without them a
+/// run that finds nothing says nothing, which is what happened on the first
+/// attempt.
+constexpr unsigned kMaxScanLogs = 32;
+unsigned pm4ScanLogs = 0;
 
 /// Counts what the guest actually issues and keeps the first packets readable.
 struct ProbeSink final : pm4::Sink {
@@ -128,14 +133,34 @@ void ProbeSwapCommandStream(const CaptureArguments& args, uint8_t* base) noexcep
         const uint32_t candidate = uint32_t(args[index]);
         if (!candidate || (candidate & 3u)) continue;
         const auto found = pm4::ProbeSwapToken(candidate, kScanWords, read);
-        if (!found.found) continue;
+        if (!found.found) {
+            // Say what the scan saw. A lead that dead-ends silently costs a
+            // whole test run; a line in the log costs nothing.
+            std::lock_guard lock(pm4Mutex);
+            if (pm4ScanLogs < kMaxScanLogs) {
+                ++pm4ScanLogs;
+                char line[160];
+                std::snprintf(line, sizeof(line),
+                              "[pm4] arg%zu %08X: %u dwords readable, no swap token\n", index,
+                              candidate, found.wordsRead);
+                std::fputs(line, stderr);
+                std::error_code error;
+                std::filesystem::create_directories(pm4Directory, error);
+                std::ofstream log(pm4Directory / "arguments.txt", std::ios::app);
+                log << line;
+            }
+            continue;
+        }
         // Found: the dump path below decides what to do with it.
         const uint32_t tokenAddress = candidate + found.signatureIndex * 4u;
         const size_t windowWords = kRingWindowWords < size_t(tokenAddress / 4u)
                                        ? kRingWindowWords : size_t(tokenAddress / 4u);
         const uint32_t start = tokenAddress - uint32_t(windowWords * 4);
         std::vector<uint8_t> window(windowWords * 4 + 16);
-        const bool complete = read(start, window);
+        // Chunked: the window usually runs past what the guest has committed,
+        // and a partial window still decodes into most of the frame.
+        const size_t bytesRead = ReadGuestMemoryChunked(base, start, window);
+        const bool complete = bytesRead == window.size();
         std::lock_guard lock(pm4Mutex);
         char line[176];
         std::snprintf(line, sizeof(line),

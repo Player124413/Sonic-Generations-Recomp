@@ -86,6 +86,20 @@ class Pm4PolicyTests(unittest.TestCase):
         self.assertIn('r%zu=%08X', HOOKS)
         self.assertIn('enable', HOOKS)  # marker file as well as the variable
 
+    def test_a_lead_that_dead_ends_is_reported(self):
+        # A live run showed every swap argument and not one token: the probe was
+        # reading a window larger than the guest's reservation in a single call,
+        # which fails at the first uncommitted page. The scan must now read in
+        # small pieces and say what it saw per argument.
+        self.assertIn('ReadGuestMemoryChunked', HOOKS)
+        self.assertIn('found.wordsRead', HOOKS)
+        self.assertIn('no swap token', HOOKS)
+        self.assertIn('kMaxScanLogs', HOOKS)
+        # The per-dword scan lives in the decoder, where it can be tested without
+        # a live process.
+        self.assertIn('result.wordsRead = readable;', PM4)
+        self.assertIn('if (!read(guestAddress + uint32_t(index) * 4u, word)) break;', PM4)
+
     def test_the_probe_can_be_enabled_without_touching_the_environment(self):
         self.assertIn('std::filesystem::exists(cacheDirectory / "pm4" / "enable")', HOOKS)
         self.assertIn('(dump && *dump) || marker', HOOKS)

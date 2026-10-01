@@ -137,6 +137,57 @@ UP candidates `82DA6F60` and `82DA7468` prepare guest allocations/pointers;
 their begin/end protocol is not established and they are deliberately unhooked.
 `82DC5018` wraps swap plus state changes; its public API identity is unconfirmed.
 
+## Live dump of the internal swap helper (2026-10-01)
+
+A run with `SONIC_REX_PM4_DUMP=1` (`rex/windows/Run-ReXGlue-PM4-Dump.cmd`)
+finally produced a lead: 32 byte-for-byte identical
+`arguments.txt` lines, repeating two buffers. The probe worked; the *scan* was
+wrong.
+
+```
+swap r3=40033300 r4=4003A010 r5=00000000 r6=0BADF00D r7=FFFFFFFF \
+     r8=00000100 r9=00000000 r10=00001000 r11=00000000
+swap r3=40033300 r4=4003A060 ... (identical otherwise)
+```
+
+What the arguments are, read out of the game's own code
+(`ppc_recomp.274.cpp`, `sub_82DC48B0`):
+
+| Register | Meaning | Evidence |
+|---|---|---|
+| r3 = `40033300` | constant object base; `VdSwap` is called with `r3+4` | `addi r3,r3,4` immediately before the call at `0x82DC4C3C` |
+| r4 = `4003A010` / `4003A060` | the two front buffers' D3D9 fetch constants, alternating every frame | `lwz r7,116(r1)` is passed as the fetch pointer |
+| r6 = `0BADF00D` | uninitialised marker passed to `VdSwap` and never inspected | `li r4,64` → `sub_82DB4A08` result path |
+| r7 = `FFFFFFFF` | "no CPU restriction" hint | matches `cpu == -1` handling in the device layer |
+| r10 = `1000` | 4096-byte command buffer size | `r10 = r1 + 0x1000` stack region |
+
+Why there was **no** swap token in any line, and what was wrong:
+
+- `VdSwap` zeroes 64 words at `buffer_ptr` and writes the real token there
+  (`xboxkrnl_video.cpp`: Type-0 fetch write, `0x64`/`SWAP`, address, width,
+  height, then NOPs). The probe scans `r3`, and the token lands at `r3+4` —
+  inside the scanned window, so it *should* have been found.
+- The scan asked for the whole 1 KiB window in a single `ReadProcessMemory`.
+  The guest reserved 64 words there; the read therefore hit an uncommitted page
+  and failed as a whole, and the probe reported nothing while the data it wanted
+  sat in the first dword. Fixed: `pm4::ProbeSwapToken` now reads dword by dword
+  and stops at the first unreadable one (`wordsRead` in the result), the ring
+  window is read in 256-byte chunks (`ReadGuestMemoryChunked`), and every
+  argument that yields no token is logged with how much was readable
+  (`no swap token`, capped).
+
+Two conclusions that change the plan rather than the code:
+
+1. The swap helper's arguments are a **fixed 256-byte stub**, not a command
+   stream. Even a perfect scan of them yields one frame's token, never the draw
+   commands, so the renderer cannot be driven from this probe.
+2. The real stream is the ring buffer, and the only component that has it is our
+   own device: `VdInitializeRingBuffer`/`VdEnableRingBufferRPtrWriteBack` hand
+   its base, size and writeback address to the plugin. `SONIC_REX_GPU_DUMP=1`
+   with `SONIC_REX_GRAPHICS_MODE=native` now records it (`stream_dump.{h,cpp}`):
+   `frame-NNN.bin` is the raw guest byte stream between two swaps and
+   `frame-NNN.txt` is our own decoder's reading of it.
+
 ## Tests
 
 ```sh

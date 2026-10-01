@@ -54,3 +54,35 @@ static inline void OutputDebugStringA(const char*) {}
 #define __declspec(x)
 #define WINBASEAPI
 #define DLLEXPORT
+
+// --- added for the Vulkan WSI and loader entry points the GPU plugin uses ----
+typedef void* HINSTANCE;
+typedef void* HMONITOR;
+typedef const wchar_t* LPCWSTR;
+typedef wchar_t* LPWSTR;
+typedef const char* LPCSTR;
+typedef char* LPSTR;
+typedef unsigned long long UINT64;
+typedef long long INT64;
+typedef unsigned int UINT;
+typedef unsigned int UINT32;
+typedef int INT32;
+typedef unsigned short USHORT;
+typedef float FLOAT;
+
+struct SECURITY_ATTRIBUTES {
+  DWORD nLength;
+  LPVOID lpSecurityDescriptor;
+  BOOL bInheritHandle;
+};
+
+static inline HMODULE LoadLibraryW(const wchar_t*) { return nullptr; }
+static inline HMODULE LoadLibraryA(const char*) { return nullptr; }
+static inline HMODULE GetModuleHandleW(const wchar_t*) { return nullptr; }
+static inline void* GetProcAddress(HMODULE, const char*) { return nullptr; }
+static inline BOOL FreeLibrary(HMODULE) { return 0; }
+
+// --- Win32 API families, for the SDK headers that ask which family this is ---
+#define WINAPI_PARTITION_DESKTOP 1
+#define WINAPI_PARTITION_GAMES 1
+#define WINAPI_FAMILY_PARTITION(partitions) 1

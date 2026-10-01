@@ -376,9 +376,12 @@ void TestProbeFindsRealToken() {
     const auto bytes = ToGuestBytes(stream);
     // The probe reads guest bytes, so it must find the token only because the
     // big-endian swap is correct.
+    // The probe reads dword by dword now, so the reader is address-relative.
     const auto reader = [&bytes](uint32_t address, std::span<uint8_t> destination) {
-        if (address != 0x03000000u || destination.size() > bytes.size()) return false;
-        std::memcpy(destination.data(), bytes.data(), destination.size());
+        if (address < 0x03000000u) return false;
+        const size_t offset = address - 0x03000000u;
+        if (offset + destination.size() > bytes.size()) return false;
+        std::memcpy(destination.data(), bytes.data() + offset, destination.size());
         return true;
     };
     const SwapProbeResult found = ProbeSwapToken(0x03000000u, 64, reader);
@@ -391,6 +394,25 @@ void TestProbeFindsRealToken() {
     CHECK(!ProbeSwapToken(0x03000000u, 64, failing).found);
     CHECK(!ProbeSwapToken(0, 64, reader).found);
     CHECK(!ProbeSwapToken(0x03000000u, 0, reader).found);
+
+    // A guest buffer is only as large as the guest reserved it. The probe must
+    // read what is there and find the token, not give up because a word past the
+    // reservation is unreadable -- the live dump printed its arguments but never
+    // a token for exactly this reason.
+    const size_t readableBytes = bytes.size();
+    const auto limited = [&bytes, readableBytes](uint32_t address, std::span<uint8_t> destination) {
+        if (address < 0x03000000u) return false;
+        const size_t offset = address - 0x03000000u;
+        if (offset + destination.size() > readableBytes) return false;  // past the reservation
+        std::memcpy(destination.data(), bytes.data() + offset, destination.size());
+        return true;
+    };
+    const SwapProbeResult partial = ProbeSwapToken(0x03000000u, 1024, limited);
+    CHECK(partial.found);
+    CHECK(partial.token.frontbufferAddress == 0x0F000000u);
+    CHECK(partial.wordsRead == uint32_t(readableBytes / 4));
+    // Words past the reservation are counted as unread, not as zero data.
+    CHECK(ProbeSwapToken(0x03000100u, 64, limited).wordsRead == 0);
 }
 } // namespace
 

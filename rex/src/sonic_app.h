@@ -31,9 +31,26 @@ public:
 #endif
         const char* requested = std::getenv("SONIC_REX_GRAPHICS_MODE");
         const auto mode = ParseGraphicsMode(requested ? requested : "");
-        // Explicit Vulkan selection: Windows must not default to the SDK's D3D12 backend.
-        auto original = rex::system::LoadGpuPlugin("xenos", "vulkan");
-        if (!original) throw std::runtime_error("Cannot load the ReXGlue Xenos Vulkan plugin");
+        const bool native = mode == GraphicsMode::Native;
+        // Explicit Vulkan selection: Windows must not default to the SDK's D3D12
+        // backend. In native mode the plugin is ours; if it cannot be loaded the
+        // run fails instead of quietly falling back to the SDK's renderer.
+        auto original = rex::system::LoadGpuPlugin(native ? "native" : "xenos", "vulkan");
+        if (!original)
+            throw std::runtime_error(native
+                                         ? "Cannot load our own GPU plugin (rexgpu-native); build it "
+                                           "with SONIC_REX_BUILD_NATIVE_PLUGIN=ON"
+                                         : "Cannot load the ReXGlue Xenos Vulkan plugin");
+        if (native) {
+            // Say plainly what the player is about to see: our device runs the
+            // game and presents the guest's front buffer, but the renderer that
+            // would draw the frame is not written yet.
+            std::fputs(
+                "[sonic-gpu] SONIC_REX_GRAPHICS_MODE=native: our own GPU device is in charge. "
+                "It has no renderer yet, so the picture is not drawn; set "
+                "SONIC_REX_GPU_DUMP=1 to record the command stream for renderer work.\n",
+                stderr);
+        }
         config.gpu_plugin.clear();
         if (mode == GraphicsMode::Forward)
             config.graphics = std::make_unique<GraphicsBridge>(std::move(original));

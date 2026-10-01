@@ -119,32 +119,79 @@ rexcore и не содержит эмуляции устройства. Плаг
   некорректной инициализации, пустой kick). Локально пройдены под
   `-Wall -Wextra -Werror` и под ASAN/UBSAN.
 
-### SDK-оболочка плагина (сделано, кроме презентера)
+### SDK-оболочка плагина (сделана целиком, вместе с презентером)
 
 `rex/plugins/native/` — наш `rexgpu-native`: экспорты `rex_gpu_abi_version`/
 `rex_gpu_create` (чужой backend отвергается, а не подменяется), `IGraphicsSystem`
 с MMIO-окном `0x7FC80000` через `AddVirtualMappedRange`, kick `CP_RB_WPTR` только
 из MMIO, ring/writeback/swap/прерывания — через наш `CommandProcessor`,
-vblank-поток `XHostThread`, `ExecuteInterrupt` по колбэку гостя.
+vblank-поток `XHostThread` и **рабочий поток командного процессора** (без него
+никто не пишет read pointer и гость встаёт на первом swap),
+`ExecuteInterrupt` по колбэку гостя.
 
-`provider()`/`presenter()` пока возвращают `nullptr`, а `SetupPresentation`
-честно отвечает неуспехом: **своего Vulkan-презентера ещё нет**, и плагин не
-делает вид, что окно есть. Сборка — опция `SONIC_REX_BUILD_NATIVE_PLUGIN=ON`,
-загрузка хостом — `SONIC_REX_GPU_PLUGINS=native`; по умолчанию остаётся `xenos`.
+Презентер — наш, на нашем Vulkan-устройстве:
+
+| Файл | Что делает |
+| --- | --- |
+| `native_vulkan_api.{h,cpp}` | свой резолв `vulkan-1.dll`: таблица функций по фазам (global/instance/device). Линкуется только `Vulkan::Headers` — ни loader, ни Vulkan SDK не нужны |
+| `native_vulkan_core.{h,cpp}` | instance, выбор адаптера (discrete → integrated → virtual → CPU), устройство, очередь graphics/present, поверхность Win32 HWND, память, команды, барьеры |
+| `native_vulkan_presenter.{h,cpp}` | `rex::ui::Presenter` + `GraphicsProvider`: swapchain (mailbox → immediate → fifo), 3 mailbox-изображения, clear + `vkCmdBlitImage`, letterbox, реконнект по `kPresentedSuboptimal`, `CaptureGuestOutput` |
+| `native_frame_source.{h,cpp}` | кадр из гостевой памяти по адресу переднего буфера из swap-токена (8_8_8_8), через тот же адаптер, что и командный процессор |
+| `presenter_logic.h` | арифметика презентации без Vulkan: letterbox, extent, число изображений, границы кадра — тесты `rex_presenter_logic` |
+| `rex/src/gpu_native/stream_dump.{h,cpp}` | запись настоящего потока команд из кольца (см. ниже) |
+
+Кадр приходит по цепочке: swap-токен → `SwapSink` → `NativeGraphicsSystem::OnGuestFrame`
+→ `NativePresenter::OnGuestFrame` → `RefreshGuestOutput` (mailbox) → paint
+(clear + blit) → present. Пока рендер не резолвит EDRAM в передний буфер, в окне
+видно ровно то, что лежит в гостевой памяти по адресу из токена, а если читать
+нечего — палитра «нет кадра» (`kNoFrameClear`), чтобы это нельзя было принять за
+нарисованный кадр.
+
+Сборка — опция `SONIC_REX_BUILD_NATIVE_PLUGIN=ON`, загрузка хостом —
+`SONIC_REX_GRAPHICS_MODE=native` (или `SONIC_REX_GPU_PLUGINS=native` для
+`rexglue_configure_target`); если DLL нет рядом с EXE, запуск падает с ошибкой.
+По умолчанию остаётся `xenos`.
+
+### Живые данные: что показал дамп swap-хелпера
+
+Первый удачный прогон `SONIC_REX_PM4_DUMP=1` дал 32 идентичные строки
+`arguments.txt`: `r3=40033300`, `r4=4003A010/4003A060` (два передних буфера),
+`r6=0BADF00D`, `r7=FFFFFFFF`, `r10=00001000`. Разбор по коду самой игры
+(`sub_82DC48B0`) и по `VdSwap`: это вызов `VdSwap(r3+4, …)`, то есть **фиксированный
+буфер на 64 слова**, куда пишется только swap-токен.
+
+Отсюда два вывода:
+
+1. Аргументы swap-хелпера потоком команд не являются и им быть не могут; даже
+   идеальный скан даёт один токен кадра. Рендерер на этом не построить.
+2. Настоящий поток знает только наш командный процессор: ему
+   `VdInitializeRingBuffer` отдаёт базу и размер кольца, а
+   `VdEnableRingBufferRPtrWriteBack` — адрес writeback. Поэтому запись потока
+   сделана внутри устройства: `SONIC_REX_GPU_DUMP=1` (в native-режиме) пишет
+   `assets/rex-cache/gpu-dump/frame-NNN.bin` (сырые байты гостя между двумя swap)
+   и `frame-NNN.txt` (разбор нашим же walker'ом), плюс `packets.txt` с итогами.
+
+Отдельно исправлен сам зонд: он читал окно 1 КБ одним `ReadProcessMemory`,
+упирался в невыделенную страницу за 256-байтовым буфером гостя и молчал, хотя
+токен лежал в первом же слове. Теперь `ProbeSwapToken` читает по словам
+(`wordsRead`), окно читается чанками, а каждая неудача пишется строкой в
+`arguments.txt` и stderr.
 
 ### Что ещё не сделано
 
-- Свой Vulkan-презентер поверх нашего WSI (`rex::ui::Presenter`: surface,
-  swapchain, refresh/paint) и подключение его к плагину.
-- Рендер: EDRAM/resolve, кэши, пайплайны, трансляция шейдеров, draw-пути.
+- Рендер: разбор draw-опкодов, EDRAM/resolve, кэши RT и текстур, пайплайны,
+  трансляция шейдеров, два draw-пути, состояния (viewport/scissor/RT).
+- Загрузка записанных кадров (`frame-NNN.bin`) в офлайн-реплей для тестов
+  рендера без игры.
 
 ## 5. Порядок работ
 
-1. **Данные.** Запустить `rex\windows\Run-ReXGlue-PM4-Dump.cmd`, пройти уровень,
-   забрать `assets\rex-cache\pm4\swap-00N.txt`: там реальный набор опкодов и
-   порядок пакетов. Если появился только `arguments.txt` — токена нет среди
-   аргументов swap-хелпера, и этот файл показывает, где искать поток (первый
-   запуск молчал именно поэтому: скрипта, включающего зонд, не существовало).
+1. **Данные (частично получено).** `arguments.txt` с живой машины показал, что
+   аргументы swap-хелпера — фиксированный буфер токена, а не поток. Следующий шаг
+   данных — `rex\windows\Run-Native-GPU-Dump.cmd`:
+   `SONIC_REX_GRAPHICS_MODE=native` + `SONIC_REX_GPU_DUMP=1`, после прогона
+   `assets\rex-cache\gpu-dump\frame-NNN.bin/.txt` дают настоящие опкоды и их
+   порядок. Это уже работает и не зависит от того, что рендера ещё нет.
 2. **Командный процессор как устройство.** Регистровый файл, writeback
    read-pointer, swap по токену, прерывание, MMIO-перехват — то, без чего гость
    не живёт. Пока плагин Xenos остаётся активным, свой CP пишется и проверяется

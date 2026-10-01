@@ -36,6 +36,31 @@ public:
     virtual void DispatchInterrupt(uint32_t source, uint32_t cpu) = 0;
 };
 
+/// One drain of the ring buffer: what the guest asked for, what the walker
+/// actually completed, and where the ring is, so a recorder can copy the raw
+/// bytes without reaching into the command processor.
+struct DrainInfo {
+    uint32_t ringBase = 0;
+    uint32_t ringMaskDwords = 0;
+    uint32_t readPointer = 0;
+    uint32_t availableWords = 0;
+    uint32_t completedWords = 0;
+    bool truncated = false;
+    bool hadSwap = false;
+};
+
+/// An optional watcher of the packet stream. The device reports what it walked;
+/// it does not depend on anybody listening. Used by the stream recorder that
+/// renderer development needs (see stream_dump.h).
+class PacketObserver {
+public:
+    virtual ~PacketObserver() = default;
+    virtual void OnRegisterWrite(uint32_t index, uint32_t value) = 0;
+    virtual void OnPacket(const pm4::Header& header, pm4::Action action,
+                          std::span<const uint32_t> payload) = 0;
+    virtual void OnDrain(const DrainInfo& drain) = 0;
+};
+
 /// The guest-visible GPU device: ring buffer, register file, swap token handling
 /// and read-pointer writeback. Everything here is our implementation; it uses
 /// the SDK only for memory, threads and the interrupt entry point.
@@ -63,6 +88,13 @@ public:
     void SetMemory(GuestMemory* memory) noexcept { memory_ = memory; }
     void SetPresenter(SwapPresenter* presenter) noexcept { presenter_ = presenter; }
     void SetInterrupts(InterruptDispatcher* interrupts) noexcept { interrupts_ = interrupts; }
+    /// Dev-only packet recorder; null means "not recording", which costs one
+    /// branch per packet.
+    void SetObserver(PacketObserver* observer) noexcept { observer_ = observer; }
+    GuestMemory* memory() const noexcept { return memory_; }
+    uint32_t ringBase() const noexcept { return ringBase_; }
+    uint32_t ringMaskDwords() const noexcept { return ringMaskDwords_; }
+    bool ringInitialized() const noexcept { return initialized_; }
     RegisterFile& registers() noexcept { return registers_; }
     const RegisterFile& registers() const noexcept { return registers_; }
 
@@ -129,11 +161,14 @@ private:
 
     friend class RingSource;
     friend class IndirectSource;
+    friend class Sink;
     pm4::PacketSource* TakeIndirectSource(uint32_t guestAddress, uint32_t lengthDwords) noexcept;
 
     GuestMemory* memory_ = nullptr;
     SwapPresenter* presenter_ = nullptr;
     InterruptDispatcher* interrupts_ = nullptr;
+    PacketObserver* observer_ = nullptr;
+    bool drainHadSwap_ = false;
     RegisterFile registers_;
 
     bool initialized_ = false;

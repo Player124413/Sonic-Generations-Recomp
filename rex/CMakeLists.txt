@@ -41,13 +41,20 @@ add_test(NAME rex_pm4 COMMAND rex_pm4_tests)
 # be removed from the build, so it must not depend on any SDK graphics code.
 add_library(sonic_rex_gpu_device STATIC
     src/gpu_native/register_file.cpp
-    src/gpu_native/command_processor.cpp)
+    src/gpu_native/command_processor.cpp
+    src/gpu_native/stream_dump.cpp)
 target_include_directories(sonic_rex_gpu_device PUBLIC src)
 target_compile_features(sonic_rex_gpu_device PUBLIC cxx_std_20)
 target_link_libraries(sonic_rex_gpu_device PUBLIC sonic_rex_pm4)
 add_executable(rex_gpu_device_tests tests/gpu_device_tests.cpp)
 target_link_libraries(rex_gpu_device_tests PRIVATE sonic_rex_gpu_device)
 add_test(NAME rex_gpu_device COMMAND rex_gpu_device_tests)
+
+# The command-stream recorder: the only component that sees the real ring buffer,
+# and therefore the only way renderer development gets real packets.
+add_executable(rex_stream_dump_tests tests/stream_dump_tests.cpp)
+target_link_libraries(rex_stream_dump_tests PRIVATE sonic_rex_gpu_device)
+add_test(NAME rex_stream_dump COMMAND rex_stream_dump_tests)
 
 # Host-side policy that talks to the SDK cvar registry (keyboard defaults).
 add_library(sonic_rex_host_policy STATIC src/input_defaults.cpp)
@@ -89,6 +96,14 @@ rexglue_apply_target_settings(rex_gpu_hook_tests)
 # to avoid concurrent writes of the same DLL from two post-build commands.
 add_dependencies(rex_gpu_hook_tests rex_host_contract_tests)
 add_test(NAME rex_gpu_hooks COMMAND rex_gpu_hook_tests)
+
+# Presentation arithmetic of our own Vulkan presenter (letterbox, swapchain
+# extent, image count, front buffer bounds). Header-only and GPU-free on purpose:
+# this is what CI can check on every push, and it needs no window.
+add_executable(rex_presenter_logic_tests tests/presenter_logic_tests.cpp)
+target_include_directories(rex_presenter_logic_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/plugins/native/src")
+target_compile_features(rex_presenter_logic_tests PRIVATE cxx_std_20)
+add_test(NAME rex_presenter_logic COMMAND rex_presenter_logic_tests)
 
 # Our own GPU plugin (rexgpu-native). Off by default: it is the replacement for
 # the SDK's Xenos plugin and is still being written, so the game host keeps

@@ -462,10 +462,22 @@ SwapProbeResult ProbeSwapToken(uint32_t guestAddress, size_t words,
     const std::function<bool(uint32_t, std::span<uint8_t>)>& read) noexcept {
     SwapProbeResult result;
     if (guestAddress == 0 || words == 0) return result;
+    // Dword by dword, stopping at the first unreadable one. Guest buffers are
+    // often a few hundred bytes inside a much larger address space, and a single
+    // large read would fail on the first page the guest has not committed --
+    // which is what made a live probe report "no token" while the token was in
+    // the very first dword of the buffer it was pointed at.
     std::vector<uint8_t> bytes(words * 4);
-    if (!read(guestAddress, bytes)) return result;
-    std::vector<uint32_t> dwords(words);
-    for (size_t i = 0; i < words; ++i) dwords[i] = SwapGuestDword(bytes, i * 4);
+    uint32_t readable = 0;
+    for (size_t index = 0; index < words; ++index) {
+        std::span<uint8_t> word(bytes.data() + index * 4, 4);
+        if (!read(guestAddress + uint32_t(index) * 4u, word)) break;
+        ++readable;
+    }
+    result.wordsRead = readable;
+    if (!readable) return result;
+    std::vector<uint32_t> dwords(readable);
+    for (size_t i = 0; i < readable; ++i) dwords[i] = SwapGuestDword(bytes, i * 4);
     SwapToken token;
     if (!FindSwapToken(dwords, token)) return result;
     result.found = true;
