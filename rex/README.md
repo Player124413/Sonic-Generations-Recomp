@@ -532,11 +532,31 @@ token`), а не тишина.
 | --- | --- |
 | `registers.h`, `register_file.{h,cpp}` | регистровый файл: гостевые чтения (EDRAM timing, BC control, v-counter, interrupt status, viewport size) и записи (kick `CP_RB_WPTR` только из MMIO, значения выше окна сохраняются) |
 | `command_processor.{h,cpp}` | ring buffer в dword-индексах с переносом, writeback read-pointer в гостевую память, регистровые записи, swap-токен через собственный презентер, `PM4_INTERRUPT` по маске CPU, vblank-прерывание, пул INDIRECT_BUFFER, счётчики всего неисполненного |
+| `render_state.{h,cpp}` | состояние и геометрия для рендерера: блоки `SET_CONSTANT`/`SET_CONSTANT2`/`SET_SHADER_CONSTANTS` (в том числе таблицы ALU/FETCH/BOOL/LOOP), `LOAD_ALU_CONSTANT` из памяти гостя, draw-пакеты `DRAW_INDX`/`DRAW_INDX_2` с индекс-буфером, загрузки шейдеров `IM_LOAD`/`IM_LOAD_IMMEDIATE`, `PM4_MEM_WRITE` в память гостя, покадровый учёт |
 
 Недописанный пакет не потребляется: чтение возвращается к последнему целому
 пакету, поэтому кадр, который гость ещё пишет, не исполняется ни частично, ни
 дважды. Проверки — `rex/tests/gpu_device_tests.cpp` (цель `rex_gpu_device_tests`),
 рядом с ними политика в `rex/tests/test_pm4_policy.py`.
+
+Почему `render_state` — не роскошь, а условие: драйвер D3D на 360 пишет почти всё
+состояние не Type-0 пакетами, а блоками `SET_CONSTANT` (`(type << 16) | index` и
+значения следом; type 4 — сами регистры, 0/1/2/3 — ALU/FETCH/BOOL/LOOP-константы),
+`SET_CONSTANT2`/`SET_SHADER_CONSTANTS` (плоский 16-битный индекс),
+`LOAD_ALU_CONSTANT` (константы из памяти гостя) и `IM_LOAD` (байткод шейдера из
+памяти). Устройство, понимающее только Type-0, видит draw-ы без состояния — то
+есть не видит вообще ничего. Теперь эти пакеты декодируются, draw-пакеты
+превращаются в `DrawCall` со снимком состояния на момент вызова (RT, scissor,
+адреса программ, индекс-буфер), а `PM4_MEM_WRITE` реально пишет в память гостя,
+потому что гость её опрашивает. Неизвестная таблица констант не пишется «куда-то
+похоже»: она считается (`unknown_tables`), как и immediate-индексы, нечитаемые
+шейдеры и непроверенные `*_BIN` opcode'ы. Проверки — `rex/tests/render_state_tests.cpp`
+(цель `rex_render_state`), в том числе под ASAN/UBSAN.
+
+Что рендерер с этим делает сейчас: презентер забирает список draw-ов кадра
+(`TakeDraws`) и считает их — это его контракт на следующий шаг, растеризация
+(пайплайны, трансляция шейдеров, EDRAM/resolve). В логе это видно строкой
+`renderer feed: N draws (M vertices), K shader uploads, U frames with draws but no state`.
 
 Это ядро устройства, а не готовая картинка: SDK-оболочка плагина и наш
 Vulkan-презентер уже собраны (ниже), а рендер (draw-опкоды, EDRAM/resolve, кэши,

@@ -226,5 +226,42 @@ class NativePluginBuildTests(unittest.TestCase):
         self.assertIn('Run-Native-GPU-Dump.cmd', readme)
 
 
+    def test_state_and_draws_are_decoded_by_our_device(self):
+        # The D3D driver writes render state as SET_CONSTANT blocks, not as Type-0
+        # register writes, so a device that only understood Type-0 would see draws
+        # with no state at all and report them as unsupported.
+        device = (ROOT / 'rex/src/gpu_native/command_processor.cpp').read_text(encoding='utf-8')
+        self.assertIn('renderState_->OnConstantBlock(payload)', device)
+        self.assertIn('renderState_->OnFlatConstantBlock(payload)', device)
+        self.assertIn('renderState_->OnConstantBlockFromMemory(base, index, dwords, words)', device)
+        self.assertIn('renderState_->OnDraw(header.opcode, payload)', device)
+        self.assertIn('memory_->Write32(address + uint32_t(i - 1) * 4, payload[i])', device)
+        header = (ROOT / 'rex/src/gpu_native/command_processor.h').read_text(encoding='utf-8')
+        self.assertIn('void SetRenderState(RenderState* renderState) noexcept', header)
+        self.assertIn('RenderState* renderState_ = nullptr;', header)
+        # The state is closed by the swap, after the presenter has seen the frame.
+        present_case = device[device.index('case pm4::Action::Present:'):]
+        self.assertLess(present_case.index('presenter_->OnSwap'),
+                        present_case.index('renderState_->EndFrame()'))
+
+    def test_the_render_state_feed_is_wired_into_the_plugin(self):
+        system = (ROOT / 'rex/plugins/native/src/native_graphics_system.cpp').read_text(encoding='utf-8')
+        self.assertIn('processor_.SetRenderState(&renderState_);', system)
+        self.assertIn('presenter_->SetRenderState(&renderState_);', system)
+        self.assertIn('renderState_.FormatStats()', system)
+        presenter = (ROOT / 'rex/plugins/native/src/native_vulkan_presenter.cpp').read_text(encoding='utf-8')
+        # The renderer is the consumer: it takes the frame's draws and counts them.
+        self.assertIn('renderState_->TakeDraws()', presenter)
+        self.assertIn('renderState_->TakeShaderUploads()', presenter)
+        self.assertIn('stats_.drawsSeen += draws.size();', presenter)
+        self.assertIn('++stats_.drawsWithNoState;', presenter)
+
+    def test_render_state_has_its_own_build_and_test_target(self):
+        cmake = (ROOT / 'rex/CMakeLists.txt').read_text(encoding='utf-8')
+        self.assertIn('src/gpu_native/render_state.cpp', cmake)
+        self.assertIn('add_test(NAME rex_render_state COMMAND rex_render_state_tests)', cmake)
+        self.assertTrue((ROOT / 'rex/tests/render_state_tests.cpp').is_file())
+
+
 if __name__ == '__main__':
     unittest.main()

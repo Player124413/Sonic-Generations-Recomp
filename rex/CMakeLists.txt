@@ -41,6 +41,7 @@ add_test(NAME rex_pm4 COMMAND rex_pm4_tests)
 # be removed from the build, so it must not depend on any SDK graphics code.
 add_library(sonic_rex_gpu_device STATIC
     src/gpu_native/register_file.cpp
+    src/gpu_native/render_state.cpp
     src/gpu_native/command_processor.cpp
     src/gpu_native/stream_dump.cpp)
 target_include_directories(sonic_rex_gpu_device PUBLIC src)
@@ -55,6 +56,12 @@ add_test(NAME rex_gpu_device COMMAND rex_gpu_device_tests)
 add_executable(rex_stream_dump_tests tests/stream_dump_tests.cpp)
 target_link_libraries(rex_stream_dump_tests PRIVATE sonic_rex_gpu_device)
 add_test(NAME rex_stream_dump COMMAND rex_stream_dump_tests)
+
+# The state and geometry feed: constant blocks, draws, shader uploads and guest
+# memory writes decoded from packet payloads the real D3D driver produces.
+add_executable(rex_render_state_tests tests/render_state_tests.cpp)
+target_link_libraries(rex_render_state_tests PRIVATE sonic_rex_gpu_device)
+add_test(NAME rex_render_state COMMAND rex_render_state_tests)
 
 # Host-side policy that talks to the SDK cvar registry (keyboard defaults).
 add_library(sonic_rex_host_policy STATIC src/input_defaults.cpp)

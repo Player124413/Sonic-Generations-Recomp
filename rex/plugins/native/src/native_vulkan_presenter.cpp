@@ -531,6 +531,23 @@ void NativePresenter::DisconnectPaintingFromSurfaceFromUIThreadImpl() {
 
 bool NativePresenter::OnGuestFrame(uint32_t frontbufferAddress, uint32_t width, uint32_t height,
                                    uint32_t displayAspectX, uint32_t displayAspectY) {
+    // Consume what the device decoded before the frame is closed. Rasterising
+    // needs pipelines and translated shaders, which this presenter does not have
+    // yet, so the draws are taken and counted here rather than drawn: a frame
+    // whose draws are never taken would be accounted as dropped work, and the
+    // count is the contract the rasteriser has to satisfy.
+    if (renderState_) {
+        const gpu::FrameSummary& frame = renderState_->currentFrame();
+        const std::vector<gpu::DrawCall> draws = renderState_->TakeDraws();
+        const std::vector<gpu::ShaderProgram> uploads = renderState_->TakeShaderUploads();
+        {
+            std::lock_guard<std::mutex> lock(deviceMutex_);
+            stats_.drawsSeen += draws.size();
+            for (const gpu::DrawCall& draw : draws) stats_.verticesSeen += draw.numIndices;
+            stats_.shaderUploadsSeen += uploads.size();
+            if (!draws.empty() && frame.constantBlocks == 0) ++stats_.drawsWithNoState;
+        }
+    }
     if (!frontbufferAddress || !FrontbufferFits(width, height, kMaxFrontbufferBytes)) {
         Log("ignoring a swap token with an unusable frame %ux%u at %08X", width, height,
             frontbufferAddress);

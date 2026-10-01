@@ -17,6 +17,8 @@
 // Until the renderer resolves EDRAM into the front buffer, guest memory at that
 // address holds whatever the game's own writes left there, and the presenter
 // shows exactly that instead of inventing a picture.
+#include "gpu_native/render_state.h"
+
 #include <rex/ui/graphics_provider.h>
 #include <rex/ui/presenter.h>
 
@@ -78,6 +80,9 @@ public:
     bool OnGuestFrame(uint32_t frontbufferAddress, uint32_t width, uint32_t height,
                       uint32_t displayAspectX, uint32_t displayAspectY);
     void SetFrameSource(GuestFrameSource* source) { frameSource_ = source; }
+    /// The decoded frame the renderer consumes at swap time. Null means "no
+    /// renderer feed", which is only valid in the plug-in's own unit checks.
+    void SetRenderState(gpu::RenderState* state) noexcept { renderState_ = state; }
 
     struct Stats {
         uint64_t refreshes = 0;
@@ -87,6 +92,13 @@ public:
         uint64_t presentsSkipped = 0;
         uint64_t swapchainRecreations = 0;
         uint64_t uploadsSkipped = 0;
+        /// What the decoded frame contained. These are consumed by the renderer
+        /// before the frame is closed: a frame whose draws are never taken is a
+        /// frame the renderer never saw, and it is reported as such.
+        uint64_t drawsSeen = 0;
+        uint64_t verticesSeen = 0;
+        uint64_t shaderUploadsSeen = 0;
+        uint64_t drawsWithNoState = 0;
     };
     Stats GetStats() const;
 
@@ -148,6 +160,7 @@ private:
     std::shared_ptr<vk::Core> core_;
     HostGpuLossCallback hostGpuLossCallback_;
     GuestFrameSource* frameSource_ = nullptr;
+    gpu::RenderState* renderState_ = nullptr;
 
     mutable std::mutex deviceMutex_;  // serializes all device use: refresh and paint
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
@@ -175,6 +188,9 @@ private:
     bool swapchainOutdated_ = false;
 
     PendingFrame pending_;
+    /// Written from the command-processor worker (OnGuestFrame) and read from the
+    /// UI thread (GetStats), always under deviceMutex_ -- one lock for the whole
+    /// object is the only version of this that can be reasoned about.
     Stats stats_{};
 };
 

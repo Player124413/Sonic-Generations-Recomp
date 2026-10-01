@@ -1,6 +1,7 @@
 #pragma once
 #include "pm4.h"
 #include "register_file.h"
+#include "render_state.h"
 
 #include <array>
 #include <atomic>
@@ -80,12 +81,19 @@ public:
         uint64_t readPointerWrites = 0;
         uint64_t truncatedDrains = 0;
         uint64_t unsupportedPackets = 0;
+        uint64_t memoryWrites = 0;
+        uint64_t memoryWriteDwords = 0;
+        uint64_t unreadableMemoryWrites = 0;
         uint64_t unmappedIndirect = 0;
         uint64_t invalidRingInitializations = 0;
         std::string Format() const;
     };
 
     void SetMemory(GuestMemory* memory) noexcept { memory_ = memory; }
+    /// The renderer's state feed. Without it the device still runs the guest, but
+    /// draws and state blocks would be counted as unsupported instead of decoded.
+    void SetRenderState(RenderState* renderState) noexcept { renderState_ = renderState; }
+    RenderState* renderState() noexcept { return renderState_; }
     void SetPresenter(SwapPresenter* presenter) noexcept { presenter_ = presenter; }
     void SetInterrupts(InterruptDispatcher* interrupts) noexcept { interrupts_ = interrupts; }
     /// Dev-only packet recorder; null means "not recording", which costs one
@@ -163,11 +171,23 @@ private:
     friend class IndirectSource;
     friend class Sink;
     pm4::PacketSource* TakeIndirectSource(uint32_t guestAddress, uint32_t lengthDwords) noexcept;
+    /// SET_CONSTANT / SET_CONSTANT2 / SET_SHADER_CONSTANTS / LOAD_ALU_CONSTANT all
+    /// end as consecutive register writes in the same flat register space. The
+    /// packet payloads are hardware facts; nothing here guesses a block layout.
+    void ApplyConstantPacket(uint32_t opcode, std::span<const uint32_t> payload) noexcept;
+    /// IM_LOAD / IM_LOAD_IMMEDIATE uploads shader bytecode. IM_LOAD reads it from
+    /// guest memory, which the renderer cannot do later (the guest may overwrite
+    /// the buffer), so the words are copied now.
+    void ApplyShaderUpload(uint32_t opcode, std::span<const uint32_t> payload) noexcept;
+    /// PM4_MEM_WRITE: the GPU stores the payload into guest memory. The guest
+    /// polls this memory to know the GPU finished, so dropping these hangs it.
+    void ApplyMemoryWrite(std::span<const uint32_t> payload) noexcept;
 
     GuestMemory* memory_ = nullptr;
     SwapPresenter* presenter_ = nullptr;
     InterruptDispatcher* interrupts_ = nullptr;
     PacketObserver* observer_ = nullptr;
+    RenderState* renderState_ = nullptr;
     bool drainHadSwap_ = false;
     RegisterFile registers_;
 

@@ -133,6 +133,10 @@ rex::X_STATUS NativeGraphicsSystem::SetupGuestGpu(
         StopVblankWorker();
         return X_STATUS_UNSUCCESSFUL;
     }
+    // The state feed is what makes a draw decodable at all: the D3D driver writes
+    // most render state as SET_CONSTANT blocks, which are not Type-0 writes.
+    processor_.SetRenderState(&renderState_);
+    if (presenter_) presenter_->SetRenderState(&renderState_);
     StartStreamDump();
     guestGpuReady_ = true;
     Log("guest GPU up: MMIO %08X, ring/writeback driven by the guest", kGpuMmioBase);
@@ -274,6 +278,7 @@ void NativeGraphicsSystem::Shutdown() {
     processor_.SetInterrupts(nullptr);
     processor_.SetPresenter(nullptr);
     processor_.SetObserver(nullptr);
+    processor_.SetRenderState(nullptr);
     processor_.SetMemory(nullptr);
     guestGpuReady_ = false;
     if (presenter_) {
@@ -287,9 +292,26 @@ void NativeGraphicsSystem::Shutdown() {
             static_cast<unsigned long long>(frameSource_.GetStats().framesRead),
             static_cast<unsigned long long>(frameSource_.GetStats().framesRefused),
             static_cast<unsigned long long>(stats.refreshesWithoutFrame));
+        Log("  renderer feed: %llu draws (%llu vertices), %llu shader uploads, %llu frames with draws but no state",
+            static_cast<unsigned long long>(stats.drawsSeen),
+            static_cast<unsigned long long>(stats.verticesSeen),
+            static_cast<unsigned long long>(stats.shaderUploadsSeen),
+            static_cast<unsigned long long>(stats.drawsWithNoState));
         processor_.SetObserver(nullptr);
         streamDump_.Close();
         if (streamDump_.GetStats().drains) Log("  %s", streamDump_.Summary().c_str());
+        // What the device understood of the guest's frames. This is the number
+        // that has to grow before the picture can be ours: a frame with draws and
+        // no decoded state is a frame the renderer cannot draw.
+        Log("  %s", renderState_.FormatStats().c_str());
+        for (const gpu::FrameSummary& frame : renderState_.frames())
+            Log("  frame %llu: draws=%llu vertices=%llu state_blocks=%llu shaders=%llu mem_writes=%llu",
+                static_cast<unsigned long long>(frame.index),
+                static_cast<unsigned long long>(frame.draws),
+                static_cast<unsigned long long>(frame.vertices),
+                static_cast<unsigned long long>(frame.constantBlocks),
+                static_cast<unsigned long long>(frame.shaderUploads),
+                static_cast<unsigned long long>(frame.memoryWrites));
         presenter_.reset();
     }
     provider_.reset();

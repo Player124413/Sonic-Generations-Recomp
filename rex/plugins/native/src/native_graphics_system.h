@@ -15,6 +15,7 @@
 #include <mutex>
 
 #include "gpu_native/command_processor.h"
+#include "gpu_native/render_state.h"
 #include "gpu_native/stream_dump.h"
 #include "native_frame_source.h"
 #include "native_vulkan_presenter.h"
@@ -70,6 +71,10 @@ public:
     /// the in-game probe cannot see.
     void StartStreamDump();
     StreamDump& stream_dump() noexcept { return streamDump_; }
+    /// The renderer's state feed: constant blocks, draws, shader uploads and the
+    /// guest memory writes the GPU is asked to perform. The presenter renders from
+    /// it, and its counters are what says how much of a frame is understood.
+    gpu::RenderState& render_state() noexcept { return renderState_; }
 
 private:
     /// The guest swapped a frame: hand it to the presenter with the display
@@ -130,6 +135,8 @@ private:
 
     SdkGuestMemory memory_;
     GuestFrontbufferSource frameSource_;
+    /// Declared before the command processor's user: the processor points at it.
+    gpu::RenderState renderState_;
     StreamDump streamDump_;
     SwapSink swapSink_{*this};
     Interrupts interrupts_{*this};

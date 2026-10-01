@@ -1,5 +1,6 @@
 #include "command_processor.h"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace sonic::rex_host::gpu {
@@ -128,8 +129,107 @@ pm4::PacketSource* CommandProcessor::TakeIndirectSource(uint32_t guestAddress,
 }
 
 void CommandProcessor::Sink::OnRegisterWrite(uint32_t index, uint32_t value) {
-    owner_.registers_.Write(index, value, RegisterFile::WriteOrigin::kPacket);
+    if (owner_.renderState_) {
+        // The state feed owns the shadow register file: the renderer reads state
+        // there, and a second copy would drift.
+        owner_.renderState_->OnRegisterWrite(index, value);
+    } else {
+        owner_.registers_.Write(index, value, RegisterFile::WriteOrigin::kPacket);
+    }
     if (owner_.observer_) owner_.observer_->OnRegisterWrite(index, value);
+}
+
+void CommandProcessor::ApplyConstantPacket(uint32_t opcode, std::span<const uint32_t> payload) noexcept {
+    if (!renderState_) {
+        ++stats_.unsupportedPackets;
+        return;
+    }
+    switch (static_cast<pm4::Opcode>(opcode)) {
+    case pm4::Opcode::kSetConstant:
+        renderState_->OnConstantBlock(payload);
+        break;
+    case pm4::Opcode::kSetConstant2:
+    case pm4::Opcode::kSetShaderConstants:
+        renderState_->OnFlatConstantBlock(payload);
+        break;
+    case pm4::Opcode::kLoadAluConstant: {
+        if (payload.size() < 3 || !memory_) {
+            ++stats_.unsupportedPackets;
+            break;
+        }
+        const uint32_t address = payload[0] & 0x3FFFFFFFu;
+        const uint32_t offsetType = payload[1];
+        const uint32_t index = offsetType & 0x7FF;
+        const ConstantTable table = ConstantTableFromType((offsetType >> 16) & 0xFF);
+        const uint32_t base = ConstantTableBase(table);
+        const uint32_t declared = payload[2] & 0xFFF;
+        const uint32_t cap = uint32_t(renderState_->config().maxConstantDwordsPerBlock);
+        const uint32_t dwords = std::min(declared, cap);
+        std::vector<uint8_t> bytes(size_t(dwords) * 4);
+        if (dwords == 0 || !memory_->Read(address, std::span<uint8_t>(bytes.data(), bytes.size()))) {
+            // Unreadable constants are counted, not silently zeroed: zeroed
+            // matrices would draw garbage geometry at the origin.
+            ++stats_.unsupportedPackets;
+            break;
+        }
+        std::vector<uint32_t> words(dwords);
+        for (uint32_t i = 0; i < dwords; ++i)
+            words[i] = (uint32_t(bytes[i * 4]) << 24) | (uint32_t(bytes[i * 4 + 1]) << 16) |
+                       (uint32_t(bytes[i * 4 + 2]) << 8) | uint32_t(bytes[i * 4 + 3]);
+        renderState_->OnConstantBlockFromMemory(base, index, dwords, words);
+    } break;
+    default:
+        ++stats_.unsupportedPackets;
+        break;
+    }
+}
+
+void CommandProcessor::ApplyShaderUpload(uint32_t opcode, std::span<const uint32_t> payload) noexcept {
+    if (!renderState_ || payload.size() < 2) {
+        ++stats_.unsupportedPackets;
+        return;
+    }
+    if (static_cast<pm4::Opcode>(opcode) == pm4::Opcode::kImLoadImmediate) {
+        renderState_->OnShaderUploadImmediate(payload);
+        return;
+    }
+    // IM_LOAD: shader_type | address, start | size_dwords, bytecode in memory.
+    const uint32_t address = payload[0] & ~uint32_t(3);
+    const uint32_t declared = payload[1] & 0xFFFF;
+    const uint32_t dwords = std::min(declared, uint32_t(renderState_->config().maxShaderDwords));
+    std::vector<uint8_t> bytes(size_t(dwords) * 4);
+    if (dwords == 0 || !memory_ || !memory_->Read(address, std::span<uint8_t>(bytes.data(), bytes.size()))) {
+        ++stats_.unsupportedPackets;
+        return;
+    }
+    // Keep the packet form the renderer expects: a two-word header, then the
+    // instruction words copied out of guest memory before the guest reuses it.
+    std::vector<uint32_t> synthetic;
+    synthetic.reserve(size_t(dwords) + 2);
+    synthetic.push_back(payload[0]);
+    synthetic.push_back((uint32_t(0) << 16) | dwords);
+    for (uint32_t i = 0; i < dwords; ++i)
+        synthetic.push_back((uint32_t(bytes[i * 4]) << 24) | (uint32_t(bytes[i * 4 + 1]) << 16) |
+                            (uint32_t(bytes[i * 4 + 2]) << 8) | uint32_t(bytes[i * 4 + 3]));
+    renderState_->OnShaderUploadImmediate(synthetic);
+}
+
+void CommandProcessor::ApplyMemoryWrite(std::span<const uint32_t> payload) noexcept {
+    if (!renderState_) {
+        ++stats_.unsupportedPackets;
+        return;
+    }
+    renderState_->OnMemoryWrite(payload);
+    if (payload.size() < 2) return;
+    const uint32_t address = payload[0];
+    for (size_t i = 1; i < payload.size(); ++i) {
+        if (!memory_ || !memory_->Write32(address + uint32_t(i - 1) * 4, payload[i])) {
+            ++stats_.unreadableMemoryWrites;
+            return;
+        }
+        ++stats_.memoryWrites;
+        ++stats_.memoryWriteDwords;
+    }
 }
 
 void CommandProcessor::Sink::OnPacket(const pm4::Header& header, pm4::Action action,
@@ -137,12 +237,15 @@ void CommandProcessor::Sink::OnPacket(const pm4::Header& header, pm4::Action act
     if (owner_.observer_) owner_.observer_->OnPacket(header, action, payload);
     switch (action) {
     case pm4::Action::Present:
-        // The decoder already verified the token signature and size.
+        // The decoder already verified the token signature and size. The
+        // presenter runs first: it is the renderer, and it consumes this frame's
+        // draws and state before the frame is closed and counted.
         owner_.drainHadSwap_ = true;
         if (payload.size() < 4) break;
         ++owner_.stats_.swaps;
         if (owner_.presenter_)
             owner_.presenter_->OnSwap(payload[1], payload[2], payload[3]);
+        if (owner_.renderState_) owner_.renderState_->EndFrame();
         break;
     case pm4::Action::Interrupt:
         // Type-3 INTERRUPT carries a CPU mask; the guest waits on those CPUs.
@@ -164,11 +267,23 @@ void CommandProcessor::Sink::OnPacket(const pm4::Header& header, pm4::Action act
         ++owner_.stats_.unsupportedPackets;
         break;
     case pm4::Action::Draw:
+        if (owner_.renderState_) {
+            owner_.renderState_->OnDraw(header.opcode, payload);
+        } else {
+            ++owner_.stats_.unsupportedPackets;
+        }
+        break;
+    case pm4::Action::StateSet:
+        owner_.ApplyConstantPacket(header.opcode, payload);
+        break;
+    case pm4::Action::ShaderLoad:
+        owner_.ApplyShaderUpload(header.opcode, payload);
+        break;
     case pm4::Action::MemoryWrite:
+        owner_.ApplyMemoryWrite(payload);
+        break;
     case pm4::Action::EventWrite:
     case pm4::Action::ConditionalExec:
-    case pm4::Action::ShaderLoad:
-    case pm4::Action::StateSet:
         ++owner_.stats_.unsupportedPackets;
         break;
     case pm4::Action::RegisterWrite:
