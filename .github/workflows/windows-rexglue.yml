@@ -170,15 +170,21 @@ jobs:
         # Non-blocking on purpose: the plugin is our replacement for the SDK's
         # Xenos plugin and is still being written. This step exists so every run
         # reports whether the plugin still compiles against the pinned SDK, while
-        # the reference path keeps shipping. Once it is green here and has been
-        # run on a real machine, it becomes blocking and the host switches to it.
+        # the reference path keeps shipping. Once it is green here and the render
+        # opcodes are in, it becomes blocking and the host switches to it.
         continue-on-error: true
         if: github.event_name == 'push' || inputs.build_game
         run: |
           cmake -S rex -B build-rex-plugin -G "Visual Studio 17 2022" -A x64 -T ClangCL `
             "-DCMAKE_PREFIX_PATH=$env:REXSDK_PREFIX" -DSONIC_REX_BUILD_NATIVE_PLUGIN=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build build-rex-plugin --config Release --target rexgpu-native --parallel 2
+          cmake --build build-rex-plugin --config Release `
+            --target rexgpu-native rex_presenter_logic_tests rex_stream_dump_tests `
+                     rex_pm4_tests rex_gpu_device_tests --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The device tests belong to this configuration too: the presenter and
+          # the recorder are only useful if they keep passing here.
+          ctest --test-dir build-rex-plugin -C Release -R '^(rex_presenter_logic|rex_stream_dump|rex_pm4|rex_gpu_device)$' --output-on-failure --timeout 120
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem build-rex-plugin/Release/rexgpu-native.dll | Select-Object Name, Length
       - name: Report our plugin built
@@ -245,6 +251,15 @@ jobs:
           Copy-Item "$env:REXSDK_PREFIX/sonic-sdk-build.json" package-rex/
           Get-ChildItem build-rex-game/Release/*.dll | Copy-Item -Destination package-rex/
           if (!(Test-Path package-rex/rexgpu-xenos.dll)) { throw 'Xenos reference plugin missing' }
+          # Our own plugin ships next to the reference one when it built. Shipping
+          # it does not switch the default renderer: the host still loads xenos
+          # unless SONIC_REX_GRAPHICS_MODE=native, and Run-Native-GPU-Dump.cmd
+          # refuses to start without it instead of falling back.
+          if (Test-Path build-rex-plugin/Release/rexgpu-native.dll) {
+            Copy-Item build-rex-plugin/Release/rexgpu-native.dll package-rex/
+          } else {
+            Write-Host 'rexgpu-native.dll was not built, so the native data run is not in this package.'
+          }
           Copy-Item build-rex-game/entry-recovery/guest-entry-audit.json package-rex/
           Copy-Item rex/tools package-rex/tools -Recurse
           Copy-Item rex/windows/*.cmd,rex/README.md,rex/dependencies.json,COPYING,THIRD_PARTY.md package-rex/
@@ -279,4 +294,7 @@ jobs:
           Optional game build uses the pinned external generated-code candidate; no original XEX is uploaded.
           A built EXE / --help does NOT prove title boot, gameplay, shadow rendering or native GPU replacement.
           Reference Xenos plugin is retained and explicitly selected with Vulkan.
+          When it built, rexgpu-native.dll is staged next to it for
+          Run-Native-GPU-Dump.cmd (SONIC_REX_GRAPHICS_MODE=native); the default
+          renderer is unchanged unless that variable is set.
           '@ | Add-Content $env:GITHUB_STEP_SUMMARY
