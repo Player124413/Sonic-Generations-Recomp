@@ -115,7 +115,14 @@ class ReplayPolicyTests(unittest.TestCase):
         self.assertIn('rex_replay_tests rex_gpu_replay --parallel 2', WORKFLOW)
         self.assertIn('|rex_replay)$', WORKFLOW)
         self.assertIn('native-plugin/rex_gpu_replay.exe', WORKFLOW)
-        self.assertIn('rex_gpu_replay did not report an empty recording::exit code $LASTEXITCODE',
+        # The smoke check must be able to say what went wrong: it verifies the
+        # tool is present, runs it against a directory it knows is empty, and
+        # reports the tool's own output in the annotation.
+        self.assertIn("$replay = './package-rex/rex_gpu_replay.exe'", WORKFLOW)
+        self.assertIn('rex_gpu_replay did not report an empty recording::exit code $replayCode; output: $replayTail',
+                      WORKFLOW)
+        self.assertIn("$replaySmokeDir = Join-Path $env:RUNNER_TEMP 'rex-empty-replay'", WORKFLOW)
+        self.assertIn("$replaySources = @('build-rex-game/Release/rex_gpu_replay.exe', 'native-plugin/rex_gpu_replay.exe')",
                       WORKFLOW)
         # One click from the package: the replay reads the dump next to the game.
         self.assertIn('rex_gpu_replay.exe', SCRIPT)

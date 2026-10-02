@@ -348,10 +348,14 @@ jobs:
           Copy-Item build-rex-game/Release/SonicGenerationsRecomp-ReXGlue.exe package-rex/
           # The replay tool is how a recorded run becomes a renderer work item on
           # the player's own machine: the recording stays where it was written.
-          if (Test-Path build-rex-game/Release/rex_gpu_replay.exe) {
-            Copy-Item build-rex-game/Release/rex_gpu_replay.exe package-rex/
+          # Two configured build trees can hold it, and guessing one of them is
+          # how a package ends up without a tool that two steps claim to ship.
+          $replaySources = @('build-rex-game/Release/rex_gpu_replay.exe', 'native-plugin/rex_gpu_replay.exe')
+          $replayBuilt = $replaySources | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($replayBuilt) {
+            Copy-Item $replayBuilt package-rex/rex_gpu_replay.exe -Force
           } else {
-            Write-Host '::warning title=no replay tool in the package::rex_gpu_replay.exe was not built'
+            Write-Host '::warning title=no replay tool in the package::rex_gpu_replay.exe was not built in any configuration'
           }
           Copy-Item build-rex-game/Release/rex_vulkan_plugin_tests.exe package-rex/
           Copy-Item "$env:REXSDK_PREFIX/sonic-sdk-build.json" package-rex/
@@ -401,11 +405,29 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Nothing has been recorded in CI, so the honest answer of the replay
           # tool is the "nothing to replay" exit code 2 with instructions -- not a
-          # crash, and not a zero that would look like a successful replay.
+          # crash, and not a zero that would look like a successful replay. The
+          # empty directory is passed explicitly so the check does not depend on
+          # the working directory, and the tool's own output is kept for the
+          # failure message: a step that only says "exit code 3" cannot be acted
+          # on, and these logs are not always downloadable.
+          $replay = './package-rex/rex_gpu_replay.exe'
+          if (-not (Test-Path $replay)) {
+            Write-Host '::error title=the package has no replay tool::rex_gpu_replay.exe is missing from package-rex'
+            exit 1
+          }
+          $replaySmokeDir = Join-Path $env:RUNNER_TEMP 'rex-empty-replay'
+          New-Item -ItemType Directory -Force $replaySmokeDir | Out-Null
+          $previousErrorAction = $ErrorActionPreference
+          # Stderr from a native command must not be a terminating error here: the
+          # tool reports an empty recording on stderr on purpose.
+          $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
-          & ./package-rex/rex_gpu_replay.exe --quiet 2>&1 | Out-Null
-          if ($LASTEXITCODE -ne 2) {
-            Write-Host "::error title=rex_gpu_replay did not report an empty recording::exit code $LASTEXITCODE"
+          & $replay $replaySmokeDir --quiet > replay-smoke.log 2>&1
+          $replayCode = $LASTEXITCODE
+          $ErrorActionPreference = $previousErrorAction
+          if ($replayCode -ne 2) {
+            $replayTail = ((Get-Content replay-smoke.log -Tail 20) -join ' | ') -replace '%', '%25'
+            Write-Host "::error title=rex_gpu_replay did not report an empty recording::exit code $replayCode; output: $replayTail"
             exit 1
           }
       - uses: actions/upload-artifact@v4
