@@ -233,7 +233,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rexgpu-native-plugin
-          path: native-plugin/rexgpu-native.dll
+          path: |
+            native-plugin/rexgpu-native.dll
+            native-plugin/rex_gpu_replay.exe
           if-no-files-found: warn
         continue-on-error: true
       - name: Keep the plugin's symbols
@@ -269,18 +271,34 @@ jobs:
           $log = 'native-plugin-tests.log'
           cmake --build build-rex-plugin --config Release `
             --target rex_presenter_logic_tests rex_stream_dump_tests `
-                     rex_pm4_tests rex_gpu_device_tests rex_render_state_tests --parallel 2 *>&1 |
+                     rex_pm4_tests rex_gpu_device_tests rex_render_state_tests `
+                     rex_replay_tests rex_gpu_replay --parallel 2 *>&1 |
             Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) {
             $tail = ((Get-Content $log -Tail 60) -join ' | ') -replace '%', '%25'
             Write-Host "::error title=rexgpu-native device tests did not build::$tail"
             exit 1
           }
-          ctest --test-dir build-rex-plugin -C Release -R '^(rex_presenter_logic|rex_stream_dump|rex_pm4|rex_gpu_device|rex_render_state)$' --output-on-failure --timeout 120 *>&1 |
+          ctest --test-dir build-rex-plugin -C Release -R '^(rex_presenter_logic|rex_stream_dump|rex_pm4|rex_gpu_device|rex_render_state|rex_replay)$' --output-on-failure --timeout 120 *>&1 |
             Tee-Object -FilePath $log -Append
           if ($LASTEXITCODE -ne 0) {
             $tail = ((Get-Content $log -Tail 60) -join ' | ') -replace '%', '%25'
             Write-Host "::error title=rexgpu-native device tests failed::$tail"
+            exit 1
+          }
+          # The replay tool is what a recorded run is read with, and a tool that
+          # cannot even print its usage is a file, not a tool.
+          $replay = Get-ChildItem -Path build-rex-plugin -Recurse -Filter 'rex_gpu_replay.exe' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch 'CMakeFiles' } | Select-Object -First 1
+          if (-not $replay) {
+            Write-Host '::error title=rex_gpu_replay was not built::the replay of recorded streams is the renderer workbench'
+            exit 1
+          }
+          New-Item -ItemType Directory -Force native-plugin | Out-Null
+          Copy-Item $replay.FullName native-plugin/rex_gpu_replay.exe -Force
+          & $replay.FullName --help | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host '::error title=rex_gpu_replay cannot run::the tool exited non-zero on --help'
             exit 1
           }
       - name: Test recovered guest entries before PPC build
@@ -328,6 +346,13 @@ jobs:
         run: |
           New-Item -ItemType Directory package-rex | Out-Null
           Copy-Item build-rex-game/Release/SonicGenerationsRecomp-ReXGlue.exe package-rex/
+          # The replay tool is how a recorded run becomes a renderer work item on
+          # the player's own machine: the recording stays where it was written.
+          if (Test-Path build-rex-game/Release/rex_gpu_replay.exe) {
+            Copy-Item build-rex-game/Release/rex_gpu_replay.exe package-rex/
+          } else {
+            Write-Host '::warning title=no replay tool in the package::rex_gpu_replay.exe was not built'
+          }
           Copy-Item build-rex-game/Release/rex_vulkan_plugin_tests.exe package-rex/
           Copy-Item "$env:REXSDK_PREFIX/sonic-sdk-build.json" package-rex/
           Get-ChildItem build-rex-game/Release/*.dll | Copy-Item -Destination package-rex/
@@ -374,6 +399,15 @@ jobs:
         run: |
           & ./package-rex/rex_vulkan_plugin_tests.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Nothing has been recorded in CI, so the honest answer of the replay
+          # tool is the "nothing to replay" exit code 2 with instructions -- not a
+          # crash, and not a zero that would look like a successful replay.
+          $PSNativeCommandUseErrorActionPreference = $false
+          & ./package-rex/rex_gpu_replay.exe --quiet 2>&1 | Out-Null
+          if ($LASTEXITCODE -ne 2) {
+            Write-Host "::error title=rex_gpu_replay did not report an empty recording::exit code $LASTEXITCODE"
+            exit 1
+          }
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push' || inputs.build_game
         with:

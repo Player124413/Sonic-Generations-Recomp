@@ -13,7 +13,12 @@
 //                   guest byte order, so a replay can feed them straight back
 //                   into our own decoder;
 //   frame-NNN.txt   the opcode histogram and the first packets, decoded;
-//   packets.txt     one line per frame plus the whole-run histogram.
+//   packets.txt     one line per frame plus the whole-run histogram;
+//   memory.bin      the guest-memory regions the stream referenced -- shader
+//                   microcode (IM_LOAD), constant blocks (LOAD_ALU_CONSTANT) and
+//                   indirect buffers. Without them a replay can read headers but
+//                   not the data the headers point at, which is exactly the part
+//                   the renderer needs. See memory_sidecar.h for the format.
 //
 // This is a development instrument: it is off unless asked for, it caps every
 // buffer it grows, and it copies bytes -- it never writes guest memory.
@@ -25,6 +30,7 @@
 #include <vector>
 
 #include "command_processor.h"
+#include "memory_sidecar.h"
 
 namespace sonic::rex_host::gpu {
 
@@ -41,6 +47,9 @@ public:
         /// The tail of each packet is decoded into the report, not the whole
         /// payload: a SET_STATE or IM_LOAD packet can be tens of kilobytes.
         size_t payloadWordsInReport = 16;
+        /// Total size of the guest-memory regions kept in memory.bin. Bounded so
+        /// a broken stream cannot make the recorder eat all memory.
+        size_t maxCaptureBytes = 32u << 20;
     };
 
     struct Stats {
@@ -52,10 +61,14 @@ public:
         uint64_t registerWrites = 0;
         uint64_t bytesWritten = 0;
         uint64_t framesSkipped = 0;  // after the frame cap
+        uint64_t capturedRegions = 0;
+        uint64_t capturedBytes = 0;
+        uint64_t capturesSkipped = 0;   // over the capture cap
+        uint64_t capturesFailed = 0;    // unreadable guest memory
     };
 
     StreamDump() = default;
-    explicit StreamDump(Config config) : config_(config) {}
+    explicit StreamDump(Config config) : config_(config), capture_(config.maxCaptureBytes) {}
     ~StreamDump() override { Close(); }
 
     /// The recorder copies raw ring bytes through the same adapter the walker
@@ -79,6 +92,10 @@ public:
     Stats GetStats() const noexcept { return stats_; }
     /// One line for the log: what was recorded and where.
     std::string Summary() const;
+    /// Writes memory.bin if anything was captured. Called by Close(); exposed so
+    /// a test can check the sidecar without ending the run.
+    bool WriteMemorySidecar(std::string& error);
+    const MemoryCapture& capture() const noexcept { return capture_; }
 
 private:
     void StartFrame();
@@ -90,7 +107,11 @@ private:
                                std::span<const uint32_t> payload) const;
     std::string FrameHistogram() const;
 
+    /// Guest-memory regions the stream referenced, kept for the replay.
+    void CaptureRegion(uint32_t address, size_t bytes);
+
     Config config_{};
+    MemoryCapture capture_;
     GuestMemory* memory_ = nullptr;
     std::filesystem::path directory_;
     std::ofstream report_;

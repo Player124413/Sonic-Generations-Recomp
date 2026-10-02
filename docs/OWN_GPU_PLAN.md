@@ -351,6 +351,7 @@ ASAN/UBSAN.
 | Регистровый файл, ring buffer, writeback, swap | `rex/src/gpu_native/*` | есть, тесты `rex_gpu_device` |
 | Свой Vulkan-бэкенд/презентер, SPIR-V кодеки | `SonicGenerationsRecomp/gpu/*`, `cmake/VulkanHost.cmake` | есть, но не на пути видимого кадра |
 | Плагин `rexgpu-native` (наша `IGraphicsSystem`) | `rex/plugins/native/*` | DLL собирается и подхватывается хостом; причина падения `0xC0000005` найдена (нулевой `VkDevice` в конструкторе презентера) и исправлена — ждём подтверждения прогоном |
+| Офлайн-реплей записи (`memory.bin`, отчёт по кадрам) | `rex/src/gpu_native/{memory_image,memory_sidecar,replay}.*`, `rex/tools/replay.cpp` | есть, тесты `rex_replay`, инструмент едет в пакете |
 | Видимый кадр в игре | плагин SDK `rexgpu-xenos` | **SDK рисует, не мы** |
 
 Правило о нулевых словах в кольце: слово `0x00000000` — это паддинг, а не Type-0

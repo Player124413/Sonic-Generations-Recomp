@@ -43,7 +43,10 @@ add_library(sonic_rex_gpu_device STATIC
     src/gpu_native/register_file.cpp
     src/gpu_native/render_state.cpp
     src/gpu_native/command_processor.cpp
-    src/gpu_native/stream_dump.cpp)
+    src/gpu_native/stream_dump.cpp
+    src/gpu_native/memory_image.cpp
+    src/gpu_native/memory_sidecar.cpp
+    src/gpu_native/replay.cpp)
 target_include_directories(sonic_rex_gpu_device PUBLIC src)
 target_compile_features(sonic_rex_gpu_device PUBLIC cxx_std_20)
 target_link_libraries(sonic_rex_gpu_device PUBLIC sonic_rex_pm4)
@@ -62,6 +65,18 @@ add_test(NAME rex_stream_dump COMMAND rex_stream_dump_tests)
 add_executable(rex_render_state_tests tests/render_state_tests.cpp)
 target_link_libraries(rex_render_state_tests PRIVATE sonic_rex_gpu_device)
 add_test(NAME rex_render_state COMMAND rex_render_state_tests)
+
+# Offline replay: a recording (raw ring bytes + the guest-memory regions the
+# stream reads) re-decoded by the same device that runs in the game, with no SDK,
+# no GPU and no game. This is how the renderer is developed against real data.
+add_executable(rex_replay_tests tests/replay_tests.cpp)
+target_link_libraries(rex_replay_tests PRIVATE sonic_rex_gpu_device)
+add_test(NAME rex_replay COMMAND rex_replay_tests)
+
+# The tool the Windows package ships, so a recorded run can be re-decoded next to
+# the game without a compiler: assets/rex-cache/gpu-dump -> replay-report.txt.
+add_executable(rex_gpu_replay tools/replay.cpp)
+target_link_libraries(rex_gpu_replay PRIVATE sonic_rex_gpu_device)
 
 # Host-side policy that talks to the SDK cvar registry (keyboard defaults).
 add_library(sonic_rex_host_policy STATIC src/input_defaults.cpp)

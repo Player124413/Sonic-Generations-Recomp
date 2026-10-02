@@ -33,6 +33,28 @@ const char* ActionLabel(pm4::Action action) {
 
 }  // namespace
 
+void StreamDump::CaptureRegion(uint32_t address, size_t bytes) {
+    if (!memory_ || !bytes) return;
+    const uint64_t before = stats_.capturedBytes;
+    const bool captured = capture_.Capture(
+        address, bytes, [this](uint32_t at, std::span<uint8_t> destination) {
+            return memory_ && memory_->Read(at, destination);
+        });
+    if (captured) {
+        stats_.capturedRegions = capture_.regionCount();
+        stats_.capturedBytes = capture_.bytes();
+        (void)before;
+    } else {
+        if (capture_.failed()) stats_.capturesFailed = capture_.failed();
+        if (capture_.skipped()) stats_.capturesSkipped = capture_.skipped();
+    }
+}
+
+bool StreamDump::WriteMemorySidecar(std::string& error) {
+    if (!report_.is_open() || capture_.regions().empty()) return true;
+    return capture_.Write(directory_ / "memory.bin", error);
+}
+
 bool StreamDump::Open(const std::filesystem::path& directory, std::string& error) {
     if (report_.is_open()) return true;
     std::error_code code;
@@ -51,6 +73,8 @@ bool StreamDump::Open(const std::filesystem::path& directory, std::string& error
     WriteReportLine("# frame-NNN.bin is the raw guest byte stream drained between two swaps,");
     WriteReportLine("# in guest byte order, so it can be replayed through our own PM4 walker.");
     WriteReportLine("# frame-NNN.txt decodes that stream: opcode histogram and first packets.");
+    WriteReportLine("# memory.bin holds the guest bytes the stream referenced (shaders,");
+    WriteReportLine("# constants, indirect buffers), so rex_gpu_replay can execute it.");
     StartFrame();
     return true;
 }
@@ -58,11 +82,19 @@ bool StreamDump::Open(const std::filesystem::path& directory, std::string& error
 void StreamDump::Close() {
     if (!report_.is_open()) return;
     FinishFrame(false);
+    {
+        std::string error;
+        if (!WriteMemorySidecar(error)) WriteReportLine("# memory sidecar: " + error);
+    }
     report_ << "\n# totals: drains=" << stats_.drains << " packets=" << stats_.packets
             << " swaps=" << stats_.swaps << " register_writes=" << stats_.registerWrites
             << " frames_written=" << stats_.framesWritten
             << " frames_truncated=" << stats_.framesTruncated
-            << " frames_skipped=" << stats_.framesSkipped << "\n";
+            << " frames_skipped=" << stats_.framesSkipped
+            << " memory_regions=" << stats_.capturedRegions
+            << " memory_bytes=" << stats_.capturedBytes
+            << " captures_skipped=" << stats_.capturesSkipped
+            << " captures_failed=" << stats_.capturesFailed << "\n";
     report_ << "# opcode histogram (whole run, opcode 7F = Type-0/1 writes):\n";
     for (uint32_t opcode = 0; opcode < 128; ++opcode) {
         if (!opcodeCounts_[opcode]) continue;
@@ -181,6 +213,38 @@ void StreamDump::OnPacket(const pm4::Header& header, pm4::Action action,
         ++stats_.swaps;
         frameHadSwap_ = true;
     }
+    // What the device will read from guest memory while executing this stream:
+    // capture it now, because the guest is free to overwrite the buffer the
+    // moment the packet has been walked.
+    if (memory_ && !payload.empty()) {
+        switch (action) {
+        case pm4::Action::ShaderLoad: {
+            // IM_LOAD: (shader_type | address), (start | size_dwords).
+            if (payload.size() >= 2) {
+                const uint32_t address = payload[0] & ~uint32_t(3);
+                const uint32_t dwords = std::min(payload[1] & 0xFFFFu, 4096u);
+                if (dwords) CaptureRegion(address, size_t(dwords) * 4u);
+            }
+        } break;
+        case pm4::Action::StateSet: {
+            // LOAD_ALU_CONSTANT: address, (type << 16) | index, (size & 0xFFF).
+            if (header.opcode == static_cast<uint32_t>(pm4::Opcode::kLoadAluConstant) &&
+                payload.size() >= 3) {
+                const uint32_t address = payload[0] & 0x3FFFFFFFu;
+                const uint32_t dwords = std::min(payload[2] & 0xFFFu, 4096u);
+                if (dwords) CaptureRegion(address, size_t(dwords) * 4u);
+            }
+        } break;
+        case pm4::Action::IndirectBuffer: {
+            if (payload.size() >= 2) {
+                const uint32_t address = payload[0];
+                const uint32_t dwords = std::min(payload[1] & 0xFFFFFu, 1u << 20);
+                if (dwords) CaptureRegion(address, size_t(dwords) * 4u);
+            }
+        } break;
+        default: break;
+        }
+    }
     if (header.type == pm4::PacketType::kType3) ++frameCounts_[header.opcode & 0x7F];
     if (packetsLogged_ >= config_.loggedPacketsPerFrame) return;
     ++packetsLogged_;
@@ -245,7 +309,10 @@ std::string StreamDump::Summary() const {
            std::to_string(stats_.drains) + " packets=" + std::to_string(stats_.packets) +
            " swaps=" + std::to_string(stats_.swaps) +
            " frames=" + std::to_string(stats_.framesWritten) +
-           " bytes=" + std::to_string(stats_.bytesWritten);
+           " bytes=" + std::to_string(stats_.bytesWritten) +
+           " memory_regions=" + std::to_string(stats_.capturedRegions) +
+           " memory_bytes=" + std::to_string(stats_.capturedBytes) +
+           " (replay: rex_gpu_replay " + directory_.string() + ")";
 }
 
 }  // namespace sonic::rex_host::gpu

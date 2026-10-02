@@ -241,7 +241,11 @@ class NativePluginBuildTests(unittest.TestCase):
         # The DLL travels as its own small artifact, so the user does not have to
         # re-download the whole package to pick up one file.
         self.assertIn('name: rexgpu-native-plugin', workflow)
-        self.assertIn('path: native-plugin/rexgpu-native.dll', workflow)
+        # The artifact carries the replay tool as well: a recording is read with
+        # it, and making the user download the whole package for one small EXE is
+        # the same mistake the plugin DLL artifact exists to avoid.
+        self.assertIn('native-plugin/rexgpu-native.dll', workflow)
+        self.assertIn('native-plugin/rex_gpu_replay.exe', workflow)
         # A package without the plugin is reported as an error, not a log line.
         self.assertIn('package without our GPU plugin', workflow)
         # The DLL is located, not assumed: a target defined in a subdirectory gets
@@ -249,7 +253,8 @@ class NativePluginBuildTests(unittest.TestCase):
         # how the build "succeeded" while the DLL was nowhere the steps looked.
         self.assertIn("Get-ChildItem -Path build-rex-plugin -Recurse -Filter 'rexgpu-native.dll'", workflow)
         self.assertIn('Copy-Item $dll.FullName native-plugin/rexgpu-native.dll -Force', workflow)
-        self.assertIn('path: native-plugin/rexgpu-native.dll', workflow)
+        # The upload lists both files of the artifact: the DLL and the replay tool.
+        self.assertIn('native-plugin/rexgpu-native.dll', workflow)
         plugin_cmake = (ROOT / 'rex/plugins/native/CMakeLists.txt').read_text(encoding='utf-8')
         self.assertIn('"RUNTIME_OUTPUT_DIRECTORY_${config}" "${CMAKE_BINARY_DIR}/${config}"', plugin_cmake)
         # And the docs must point at it instead of the probe.
