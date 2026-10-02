@@ -26,6 +26,12 @@ add_library(rexgpu-native SHARED
 target_include_directories(rexgpu-native PRIVATE src)
 target_compile_features(rexgpu-native PRIVATE cxx_std_20)
 target_link_libraries(rexgpu-native PRIVATE sonic_rex_gpu_device rex::runtime Vulkan::Headers)
+# No Vulkan loader and no import library: the plugin resolves vulkan-1.dll itself
+# through the table in native_vulkan_api.h. Defining VK_NO_PROTOTYPES for every
+# translation unit is what makes that a compile-time guarantee instead of a link
+# error -- otherwise the Vulkan headers declare the entry points as imports and a
+# stray call to one of them fails the link (undefined symbol vkGetInstanceProcAddr).
+target_compile_definitions(rexgpu-native PRIVATE VK_NO_PROTOTYPES=1)
 
 if(MSVC)
     target_compile_options(rexgpu-native PRIVATE /W4)

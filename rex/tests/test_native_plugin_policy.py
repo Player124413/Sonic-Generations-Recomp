@@ -288,5 +288,33 @@ class NativePluginBuildTests(unittest.TestCase):
         self.assertTrue((ROOT / 'rex/tests/render_state_tests.cpp').is_file())
 
 
+    def test_the_plugin_never_links_the_vulkan_loader(self):
+        # The plugin resolves vulkan-1.dll itself and links no import library, so
+        # a call to a Vulkan entry point as a global is not a link error -- it is
+        # an undefined symbol, which is how the Windows build failed once:
+        # "undefined symbol: vkGetInstanceProcAddr". VK_NO_PROTOTYPES is what turns
+        # that into a compile error, and the only resolver is our own table.
+        cmake = (ROOT / 'rex/plugins/native/CMakeLists.txt').read_text(encoding='utf-8')
+        self.assertIn('target_compile_definitions(rexgpu-native PRIVATE VK_NO_PROTOTYPES=1)', cmake)
+        header = (ROOT / 'rex/plugins/native/src/native_vulkan_api.h').read_text(encoding='utf-8')
+        guard = header.index('#define VK_NO_PROTOTYPES 1')
+        self.assertLess(guard, header.index('#include <vulkan/vulkan.h>'))
+        api = (ROOT / 'rex/plugins/native/src/native_vulkan_api.cpp').read_text(encoding='utf-8')
+        # Names appear as strings for the resolver; a call would appear with an
+        # opening parenthesis right after the name.
+        self.assertNotIn('vkGetInstanceProcAddr(', api.split('namespace sonic')[0])
+        self.assertNotIn('vkGetDeviceProcAddr(', api)
+        # Every table is resolved through a pointer we hold: the loader's entry
+        # point for globals, the instance's for instance and device functions.
+        self.assertIn('Resolve(api.GetInstanceProcAddr, instance, function, name, error)', api)
+        self.assertIn('Resolve(api.GetDeviceProcAddr, device, function, name, error)', api)
+        # Function pointers cannot be reinterpret-cast without a warning, so the
+        # conversion goes through a bit copy -- and GetProcAddress returns the
+        # real FARPROC type, in the stub too.
+        self.assertIn('GetInstanceProcAddr = FunctionCast<PFN_vkGetInstanceProcAddr>(entry);', api)
+        stub = (ROOT / 'rex/tools/winstub/windows.h').read_text(encoding='utf-8')
+        self.assertIn('typedef long long (*FARPROC)();', stub)
+        self.assertIn('static inline FARPROC GetProcAddress(HMODULE, const char*)', stub)
+
 if __name__ == '__main__':
     unittest.main()

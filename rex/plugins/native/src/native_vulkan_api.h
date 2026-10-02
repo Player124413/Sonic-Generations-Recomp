@@ -8,7 +8,13 @@
 // -- and no SDK code -- is involved in our rendering.
 //
 // The header defines VK_NO_PROTOTYPES (the SDK's api.h does the same), so the
-// prototypes below are the only way the plugin can call Vulkan at all.
+// prototypes below are the only way the plugin can call Vulkan at all. Without
+// it the Vulkan headers declare vkGetInstanceProcAddr and friends as imports
+// from the loader's import library, the plugin links none, and the link fails
+// with undefined symbols -- which is exactly what happened once on Windows.
+#if !defined(VK_NO_PROTOTYPES)
+#define VK_NO_PROTOTYPES 1
+#endif
 #if defined(_WIN32) && !defined(VK_USE_PLATFORM_WIN32_KHR)
 // The presenter creates its surface from the window's HWND, so the Win32 WSI
 // declarations are part of the plugin's interface with Vulkan. Defining this

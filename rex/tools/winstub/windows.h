@@ -85,10 +85,14 @@ struct SECURITY_ATTRIBUTES {
   BOOL bInheritHandle;
 };
 
+// FARPROC, exactly as the real SDK declares it: a pointer to a function with no
+// prototype. Returning void* here would make the plugin's function-pointer casts
+// look fine locally and fail to convert on Windows.
+typedef long long (*FARPROC)();
 static inline HMODULE LoadLibraryW(const wchar_t*) { return nullptr; }
 static inline HMODULE LoadLibraryA(const char*) { return nullptr; }
 static inline HMODULE GetModuleHandleW(const wchar_t*) { return nullptr; }
-static inline void* GetProcAddress(HMODULE, const char*) { return nullptr; }
+static inline FARPROC GetProcAddress(HMODULE, const char*) { return nullptr; }
 static inline BOOL FreeLibrary(HMODULE) { return 0; }
 
 // --- Win32 API families, for the SDK headers that ask which family this is ---

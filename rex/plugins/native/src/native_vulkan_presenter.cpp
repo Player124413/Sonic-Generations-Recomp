@@ -16,8 +16,6 @@ namespace {
 constexpr float kNoFrameClear[4] = {0.035f, 0.055f, 0.16f, 1.0f};
 constexpr float kLetterboxClear[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
-uint32_t NextImageIndex(uint32_t index, uint32_t count) { return count ? (index + 1) % count : 0; }
-
 VkImageSubresourceRange ColorRange() {
     VkImageSubresourceRange range{};
     range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;

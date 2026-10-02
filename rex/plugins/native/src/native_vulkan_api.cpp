@@ -12,7 +12,7 @@
 // platforms.
 namespace {
 HMODULE LoadLibraryW(const wchar_t*) { return nullptr; }
-void* GetProcAddress(HMODULE, const char*) { return nullptr; }
+FARPROC GetProcAddress(HMODULE, const char*) { return nullptr; }
 BOOL FreeLibrary(HMODULE) { return 0; }
 }  // namespace
 #endif
@@ -20,13 +20,27 @@ BOOL FreeLibrary(HMODULE) { return 0; }
 namespace sonic::rex_host::gpu::vk {
 namespace {
 
+/// Function pointers do not convert to each other, and the compiler is right to
+/// complain: what `GetProcAddress` returns (FARPROC) and a Vulkan entry point
+/// have different types. Copying the bits is what every loader does, and it is
+/// the only form that does not trip -Wcast-function-type-mismatch.
+template <typename Target, typename Source>
+Target FunctionCast(Source source) noexcept {
+    static_assert(sizeof(Target) == sizeof(Source), "function pointer sizes differ");
+    Target target{};
+    std::memcpy(&target, &source, sizeof(Target));
+    return target;
+}
+
 /// Resolves through `resolver` and reports the first missing symbol, so a
 /// driver (or a stale header/driver pair) that lacks something is a clear
-/// message instead of a null call later.
-template <typename T>
-bool Resolve(PFN_vkVoidFunction (*resolver)(void*, const char*), void* handle, T& function,
-             const char* name, std::string& error) {
-    function = reinterpret_cast<T>(resolver(handle, name));
+/// message instead of a null call later. The resolver is always one we hold
+/// ourselves: with VK_NO_PROTOTYPES there is no loader import to call, which is
+/// what makes "no loader library is linked" true rather than aspirational.
+template <typename Resolver, typename Object, typename T>
+bool Resolve(Resolver resolver, Object object, T& function, const char* name,
+             std::string& error) {
+    function = FunctionCast<T>(resolver(object, name));
     if (!function) {
         error = std::string("vulkan-1.dll has no ") + name;
         return false;
@@ -34,19 +48,23 @@ bool Resolve(PFN_vkVoidFunction (*resolver)(void*, const char*), void* handle, T
     return true;
 }
 
-PFN_vkVoidFunction InstanceResolver(void* instance, const char* name) {
-    return vkGetInstanceProcAddr(reinterpret_cast<VkInstance>(instance), name);
+/// Global entry points: vkGetInstanceProcAddr with a null instance is required
+/// by the specification to return these.
+bool LoadGlobalFunctions(Api& api, std::string& error) {
+    const auto resolve = [&api, &error](auto& function, const char* name) {
+        return Resolve(api.GetInstanceProcAddr, static_cast<VkInstance>(VK_NULL_HANDLE),
+                       function, name, error);
+    };
+    return resolve(api.CreateInstance, "vkCreateInstance") &&
+           resolve(api.EnumerateInstanceExtensionProperties,
+                   "vkEnumerateInstanceExtensionProperties");
 }
 
-PFN_vkVoidFunction DeviceResolver(void* device, const char* name) {
-    return vkGetDeviceProcAddr(reinterpret_cast<VkDevice>(device), name);
-}
-
-/// The instance-level entry points. vkGetInstanceProcAddr(instance, ...) also
-/// resolves global functions, but they were already fetched from the loader.
-bool LoadInstanceFunctions(void* instance, Api& api, std::string& error) {
-    const auto resolve = [instance, &error](auto& function, const char* name) {
-        return Resolve(InstanceResolver, instance, function, name, error);
+/// The instance-level entry points, plus vkGetDeviceProcAddr, which is what the
+/// device-level table is resolved through.
+bool LoadInstanceFunctions(VkInstance instance, Api& api, std::string& error) {
+    const auto resolve = [instance, &api, &error](auto& function, const char* name) {
+        return Resolve(api.GetInstanceProcAddr, instance, function, name, error);
     };
     return resolve(api.DestroyInstance, "vkDestroyInstance") &&
            resolve(api.EnumeratePhysicalDevices, "vkEnumeratePhysicalDevices") &&
@@ -68,9 +86,12 @@ bool LoadInstanceFunctions(void* instance, Api& api, std::string& error) {
            resolve(api.CreateDevice, "vkCreateDevice");
 }
 
-bool LoadDeviceFunctions(void* device, Api& api, std::string& error) {
-    const auto resolve = [device, &error](auto& function, const char* name) {
-        return Resolve(DeviceResolver, device, function, name, error);
+bool LoadDeviceFunctions(VkDevice device, Api& api, std::string& error) {
+    // Through the pointer we resolved during instance setup. Calling the global
+    // vkGetDeviceProcAddr here would be the loader import again, and that is the
+    // undefined symbol that broke the Windows link.
+    const auto resolve = [device, &api, &error](auto& function, const char* name) {
+        return Resolve(api.GetDeviceProcAddr, device, function, name, error);
     };
     return resolve(api.GetDeviceQueue, "vkGetDeviceQueue") &&
            resolve(api.DestroyDevice, "vkDestroyDevice") &&
@@ -129,28 +150,18 @@ bool Api::Load(std::string& error) {
         error = "cannot load vulkan-1.dll (no Vulkan runtime installed)";
         return false;
     }
-    const auto get_instance_proc_addr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
-        GetProcAddress(handle, "vkGetInstanceProcAddr"));
-    if (!get_instance_proc_addr) {
+    const FARPROC entry = GetProcAddress(handle, "vkGetInstanceProcAddr");
+    if (!entry) {
         FreeLibrary(handle);
         error = "vulkan-1.dll has no vkGetInstanceProcAddr";
         return false;
     }
-    // The global entry points have to come from the loader: vkGetInstanceProcAddr
-    // with a null instance is only allowed to return them by the specification.
-    GetInstanceProcAddr = get_instance_proc_addr;
-    const auto resolve = [&error](PFN_vkVoidFunction (*resolver)(void*, const char*), void* object,
-                                  auto& function, const char* name) {
-        return Resolve(resolver, object, function, name, error);
-    };
-    const auto instance_resolver = [](void*, const char* name) {
-        return vkGetInstanceProcAddr(nullptr, name);
-    };
-    if (!resolve(instance_resolver, nullptr, CreateInstance, "vkCreateInstance") ||
-        !resolve(instance_resolver, nullptr, EnumerateInstanceExtensionProperties,
-                 "vkEnumerateInstanceExtensionProperties")) {
+    GetInstanceProcAddr = FunctionCast<PFN_vkGetInstanceProcAddr>(entry);
+    // Everything else, including vkGetDeviceProcAddr, comes through this one
+    // pointer: that is the whole loader contract this plugin relies on.
+    if (!LoadGlobalFunctions(*this, error)) {
         FreeLibrary(handle);
-        handle_ = nullptr;
+        GetInstanceProcAddr = nullptr;
         return false;
     }
     handle_ = handle;
