@@ -17,6 +17,7 @@ endif()
 
 add_library(rexgpu-native SHARED
     src/plugin_main.cpp
+    src/native_log.cpp
     src/native_graphics_system.cpp
     src/native_frame_source.cpp
     src/native_vulkan_api.cpp

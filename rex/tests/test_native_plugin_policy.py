@@ -324,6 +324,80 @@ class NativePluginBuildTests(unittest.TestCase):
         self.assertIn('typedef long long (*FARPROC)();', stub)
         self.assertIn('static inline FARPROC GetProcAddress(HMODULE, const char*)', stub)
 
+    def test_our_device_reports_to_a_file_not_only_to_a_console(self):
+        # A GUI host has no console: every diagnostic the plugin printed to
+        # stderr was invisible, and the crash that followed was silent. The log is
+        # a file next to the executable, and the crash report names the step.
+        log_impl = (PLUGIN / 'src/native_log.cpp').read_text(encoding='utf-8')
+        log_header = (PLUGIN / 'src/native_log.h').read_text(encoding='utf-8')
+        self.assertIn('rex::filesystem::GetExecutableFolder() / "diagnostics" / "native-gpu.log"',
+                      log_impl)
+        self.assertIn('std::fprintf(stderr, "%s\\n", line.c_str());', log_impl)
+        self.assertIn('kRecentLineCount', log_impl)
+        self.assertIn('CRASH %s (0x%08lX) at %s; step: %s', log_impl)
+        self.assertIn('while %s address 0x%llX', log_impl)
+        self.assertIn('SetUnhandledExceptionFilter(CrashHandler);', log_impl)
+        # The first-chance handler is what survives an exception somebody else
+        # swallows, but it must only report faults inside our own module: the
+        # runtime below us raises handled exceptions for its own purposes.
+        self.assertIn('AddVectoredExceptionHandler(1, FirstChanceHandler);', log_impl)
+        self.assertIn('IsOwnAddress(instruction)', log_impl)
+        self.assertIn('std::unique_lock<std::mutex> lock(LogMutex(), std::try_to_lock);', log_impl)
+        for declaration in ('void Log(const char* format, ...);', 'void LogSetContext(const char* stage);',
+                            'const char* LogContext();', 'std::filesystem::path LogPath();',
+                            'void InstallCrashHandler();'):
+            self.assertIn(declaration, log_header)
+        # The handler is installed at the earliest point of our code, because the
+        # crash may happen before the device is built.
+        self.assertIn('sonic::rex_host::gpu::InstallCrashHandler();', MAIN)
+        self.assertIn('src/native_log.cpp', CMAKE)
+        # Development without a window: the device (ring, recorder, swap tokens)
+        # runs without Vulkan and without a presenter, so a crash can be
+        # attributed to one side or the other instead of guessed.
+        self.assertIn('SONIC_REX_NATIVE_NO_PRESENT', SYSTEM)
+
+    def test_the_steps_that_can_crash_are_named_before_they_run(self):
+        # The last line of the log has to say which step was in progress: an
+        # access violation with no context is not a bug report.
+        for stage in ('SetupPresentation', 'SetupGuestGpu', 'InitializeRingBuffer', 'Shutdown',
+                      'SetInterruptCallback', 'InitializeShaderStorage'):
+            self.assertIn(f'LogSetContext("{stage}")', SYSTEM + PRESENTER,
+                          f'{stage} is never marked in the log')
+        self.assertIn('LogSetContext("ConnectPainting")', PRESENTER)
+        self.assertIn('LogSetContext("RefreshGuestOutput")', PRESENTER)
+        self.assertIn('LogSetContext("PaintAndPresent")', PRESENTER)
+
+    def test_the_crash_launcher_reports_from_outside_the_process(self):
+        # The user's crash left no report anywhere in the process. Run-Native-GPU-Trace.cmd
+        # runs the game under the debugger, which sees the exception even if the
+        # process cannot survive long enough to write anything.
+        script = (ROOT / 'rex/windows/Run-Native-GPU-Trace.cmd').read_text(encoding='utf-8')
+        self.assertIn('set "SONIC_REX_GRAPHICS_MODE=native"', script)
+        self.assertIn('set "SONIC_REX_GPU_DUMP=1"', script)
+        self.assertIn('set "SONIC_CRASH_TRACE_SECONDS=-1"', script)
+        self.assertIn('windows_crash_trace.exe', script)
+        self.assertIn('diagnostics\\native-gpu-trace.log', script)
+        self.assertIn('diagnostics\\native-gpu.log', script)
+        tracer = (ROOT / 'rex/tests/windows_crash_trace.cpp').read_text(encoding='utf-8')
+        self.assertIn('SONIC_CRASH_TRACE_SECONDS', tracer)
+        self.assertIn('long long seconds = 45;', tracer)
+        self.assertIn('deadline == 0 || GetTickCount64() < deadline', tracer)
+        # The dump launcher has to show the two logs, because a run that dies
+        # early otherwise produces nothing the user can send.
+        dump = (ROOT / 'rex/windows/Run-Native-GPU-Dump.cmd').read_text(encoding='utf-8')
+        self.assertIn('diagnostics\\native-gpu.log', dump)
+        self.assertIn('diagnostics\\rex-runtime.log', dump)
+
+    def test_a_user_crash_can_be_symbolized(self):
+        # Module+offset is only useful with the map from offset to function, so
+        # the symbols travel with every build, and the package carries the
+        # outside-process tracer.
+        workflow = (ROOT / '.github/workflows/windows-rexglue.yml').read_text(encoding='utf-8')
+        self.assertIn('rexgpu-native.pdb', workflow)
+        self.assertIn('name: rexgpu-native-symbols', workflow)
+        self.assertIn('windows_crash_trace.exe', workflow)
+        self.assertIn('Run-Native-GPU-Trace.cmd', workflow + (ROOT / 'rex/README.md').read_text(encoding='utf-8'))
+
     def test_the_workflow_has_no_unterminated_powershell_strings(self):
         # A missing closing quote in a run: block does not break YAML, it breaks
         # the shell script -- and the only way to see it is a CI run whose error

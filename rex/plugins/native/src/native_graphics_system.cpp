@@ -79,9 +79,19 @@ NativeGraphicsSystem::~NativeGraphicsSystem() { Shutdown(); }
 
 rex::X_STATUS NativeGraphicsSystem::SetupPresentation(rex::ui::WindowedAppContext* app_context) {
     if (presenter_) return X_STATUS_SUCCESS;
+    LogSetContext("SetupPresentation");
+    // Isolation switch for bringing the device up without Vulkan and without a
+    // window: the ring, the recorder and the swap tokens still work, so a crash
+    // can be attributed to the device or to the presenter instead of guessed.
+    if (const char* headless = std::getenv("SONIC_REX_NATIVE_NO_PRESENT");
+        headless && std::string_view(headless) == "1") {
+        Log("presentation disabled by SONIC_REX_NATIVE_NO_PRESENT: the device runs headless");
+        return X_STATUS_SUCCESS;
+    }
     // Our own Vulkan device: instance, adapter, queue. The renderer will use the
     // same device, because the guest's frame is rendered into the image the
     // presenter paints from.
+    Log("creating our Vulkan device");
     vulkan_ = std::make_shared<vk::Core>();
     std::string error;
     if (!vulkan_->Initialize(error)) {
@@ -89,6 +99,7 @@ rex::X_STATUS NativeGraphicsSystem::SetupPresentation(rex::ui::WindowedAppContex
         vulkan_.reset();
         return X_STATUS_UNSUCCESSFUL;
     }
+    Log("Vulkan device ready: %s", vulkan_->adapterName().c_str());
     provider_ = std::make_unique<NativeGraphicsProvider>(vulkan_);
     // Presenter creation happens on the UI thread, like the SDK's own graphics
     // systems do, because it is the thread that will own the surface.
@@ -97,11 +108,13 @@ rex::X_STATUS NativeGraphicsSystem::SetupPresentation(rex::ui::WindowedAppContex
             provider_->CreatePresenter(rex::ui::Presenter::FatalErrorHostGpuLossCallback)
                 .release()));
     };
+    Log("creating the presenter%s", app_context ? " on the UI thread" : "");
     if (app_context) {
         app_context->CallInUIThreadSynchronous(create);
     } else {
         create();
     }
+    Log("presenter %s", presenter_ ? "created" : "was not created");
     if (!presenter_) {
         Log("the Vulkan presenter could not be created");
         provider_.reset();
@@ -121,15 +134,27 @@ rex::X_STATUS NativeGraphicsSystem::SetupGuestGpu(
         return X_STATUS_UNSUCCESSFUL;
     }
     if (guestGpuReady_) return X_STATUS_SUCCESS;
+    LogSetContext("SetupGuestGpu");
+    {
+        static std::atomic<uint32_t> calls{0};
+        if (calls.fetch_add(1, std::memory_order_relaxed) < 3) {
+            Log("SetupGuestGpu: dispatcher %s, kernel state %s", function_dispatcher ? "yes" : "no",
+                kernel_state ? "yes" : "no");
+        }
+    }
     dispatcher_ = function_dispatcher;
     memory_.SetMemory(function_dispatcher->memory());
     frameSource_.SetMemory(&memory_);
 
     // Headless vsync pacing is ours; with no presentation the guest must still
     // see vblanks or the D3D present path waits forever.
+    Log("starting the vblank and command-processor threads");
     StartVblankWorker(kernel_state);
     StartGpuWorker(kernel_state);
+    Log("threads started (vblank=%d, worker=%d)", vblankThread_ ? 1 : 0, workerThread_ ? 1 : 0);
 
+    Log("registering the GPU register window at %08X (mask %08X, size %04X)", kGpuMmioBase,
+        kGpuMmioMask, kGpuMmioSize);
     if (!function_dispatcher->memory()->AddVirtualMappedRange(
             kGpuMmioBase, kGpuMmioMask, kGpuMmioSize, this,
             reinterpret_cast<rex::runtime::MMIOReadCallback>(ReadRegisterThunk),
@@ -248,6 +273,7 @@ void NativeGraphicsSystem::WakeGpuWorker() {
 // Guest GPU services (the Vd* exports reach these)
 //------------------------------------------------------------------------------
 void NativeGraphicsSystem::InitializeRingBuffer(uint32_t ptr, uint32_t size_log2) {
+    LogSetContext("InitializeRingBuffer");
     processor_.InitializeRingBuffer(ptr, size_log2);
     Log("ring buffer at %08X, size log2 %u", ptr, size_log2);
     WakeGpuWorker();
@@ -261,6 +287,7 @@ void NativeGraphicsSystem::EnableReadPointerWriteBack(uint32_t ptr, uint32_t blo
 }
 
 void NativeGraphicsSystem::SetInterruptCallback(uint32_t callback, uint32_t user_data) {
+    LogSetContext("SetInterruptCallback");
     interruptCallback_ = callback;
     interruptData_ = user_data;
     Log("interrupt callback %08X, user data %08X", callback, user_data);
@@ -268,6 +295,7 @@ void NativeGraphicsSystem::SetInterruptCallback(uint32_t callback, uint32_t user
 
 void NativeGraphicsSystem::InitializeShaderStorage(const std::filesystem::path& cache_root,
                                                    uint32_t title_id, bool blocking) {
+    LogSetContext("InitializeShaderStorage");
     // Shader translation is ours and does not exist yet; the cache would be a
     // promise we cannot keep, so nothing is created here.
     (void)cache_root;
@@ -276,7 +304,9 @@ void NativeGraphicsSystem::InitializeShaderStorage(const std::filesystem::path& 
 }
 
 void NativeGraphicsSystem::Shutdown() {
+    LogSetContext("Shutdown");
     if (!guestGpuReady_ && !vblankThread_ && !workerThread_ && !presenter_) return;
+    Log("shutting the guest GPU down");
     // Stop the threads that enter the guest, then detach the device's sinks, and
     // only then let the presenter go: it is the last user of the Vulkan device.
     StopGpuWorker();
@@ -333,10 +363,27 @@ void NativeGraphicsSystem::Shutdown() {
 void NativeGraphicsSystem::DispatchInterruptToGuest(uint32_t source, uint32_t cpu) {
     if (!interruptCallback_ || !dispatcher_) return;
     auto* thread = rex::system::XThread::GetCurrentThread();
-    if (!thread) return;
+    if (!thread) {
+        // Not a guest thread: entering the guest from here would pass a null
+        // thread state into the dispatcher, which is a crash inside the runtime
+        // rather than a missing interrupt. Say so once instead.
+        static bool reported = false;
+        if (!reported) {
+            reported = true;
+            Log("GPU interrupt %u dropped: the calling thread is not a guest thread", source);
+        }
+        return;
+    }
     // The guest callback takes (source, user_data); the CPU index decides which
     // guest CPU takes the interrupt, and the guest tells us when it is -1.
     if (cpu == 0xFFFFFFFF) cpu = 2;
+    {
+        static std::atomic<uint32_t> dispatched{0};
+        if (dispatched.fetch_add(1, std::memory_order_relaxed) < 3) {
+            Log("entering the guest GPU interrupt: source %u, cpu %u, callback %08X", source, cpu,
+                interruptCallback_);
+        }
+    }
     thread->SetActiveCpu(uint8_t(cpu));
     uint64_t arguments[] = {source, interruptData_};
     dispatcher_->ExecuteInterrupt(thread->thread_state(), interruptCallback_, arguments, 2);
@@ -347,6 +394,13 @@ void NativeGraphicsSystem::DispatchInterruptToGuest(uint32_t source, uint32_t cp
 //------------------------------------------------------------------------------
 void NativeGraphicsSystem::OnGuestFrame(uint32_t frontbufferAddress, uint32_t width,
                                         uint32_t height) {
+    {
+        static std::atomic<uint64_t> reported{0};
+        if (reported.fetch_add(1, std::memory_order_relaxed) < 3) {
+            Log("guest frame %ux%u at %08X (presenter %s)", width, height, frontbufferAddress,
+                presenter_ ? "ready" : "absent");
+        }
+    }
     if (!presenter_) return;
     const RegisterFile::VideoMode mode = processor_.registers().GetVideoMode();
     // The display aspect ratio comes from the video mode, not from the front
@@ -374,10 +428,18 @@ void NativeGraphicsSystem::WriteRegisterThunk(void* ppc_context, NativeGraphicsS
 }
 
 uint32_t NativeGraphicsSystem::ReadRegister(uint32_t address) {
+    static std::atomic<uint32_t> reads{0};
+    if (reads.fetch_add(1, std::memory_order_relaxed) < 5) {
+        Log("MMIO read register %04X", address & 0xFFFF);
+    }
     return processor_.registers().Read((address & 0xFFFF) / 4);
 }
 
 void NativeGraphicsSystem::WriteRegister(uint32_t address, uint32_t value) {
+    static std::atomic<uint32_t> writes{0};
+    if (writes.fetch_add(1, std::memory_order_relaxed) < 5) {
+        Log("MMIO write register %04X = %08X", address & 0xFFFF, value);
+    }
     const uint32_t index = (address & 0xFFFF) / 4;
     if (index == kCpRbWptr) {
         // The guest kicks the command processor through MMIO; a packet writing

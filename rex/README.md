@@ -589,6 +589,7 @@ cmake --build build-rex-plugin --config Release --target rexgpu-native
 | артефакт **`rexgpu-native-plugin`** (последний зелёный run workflow) | только DLL, несколько сотен килобайт — положить рядом с EXE |
 | артефакт **`windows-x64-rexglue-reference-candidate`** | вся сборка, DLL уже в корне |
 | своя сборка | `cmake -S rex -B build-rex-plugin ... -DSONIC_REX_BUILD_NATIVE_PLUGIN=ON`, взять `build-rex-plugin/Release/rexgpu-native.dll` |
+| артефакт **`rexgpu-native-symbols`** | `rexgpu-native.pdb` — чтобы прочитать `модуль+offset` из отчёта о падении |
 
 `Run-Native-GPU-Dump.cmd` сам копирует DLL из `plugins\` или из
 `build-rex-plugin\Release\`, если она там есть, и объясняет, где взять файл,
@@ -611,3 +612,33 @@ rex\windows\Run-Native-GPU-Dump.cmd
 
 (ставит `SONIC_REX_GRAPHICS_MODE=native` и `SONIC_REX_GPU_DUMP=1`, см. ниже).
 Рендер-опкоды — следующий шаг. Порядок в `docs/OWN_GPU_PLAN.md`.
+
+### Если плагин падает: диагностика, а не догадки
+
+С нашим плагином процесс сейчас завершается кодом `-1073741819`
+(`0xC0000005`) **до первого кадра**: устройство стартует, но ни кадра, ни
+дампов. Хост — GUI-приложение без консоли, поэтому диагностика плагина идёт в
+файл, а не в `stderr`.
+
+Что и откуда читать после прогона:
+
+| Файл | Кто пишет | Что внутри |
+| --- | --- | --- |
+| `diagnostics\native-gpu.log` | плагин (`native_log.cpp`) | шаги (`SetupPresentation`, `SetupGuestGpu`, `InitializeRingBuffer`, `ConnectPainting`, `RefreshGuestOutput`, `PaintAndPresent`, `Shutdown`), первые AV **внутри нашего DLL** с `модуль+offset`, отчёт о непойманном исключении и последние строки перед ним |
+| `diagnostics\rex-runtime.log` | хост (`Run-ReXGlue.cmd` перенаправляет вывод процесса) | загрузился ли плагин, что сказал рантайм до падения |
+| `diagnostics\native-gpu-trace.log` | `Run-Native-GPU-Trace.cmd` (`windows_crash_trace.exe`) | `EXCEPTION …` и стек каждого исключения: падение локализуется, даже если процесс не успел ничего записать |
+
+```bat
+rem обычный прогон: печатает хвосты обоих логов в конце
+rex\windows\Run-Native-GPU-Dump.cmd
+rem прогон под отладчиком, без ограничения времени
+rex\windows\Run-Native-GPU-Trace.cmd
+```
+
+Путь лога можно переопределить: `set SONIC_REX_NATIVE_LOG=D:\my.log`.
+Изоляция «устройство или презентер»: `set SONIC_REX_NATIVE_NO_PRESENT=1` —
+устройство поднимается без Vulkan и без окна (кольцо, рекордер, swap-токены
+работают).
+
+`модуль+offset` из отчёта превращается в функцию по PDB из артефакта
+**`rexgpu-native-symbols`** (`rexgpu-native.pdb`).

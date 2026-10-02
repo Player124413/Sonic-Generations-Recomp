@@ -137,6 +137,10 @@ NativePresenter::Stats NativePresenter::GetStats() const {
 }
 
 rex::ui::Surface::TypeFlags NativePresenter::GetSupportedSurfaceTypes() const {
+    static std::atomic<uint32_t> calls{0};
+    if (calls.fetch_add(1, std::memory_order_relaxed) < 2) {
+        Log("the host asked which surface types the presenter supports");
+    }
     rex::ui::Surface::TypeFlags types = 0;
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
     if (core_ && core_->hasWin32SurfaceExtension()) types |= rex::ui::Surface::kTypeFlag_Win32Hwnd;
@@ -454,6 +458,8 @@ NativePresenter::ConnectOrReconnectPaintingToSurfaceFromUIThread(
     rex::ui::Surface& new_surface, uint32_t new_surface_width, uint32_t new_surface_height,
     bool was_paintable, bool& is_vsync_implicit_out) {
     (void)was_paintable;
+    LogSetContext("ConnectPainting");
+    Log("connecting painting to a %ux%u surface", new_surface_width, new_surface_height);
     std::lock_guard<std::mutex> lock(deviceMutex_);
     if (core_->device() == VK_NULL_HANDLE) {
         std::string error;
@@ -517,6 +523,8 @@ NativePresenter::ConnectOrReconnectPaintingToSurfaceFromUIThread(
         return SurfacePaintConnectResult::kFailure;
     }
     is_vsync_implicit_out = presentMode_ == VK_PRESENT_MODE_FIFO_KHR;
+    Log("painting connected: %ux%u, %u images", new_surface_width, new_surface_height,
+        uint32_t(swapchainImages_.size()));
     return SurfacePaintConnectResult::kSuccess;
 }
 
@@ -576,6 +584,7 @@ bool NativePresenter::RefreshGuestOutputImpl(
     uint32_t mailbox_index, uint32_t frontbuffer_width, uint32_t frontbuffer_height,
     std::function<bool(GuestOutputRefreshContext& context)> refresher, bool& is_8bpc_out_ref) {
     is_8bpc_out_ref = true;  // the guest output is 8_8_8_8
+    LogSetContext("RefreshGuestOutput");
     std::lock_guard<std::mutex> lock(deviceMutex_);
     if (!EnsureGuestOutputImage(mailbox_index, frontbuffer_width, frontbuffer_height)) {
         ++stats_.refreshesWithoutFrame;
@@ -666,6 +675,7 @@ bool NativePresenter::UploadPendingFrame(RefreshContext& context) {
 
 NativePresenter::PaintResult NativePresenter::PaintAndPresentImpl(bool execute_ui_drawers) {
     (void)execute_ui_drawers;  // the plugin has no UI drawers of its own
+    LogSetContext("PaintAndPresent");
     vk::Api& api = core_->api();
     const VkDevice device = core_->device();
     std::lock_guard<std::mutex> lock(deviceMutex_);
@@ -830,6 +840,12 @@ NativePresenter::PaintResult NativePresenter::PaintAndPresentImpl(bool execute_u
 }
 
 bool NativePresenter::CaptureGuestOutput(rex::ui::RawImage& image_out) {
+    {
+        static std::atomic<uint32_t> calls{0};
+        if (calls.fetch_add(1, std::memory_order_relaxed) < 3) {
+            Log("CaptureGuestOutput called by the host");
+        }
+    }
     vk::Api& api = core_->api();
     const VkDevice device = core_->device();
     std::lock_guard<std::mutex> lock(deviceMutex_);

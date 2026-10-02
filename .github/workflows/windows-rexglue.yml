@@ -236,6 +236,30 @@ jobs:
           path: native-plugin/rexgpu-native.dll
           if-no-files-found: warn
         continue-on-error: true
+      - name: Keep the plugin's symbols
+        # A crash report from a user's machine names a module and an offset
+        # ("rexgpu-native.dll+0x2f41"). Without the PDB that offset cannot be
+        # turned back into a function, which is the difference between reading
+        # the report and guessing from it.
+        if: success() && (github.event_name == 'push' || inputs.build_game)
+        run: |
+          $pdb = Get-ChildItem -Path build-rex-plugin -Recurse -Filter 'rexgpu-native.pdb' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch 'CMakeFiles' } | Select-Object -First 1
+          if ($pdb) {
+            Copy-Item $pdb.FullName native-plugin/rexgpu-native.pdb -Force
+            Write-Host "rexgpu-native.pdb taken from $($pdb.FullName)"
+          } else {
+            Write-Host '::warning title=no plugin symbols::rexgpu-native.pdb was not found; a crash offset from a user report cannot be resolved'
+          }
+        continue-on-error: true
+      - name: Upload our plugin's symbols
+        if: success() && (github.event_name == 'push' || inputs.build_game)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rexgpu-native-symbols
+          path: native-plugin/rexgpu-native.pdb
+          if-no-files-found: warn
+        continue-on-error: true
       - name: Test the device and presenter in the plugin configuration
         # The device tests belong to this configuration too: the presenter and the
         # recorder are only useful if they keep passing against the same SDK.
@@ -324,6 +348,14 @@ jobs:
             Write-Host '::error title=package without our GPU plugin::rexgpu-native.dll was not built; Run-Native-GPU-Dump.cmd will refuse to start from this package'
           }
           Copy-Item build-rex-game/entry-recovery/guest-entry-audit.json package-rex/
+          # The debugger supervisor: the user's crash left no report inside the
+          # process, and this is the tool that reports it from outside.
+          $tracer = 'build-rex-contract/Release/windows_crash_trace.exe'
+          if (Test-Path $tracer) {
+            Copy-Item $tracer package-rex/
+          } else {
+            Write-Host '::warning title=no crash tracer in the package::windows_crash_trace.exe was not built; Run-Native-GPU-Trace.cmd will refuse to start'
+          }
           Copy-Item rex/tools package-rex/tools -Recurse
           Copy-Item rex/windows/*.cmd,rex/README.md,rex/dependencies.json,COPYING,THIRD_PARTY.md package-rex/
           Copy-Item licenses package-rex/licenses -Recurse

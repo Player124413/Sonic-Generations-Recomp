@@ -64,7 +64,16 @@ echo.
 echo Recorder output:
 dir /b "assets\rex-cache\gpu-dump" 2>nul
 if not exist "assets\rex-cache\gpu-dump\packets.txt" (
-  echo No packets.txt: the device never saw a ring kick. The stderr log above
-  echo says why it was not set up.
+  echo No packets.txt: the device never saw a ring kick.
 )
+rem The host writes its own log into diagnostics\rex-runtime.log (Run-ReXGlue.cmd
+rem redirects the executable's output there), and our device writes
+rem diagnostics\native-gpu.log. Printing both tails here means one screenshot or
+rem one file answers most questions about a run that died early.
+echo.
+echo Last lines of diagnostics\native-gpu.log (our device's own log):
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path 'diagnostics\native-gpu.log') { Get-Content 'diagnostics\native-gpu.log' -Tail 30 } else { 'the plugin never wrote it: it did not start' }"
+echo.
+echo Last lines of diagnostics\rex-runtime.log (the host's log):
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path 'diagnostics\rex-runtime.log') { Get-Content 'diagnostics\rex-runtime.log' -Tail 30 } else { 'the host wrote no log in this run' }"
 exit /b %result%

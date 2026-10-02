@@ -6,6 +6,7 @@
 #include <dbghelp.h>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 
 namespace {
@@ -51,9 +52,20 @@ void Stack(HANDLE process, DWORD threadId) {
 }
 }
 int wmain(int argc, wchar_t** argv) {
-    if (argc != 2) { std::fputs("Usage: windows_crash_trace.exe <test.exe>\n", stderr); return 2; }
+    if (argc < 2) {
+        std::fputs("Usage: windows_crash_trace.exe <test.exe> [arguments...]\n", stderr);
+        std::fputs("  SONIC_CRASH_TRACE_SECONDS=<n>  stop the debuggee after n seconds.\n", stderr);
+        std::fputs("                                 Unset or 0: 45 (the CI default); negative: no limit.\n",
+                   stderr);
+        return 2;
+    }
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     std::wstring command = L"\"" + std::wstring(argv[1]) + L"\"";
+    for (int index = 2; index < argc; ++index) {
+        command += L" \"";
+        command += argv[index];
+        command += L"\"";
+    }
     STARTUPINFOW start{}; start.cb = sizeof(start);
     PROCESS_INFORMATION process{};
     if (!CreateProcessW(argv[1], command.data(), nullptr, nullptr, FALSE,
@@ -62,13 +74,26 @@ int wmain(int argc, wchar_t** argv) {
     }
     SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_FAIL_CRITICAL_ERRORS);
     SymInitialize(process.hProcess, nullptr, FALSE);
+    // The default keeps the contract tests bounded; a real game run needs to be
+    // allowed to reach its crash, so the limit is a switch (negative = no limit,
+    // 0 is treated as "unset").
+    long long seconds = 45;
+    if (const char* configured = std::getenv("SONIC_CRASH_TRACE_SECONDS")) {
+        seconds = std::atoll(configured);
+        if (seconds == 0) seconds = 45;  // 0 is the unset spelling, not a deadline
+    }
+    const ULONGLONG start_tick = GetTickCount64();
+    const ULONGLONG deadline = seconds > 0 ? start_tick + ULONGLONG(seconds) * 1000 : 0;
+    std::fprintf(stderr, "SUPERVISOR %ls (limit %lld s)\n", argv[1], seconds);
     DWORD result = 2;
-    const auto deadline = GetTickCount64() + 45000;
     bool done = false, initialBreakpoint = true;
     while (!done) {
         DEBUG_EVENT event{};
         if (!WaitForDebugEvent(&event, 1000)) {
-            if (GetLastError() == ERROR_SEM_TIMEOUT && GetTickCount64() < deadline) continue;
+            if (GetLastError() == ERROR_SEM_TIMEOUT &&
+                (deadline == 0 || GetTickCount64() < deadline)) {
+                continue;
+            }
             std::fputs("Debugger wait failed or timed out\n", stderr);
             TerminateProcess(process.hProcess, 2); break;
         }
@@ -102,7 +127,11 @@ int wmain(int argc, wchar_t** argv) {
         }
         std::fflush(stderr);
         ContinueDebugEvent(event.dwProcessId, event.dwThreadId, disposition);
-        if (!done && GetTickCount64() >= deadline) { TerminateProcess(process.hProcess, 2); break; }
+        if (!done && deadline != 0 && GetTickCount64() >= deadline) {
+            std::fputs("Debugger deadline reached; stopping the debuggee\n", stderr);
+            TerminateProcess(process.hProcess, 2);
+            break;
+        }
     }
     SymCleanup(process.hProcess);
     CloseHandle(process.hThread); CloseHandle(process.hProcess);

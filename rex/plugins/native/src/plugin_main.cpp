@@ -9,6 +9,7 @@
 #include <new>
 
 #include "native_graphics_system.h"
+#include "native_log.h"
 
 namespace {
 // The factory is the only allocation the host does not own, so it hands back a
@@ -27,6 +28,12 @@ REX_GPU_PLUGIN_EXPORT uint32_t rex_gpu_abi_version(void) {
 
 REX_GPU_PLUGIN_EXPORT rex::system::IGraphicsSystem* rex_gpu_create(
     uint32_t abi_version, const rex::system::GpuCreateInfo* info) {
+    // Earliest point of our code: from here on a crash writes its location and
+    // the step it happened in into diagnostics/native-gpu.log. The host is a GUI
+    // application with no console, so without this a crash is silence.
+    sonic::rex_host::gpu::InstallCrashHandler();
+    sonic::rex_host::gpu::Log("plugin created (abi %u, backend %s)", abi_version,
+                              info && info->backend ? info->backend : "(unset)");
     if (abi_version != rex::system::kGpuPluginAbiVersion) return nullptr;
     // This plugin is Vulkan-only by construction: it does not refuse a request
     // for another backend by silently pretending, it refuses the whole factory,

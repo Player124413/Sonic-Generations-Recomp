@@ -99,3 +99,82 @@ static inline BOOL FreeLibrary(HMODULE) { return 0; }
 #define WINAPI_PARTITION_DESKTOP 1
 #define WINAPI_PARTITION_GAMES 1
 #define WINAPI_FAMILY_PARTITION(partitions) 1
+
+// --- Exception handling, module lookup and thread identity -------------------
+// The plugin's diagnostics need these: it installs a crash handler, asks which
+// module an address belongs to, and reports the faulting thread. Declaring them
+// here is what lets the Windows-only path be compiled at all off Windows --
+// without them the `#if defined(_WIN32)` block is skipped in silence, which is
+// how a Windows-only syntax error survives every local check.
+typedef long LONG;
+typedef unsigned long ULONG;
+typedef unsigned long long ULONGLONG;
+// Pointer-sized integer, as Win64 declares it: the fault address in an access
+// violation arrives in ExceptionInformation.
+typedef unsigned long long ULONG_PTR;
+typedef void* PVOID;
+typedef const void* LPCVOID;
+typedef unsigned long DWORD;
+typedef const wchar_t* LPCWCH;
+typedef const char* LPCCH;
+typedef int* LPINT;
+#define CALLBACK
+#ifndef WINAPI
+#define WINAPI
+#endif
+
+#define EXCEPTION_ACCESS_VIOLATION 0xC0000005L
+#define EXCEPTION_BREAKPOINT 0x80000003L
+#define EXCEPTION_ILLEGAL_INSTRUCTION 0xC000001DL
+#define EXCEPTION_IN_PAGE_ERROR 0xC0000006L
+#define EXCEPTION_INT_DIVIDE_BY_ZERO 0xC0000094L
+#define EXCEPTION_PRIV_INSTRUCTION 0xC0000096L
+#define EXCEPTION_STACK_OVERFLOW 0xC00000FDL
+#define EXCEPTION_MAXIMUM_PARAMETERS 15
+#define EXCEPTION_CONTINUE_SEARCH 0
+#define EXCEPTION_CONTINUE_EXECUTION (-1L)
+#define EXCEPTION_EXECUTE_HANDLER 1
+
+struct _EXCEPTION_RECORD {
+  DWORD ExceptionCode;
+  DWORD ExceptionFlags;
+  struct _EXCEPTION_RECORD* ExceptionRecord;
+  PVOID ExceptionAddress;
+  DWORD NumberParameters;
+  ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
+};
+typedef struct _EXCEPTION_RECORD EXCEPTION_RECORD;
+
+struct _CONTEXT {
+  ULONGLONG Rip;
+};
+typedef struct _CONTEXT CONTEXT;
+
+struct _EXCEPTION_POINTERS {
+  EXCEPTION_RECORD* ExceptionRecord;
+  CONTEXT* ContextRecord;
+};
+typedef struct _EXCEPTION_POINTERS EXCEPTION_POINTERS;
+
+typedef LONG(CALLBACK* PVECTORED_EXCEPTION_HANDLER)(EXCEPTION_POINTERS*);
+typedef LONG(CALLBACK* LPTOP_LEVEL_EXCEPTION_FILTER)(EXCEPTION_POINTERS*);
+
+static inline PVOID AddVectoredExceptionHandler(ULONG, PVECTORED_EXCEPTION_HANDLER) {
+  return nullptr;
+}
+static inline LPTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(
+    LPTOP_LEVEL_EXCEPTION_FILTER) {
+  return nullptr;
+}
+#define GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS 0x00000004
+#define GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT 0x00000002
+static inline BOOL GetModuleHandleExW(DWORD, LPCWSTR, HMODULE* module) {
+  if (module) *module = nullptr;
+  return 0;
+}
+static inline DWORD GetModuleFileNameW(HMODULE, LPWSTR, DWORD) { return 0; }
+#define CP_UTF8 65001
+static inline int WideCharToMultiByte(UINT, DWORD, LPCWCH, int, LPSTR, int, LPCCH, BOOL*) {
+  return 0;
+}
+static inline DWORD GetCurrentThreadId() { return 0; }
