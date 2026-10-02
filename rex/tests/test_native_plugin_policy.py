@@ -219,6 +219,31 @@ class NativePluginBuildTests(unittest.TestCase):
         # run stops and says so.
         self.assertNotIn('SONIC_REX_GRAPHICS_MODE=reference', script)
         self.assertIn('assets\\rex-cache\\gpu-dump', script)
+        # A package that predates the plugin must be fixable by dropping the DLL
+        # artifact next to the EXE, and the script has to say so instead of just
+        # refusing to start.
+        self.assertIn('rexgpu-native-plugin', script)
+        self.assertIn('plugins\\rexgpu-native.dll', script)
+
+    def test_the_plugin_is_built_with_its_dependencies_and_verified(self):
+        # The plugin is its own CMake project. Without the vcpkg toolchain
+        # find_package(Vulkan) finds nothing, the configure fails, and a
+        # continue-on-error step hides it -- which is how a package shipped with
+        # no DLL while its marker artifact claimed the plugin had built. The
+        # workflow must wire the same dependencies the game host gets, and check
+        # that the DLL really exists before calling the build good.
+        workflow = (ROOT / '.github/workflows/windows-rexglue.yml').read_text(encoding='utf-8')
+        self.assertIn('"-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"', workflow)
+        self.assertIn('-DVCPKG_TARGET_TRIPLET=x64-windows', workflow)
+        self.assertIn("if (-not (Test-Path 'build-rex-plugin/Release/rexgpu-native.dll'))", workflow)
+        self.assertIn('::error title=rexgpu-native build failed::', workflow)
+        self.assertIn('::error title=rexgpu-native configure failed::', workflow)
+        # The DLL travels as its own small artifact, so the user does not have to
+        # re-download the whole package to pick up one file.
+        self.assertIn('name: rexgpu-native-plugin', workflow)
+        self.assertIn('path: build-rex-plugin/Release/rexgpu-native.dll', workflow)
+        # A package without the plugin is reported as an error, not a log line.
+        self.assertIn('package without our GPU plugin', workflow)
         # And the docs must point at it instead of the probe.
         plan = (ROOT / 'docs/OWN_GPU_PLAN.md').read_text(encoding='utf-8')
         self.assertIn('Run-Native-GPU-Dump.cmd', plan)

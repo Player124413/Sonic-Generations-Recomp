@@ -578,8 +578,21 @@ cmake --build build-rex-plugin --config Release --target rexgpu-native
 
 Загружается он так: `SONIC_REX_GRAPHICS_MODE=native` перед запуском (или
 `-DSONIC_REX_GPU_PLUGINS=native`, чтобы DLL подхватывалась сборкой; по умолчанию
-в сборке остаётся `xenos`). Если `rexgpu-native.dll` нет рядом с EXE, запуск
-падает с ошибкой: молчаливого отката на Xenos нет.
+в сборке остаётся `xenos`). Файл обязан лежать рядом с EXE: SDK ищет
+`rexgpu-<имя>` только там. Если его нет, запуск падает с ошибкой — молчаливого
+отката на Xenos нет.
+
+Где взять `rexgpu-native.dll`:
+
+| Источник | Что внутри |
+| --- | --- |
+| артефакт **`rexgpu-native-plugin`** (последний зелёный run workflow) | только DLL, несколько сотен килобайт — положить рядом с EXE |
+| артефакт **`windows-x64-rexglue-reference-candidate`** | вся сборка, DLL уже в корне |
+| своя сборка | `cmake -S rex -B build-rex-plugin ... -DSONIC_REX_BUILD_NATIVE_PLUGIN=ON`, взять `build-rex-plugin/Release/rexgpu-native.dll` |
+
+`Run-Native-GPU-Dump.cmd` сам копирует DLL из `plugins\` или из
+`build-rex-plugin\Release\`, если она там есть, и объясняет, где взять файл,
+если её нет нигде.
 
 Свой Vulkan-презентер уже в плагине и в окне: `vulkan-1.dll` резолвится вручную
 (линкуется только заголовок `Vulkan::Headers`), своя instance/устройство/очередь,

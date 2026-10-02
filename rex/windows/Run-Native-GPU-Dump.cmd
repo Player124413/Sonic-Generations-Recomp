@@ -22,12 +22,34 @@ if not exist "assets\default.xex" (
   pause
   exit /b 2
 )
+
+rem The plugin has to sit next to the executable: the SDK loads rexgpu-<name>
+rem from there and nowhere else. It is shipped inside the reference package and
+rem also as its own small artifact, so a package that predates the plugin can be
+rem fixed by dropping one file here instead of downloading everything again.
+if not exist "rexgpu-native.dll" if exist "plugins\rexgpu-native.dll" (
+  echo Using rexgpu-native.dll from plugins\ and copying it next to the EXE.
+  copy /y "plugins\rexgpu-native.dll" "rexgpu-native.dll" >nul
+)
+if not exist "rexgpu-native.dll" if exist "build-rex-plugin\Release\rexgpu-native.dll" (
+  echo Using rexgpu-native.dll from your local build and copying it next to the EXE.
+  copy /y "build-rex-plugin\Release\rexgpu-native.dll" "rexgpu-native.dll" >nul
+)
 if not exist "rexgpu-native.dll" (
   echo rexgpu-native.dll is not next to this EXE.
-  echo Build the plugin with -DSONIC_REX_BUILD_NATIVE_PLUGIN=ON and copy it here.
+  echo.
+  echo Where to get it:
+  echo   1. GitHub -^> Actions -^> "Windows ReXGlue migration" -^> newest green
+  echo      run -^> Artifacts -^> "rexgpu-native-plugin" ^(small, this DLL only^);
+  echo   2. or the whole "windows-x64-rexglue-reference-candidate" package, which
+  echo      contains it as well.
+  echo Unpack the DLL next to this file ^(or into a "plugins" subfolder^) and
+  echo run this script again. Without the plugin the game would fall back to the
+  echo SDK Xenos renderer, which is exactly what this run must not do.
   pause
   exit /b 2
 )
+
 set "SONIC_REX_GRAPHICS_MODE=native"
 set "SONIC_REX_GPU_DUMP=1"
 if not exist "assets\rex-cache\gpu-dump" mkdir "assets\rex-cache\gpu-dump"

@@ -166,42 +166,87 @@ jobs:
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/vulkan-1.dll" build-rex-game/Release/
           ctest --test-dir build-rex-game -C Release -R '^rex_native_backend_link$' --output-on-failure --timeout 120
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build our own GPU plugin against the SDK (experimental)
-        # Non-blocking on purpose: the plugin is our replacement for the SDK's
-        # Xenos plugin and is still being written. This step exists so every run
-        # reports whether the plugin still compiles against the pinned SDK, while
-        # the reference path keeps shipping. Once it is green here and the render
-        # opcodes are in, it becomes blocking and the host switches to it.
+      - name: Configure our own GPU plugin against the SDK
+        # The plugin is a separate CMake project, so it needs the same dependency
+        # wiring the game host gets. Without the vcpkg toolchain `find_package(
+        # Vulkan)` has nothing to find, and because this job must stay green for
+        # the reference package, that failure used to be invisible -- which is
+        # how a package shipped with no DLL in it while the "plugin built"
+        # marker said the opposite. Failures are non-blocking for the package but
+        # are reported as an annotation with the log tail, so the reason is
+        # readable even when artifact and log download is unavailable.
         continue-on-error: true
         if: github.event_name == 'push' || inputs.build_game
         run: |
+          $log = 'native-plugin-configure.log'
           cmake -S rex -B build-rex-plugin -G "Visual Studio 17 2022" -A x64 -T ClangCL `
-            "-DCMAKE_PREFIX_PATH=$env:REXSDK_PREFIX" -DSONIC_REX_BUILD_NATIVE_PLUGIN=ON
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build build-rex-plugin --config Release `
-            --target rexgpu-native rex_presenter_logic_tests rex_stream_dump_tests `
-                     rex_pm4_tests rex_gpu_device_tests --parallel 2
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # The device tests belong to this configuration too: the presenter and
-          # the recorder are only useful if they keep passing here.
-          ctest --test-dir build-rex-plugin -C Release -R '^(rex_presenter_logic|rex_stream_dump|rex_pm4|rex_gpu_device)$' --output-on-failure --timeout 120
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Get-ChildItem build-rex-plugin/Release/rexgpu-native.dll | Select-Object Name, Length
-      - name: Report our plugin built
-        # The marker artifact is how a non-blocking step tells us it passed:
-        # `gh api .../artifacts` answers instantly, while a failed non-blocking
-        # step is otherwise indistinguishable in the API from a passing one.
-        if: success() && (github.event_name == 'push' || inputs.build_game)
-        run: |
-          "rexgpu-native.dll built against the pinned SDK" | Out-File -Encoding utf8 build-rex-plugin/plugin-ok.txt
+            "-DCMAKE_PREFIX_PATH=$env:REXSDK_PREFIX" -DSONIC_REX_BUILD_NATIVE_PLUGIN=ON `
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows *>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ((Get-Content $log -Tail 20) -join ' | ') -replace '%', '%25'
+            Write-Host "::error title=rexgpu-native configure failed::$tail"
+            exit 1
+          }
+      - name: Build our own GPU plugin against the SDK (experimental)
+        # Non-blocking on purpose: the plugin is our replacement for the SDK's
+        # Xenos plugin and is still being written. This step exists so every run
+        # ships the DLL if it built, while the reference path keeps shipping.
+        # Once the render opcodes are in, it becomes blocking and the host
+        # switches to it by default.
         continue-on-error: true
-      - name: Upload our plugin build marker
+        if: github.event_name == 'push' || inputs.build_game
+        run: |
+          $log = 'native-plugin-build.log'
+          cmake --build build-rex-plugin --config Release --target rexgpu-native --parallel 2 *>&1 |
+            Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ((Get-Content $log -Tail 20) -join ' | ') -replace '%', '%25'
+            Write-Host "::error title=rexgpu-native build failed::$tail"
+            exit 1
+          }
+          # A build that "succeeded" without a DLL is the failure mode that put a
+          # package in the user's hands without the plugin it needs, so the file
+          # is checked here rather than assumed.
+          if (-not (Test-Path 'build-rex-plugin/Release/rexgpu-native.dll')) {
+            Write-Host "::error title=rexgpu-native produced no DLL::the build reported success but build-rex-plugin/Release/rexgpu-native.dll is missing"
+            exit 1
+          }
+          Get-ChildItem build-rex-plugin/Release/rexgpu-native.dll | Select-Object Name, Length
+      - name: Upload our plugin DLL
+        # Its own artifact, small and next to the marker: the plugin is what the
+        # native data run needs, and re-downloading the whole reference package to
+        # get one DLL is how a user ends up with a stale plugin.
         if: success() && (github.event_name == 'push' || inputs.build_game)
         uses: actions/upload-artifact@v4
         with:
-          name: rex-native-plugin-built
-          path: build-rex-plugin/plugin-ok.txt
+          name: rexgpu-native-plugin
+          path: build-rex-plugin/Release/rexgpu-native.dll
+          if-no-files-found: warn
         continue-on-error: true
+      - name: Test the device and presenter in the plugin configuration
+        # The device tests belong to this configuration too: the presenter and the
+        # recorder are only useful if they keep passing against the same SDK.
+        continue-on-error: true
+        if: success() && (github.event_name == 'push' || inputs.build_game)
+        run: |
+          $log = 'native-plugin-tests.log'
+          cmake --build build-rex-plugin --config Release `
+            --target rex_presenter_logic_tests rex_stream_dump_tests `
+                     rex_pm4_tests rex_gpu_device_tests rex_render_state_tests --parallel 2 *>&1 |
+            Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ((Get-Content $log -Tail 20) -join ' | ') -replace '%', '%25'
+            Write-Host "::error title=rexgpu-native device tests did not build::$tail"
+            exit 1
+          }
+          ctest --test-dir build-rex-plugin -C Release -R '^(rex_presenter_logic|rex_stream_dump|rex_pm4|rex_gpu_device|rex_render_state)$' --output-on-failure --timeout 120 *>&1 |
+            Tee-Object -FilePath $log -Append
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ((Get-Content $log -Tail 20) -join ' | ') -replace '%', '%25'
+            Write-Host "::error title=rexgpu-native device tests failed::$tail"
+            exit 1
+          }
       - name: Test recovered guest entries before PPC build
         id: entries
         if: github.event_name == 'push' || inputs.build_game
@@ -257,8 +302,14 @@ jobs:
           # refuses to start without it instead of falling back.
           if (Test-Path build-rex-plugin/Release/rexgpu-native.dll) {
             Copy-Item build-rex-plugin/Release/rexgpu-native.dll package-rex/
+            if (-not (Test-Path package-rex/rexgpu-native.dll)) {
+              throw 'rexgpu-native.dll was built but is missing from the package'
+            }
           } else {
-            Write-Host 'rexgpu-native.dll was not built, so the native data run is not in this package.'
+            # Loud on purpose. A package without this DLL cannot run the native
+            # data launcher, and the previous version of this step said so only in
+            # a log line nobody reads.
+            Write-Host '::error title=package without our GPU plugin::rexgpu-native.dll was not built; Run-Native-GPU-Dump.cmd will refuse to start from this package'
           }
           Copy-Item build-rex-game/entry-recovery/guest-entry-audit.json package-rex/
           Copy-Item rex/tools package-rex/tools -Recurse
@@ -295,6 +346,7 @@ jobs:
           A built EXE / --help does NOT prove title boot, gameplay, shadow rendering or native GPU replacement.
           Reference Xenos plugin is retained and explicitly selected with Vulkan.
           When it built, rexgpu-native.dll is staged next to it for
-          Run-Native-GPU-Dump.cmd (SONIC_REX_GRAPHICS_MODE=native); the default
-          renderer is unchanged unless that variable is set.
+          Run-Native-GPU-Dump.cmd (SONIC_REX_GRAPHICS_MODE=native) and uploaded
+          separately as the rexgpu-native-plugin artifact; the default renderer is
+          unchanged unless that variable is set.
           '@ | Add-Content $env:GITHUB_STEP_SUMMARY
