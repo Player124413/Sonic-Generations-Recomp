@@ -235,15 +235,23 @@ class NativePluginBuildTests(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/windows-rexglue.yml').read_text(encoding='utf-8')
         self.assertIn('"-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"', workflow)
         self.assertIn('-DVCPKG_TARGET_TRIPLET=x64-windows', workflow)
-        self.assertIn("if (-not (Test-Path 'build-rex-plugin/Release/rexgpu-native.dll'))", workflow)
+        self.assertIn("if (-not $dll) {", workflow)
         self.assertIn('::error title=rexgpu-native build failed::', workflow)
         self.assertIn('::error title=rexgpu-native configure failed::', workflow)
         # The DLL travels as its own small artifact, so the user does not have to
         # re-download the whole package to pick up one file.
         self.assertIn('name: rexgpu-native-plugin', workflow)
-        self.assertIn('path: build-rex-plugin/Release/rexgpu-native.dll', workflow)
+        self.assertIn('path: native-plugin/rexgpu-native.dll', workflow)
         # A package without the plugin is reported as an error, not a log line.
         self.assertIn('package without our GPU plugin', workflow)
+        # The DLL is located, not assumed: a target defined in a subdirectory gets
+        # its output in that subdirectory's directory for Visual Studio, which is
+        # how the build "succeeded" while the DLL was nowhere the steps looked.
+        self.assertIn("Get-ChildItem -Path build-rex-plugin -Recurse -Filter 'rexgpu-native.dll'", workflow)
+        self.assertIn('Copy-Item $dll.FullName native-plugin/rexgpu-native.dll -Force', workflow)
+        self.assertIn('path: native-plugin/rexgpu-native.dll', workflow)
+        plugin_cmake = (ROOT / 'rex/plugins/native/CMakeLists.txt').read_text(encoding='utf-8')
+        self.assertIn('"RUNTIME_OUTPUT_DIRECTORY_${config}" "${CMAKE_BINARY_DIR}/${config}"', plugin_cmake)
         # And the docs must point at it instead of the probe.
         plan = (ROOT / 'docs/OWN_GPU_PLAN.md').read_text(encoding='utf-8')
         self.assertIn('Run-Native-GPU-Dump.cmd', plan)
@@ -315,6 +323,20 @@ class NativePluginBuildTests(unittest.TestCase):
         stub = (ROOT / 'rex/tools/winstub/windows.h').read_text(encoding='utf-8')
         self.assertIn('typedef long long (*FARPROC)();', stub)
         self.assertIn('static inline FARPROC GetProcAddress(HMODULE, const char*)', stub)
+
+    def test_the_workflow_has_no_unterminated_powershell_strings(self):
+        # A missing closing quote in a run: block does not break YAML, it breaks
+        # the shell script -- and the only way to see it is a CI run whose error
+        # is about an unrelated-looking command.
+        workflow = (ROOT / '.github/workflows/windows-rexglue.yml').read_text(encoding='utf-8')
+        for number, line in enumerate(workflow.splitlines(), 1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#') or '@\'' in stripped:
+                continue
+            if '${{' in stripped or '`' in stripped:
+                continue
+            if stripped.count('"') % 2:
+                self.fail(f'line {number} has an odd number of quotes: {stripped[:100]}')
 
 if __name__ == '__main__':
     unittest.main()

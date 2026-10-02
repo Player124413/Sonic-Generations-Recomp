@@ -206,13 +206,25 @@ jobs:
             exit 1
           }
           # A build that "succeeded" without a DLL is the failure mode that put a
-          # package in the user's hands without the plugin it needs, so the file
-          # is checked here rather than assumed.
-          if (-not (Test-Path 'build-rex-plugin/Release/rexgpu-native.dll')) {
-            Write-Host "::error title=rexgpu-native produced no DLL::the build reported success but build-rex-plugin/Release/rexgpu-native.dll is missing"
+          # package in the user's hands without the plugin it needs, so the file is
+          # found rather than assumed. Searching also means a generator that lays
+          # its output out differently cannot quietly drop the plugin again --
+          # which is exactly what happened when the build put it in
+          # build-rex-plugin/plugins/native/Release.
+          $dll = Get-ChildItem -Path build-rex-plugin -Recurse -Filter 'rexgpu-native.dll' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch 'CMakeFiles' } | Select-Object -First 1
+          if (-not $dll) {
+            $found = (Get-ChildItem -Path build-rex-plugin -Recurse -Filter '*.dll' -ErrorAction SilentlyContinue |
+              Select-Object -First 20 | ForEach-Object { $_.FullName }) -join ' | '
+            Write-Host "::error title=rexgpu-native produced no DLL::the build reported success but no rexgpu-native.dll exists under build-rex-plugin; DLLs found: $found"
             exit 1
           }
-          Get-ChildItem build-rex-plugin/Release/rexgpu-native.dll | Select-Object Name, Length
+          # One stable path for the jobs that follow: the package staging and the
+          # artifact upload must not each guess where the generator put it.
+          New-Item -ItemType Directory -Force native-plugin | Out-Null
+          Copy-Item $dll.FullName native-plugin/rexgpu-native.dll -Force
+          Get-ChildItem native-plugin/rexgpu-native.dll | Select-Object Name, Length
+          Write-Host "rexgpu-native.dll built at $($dll.FullName)"
       - name: Upload our plugin DLL
         # Its own artifact, small and next to the marker: the plugin is what the
         # native data run needs, and re-downloading the whole reference package to
@@ -221,7 +233,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rexgpu-native-plugin
-          path: build-rex-plugin/Release/rexgpu-native.dll
+          path: native-plugin/rexgpu-native.dll
           if-no-files-found: warn
         continue-on-error: true
       - name: Test the device and presenter in the plugin configuration
@@ -300,8 +312,8 @@ jobs:
           # it does not switch the default renderer: the host still loads xenos
           # unless SONIC_REX_GRAPHICS_MODE=native, and Run-Native-GPU-Dump.cmd
           # refuses to start without it instead of falling back.
-          if (Test-Path build-rex-plugin/Release/rexgpu-native.dll) {
-            Copy-Item build-rex-plugin/Release/rexgpu-native.dll package-rex/
+          if (Test-Path native-plugin/rexgpu-native.dll) {
+            Copy-Item native-plugin/rexgpu-native.dll package-rex/
             if (-not (Test-Path package-rex/rexgpu-native.dll)) {
               throw 'rexgpu-native.dll was built but is missing from the package'
             }

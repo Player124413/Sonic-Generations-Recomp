@@ -42,3 +42,14 @@ endif()
 
 # The loader looks for this exact file name, with no lib/cygwin decoration.
 set_target_properties(rexgpu-native PROPERTIES OUTPUT_NAME "rexgpu-native" PREFIX "")
+
+# And it has to end up next to the other binaries of this build. A Visual Studio
+# build otherwise puts a target's output in the directory of the CMakeLists that
+# defined it -- `build-rex-plugin/plugins/native/Release` here -- so the DLL the
+# game host, the local launcher and the packaging step all look for was nowhere
+# near them. The per-config properties are set explicitly because that is what
+# stops CMake from appending the configuration name again.
+foreach(config IN ITEMS DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    set_target_properties(rexgpu-native PROPERTIES
+        "RUNTIME_OUTPUT_DIRECTORY_${config}" "${CMAKE_BINARY_DIR}/${config}")
+endforeach()
