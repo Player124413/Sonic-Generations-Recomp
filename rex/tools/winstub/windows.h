@@ -16,8 +16,19 @@ typedef unsigned long DWORD;
 typedef unsigned short WORD;
 typedef unsigned char BYTE;
 typedef int BOOL;
-typedef void* HMODULE;
-typedef void* HWND;
+// Opaque pointer types, as the real SDK declares them. Making these `void*`
+// would hide exactly the class of bug that cost a Windows CI run: `HMODULE` and
+// `void*` convert to each other silently here, but `FreeLibrary(void*)` is a
+// hard error on Windows, because there `HMODULE` is `HINSTANCE__*`.
+struct HINSTANCE__;
+struct HWND__;
+struct HMONITOR__;
+struct HDC__;
+typedef struct HINSTANCE__* HMODULE;
+typedef struct HINSTANCE__* HINSTANCE;
+typedef struct HWND__* HWND;
+typedef struct HMONITOR__* HMONITOR;
+typedef struct HDC__* HDC;
 typedef void* LPVOID;
 typedef const void* LPCVOID;
 typedef size_t SIZE_T;
@@ -56,8 +67,6 @@ static inline void OutputDebugStringA(const char*) {}
 #define DLLEXPORT
 
 // --- added for the Vulkan WSI and loader entry points the GPU plugin uses ----
-typedef void* HINSTANCE;
-typedef void* HMONITOR;
 typedef const wchar_t* LPCWSTR;
 typedef wchar_t* LPWSTR;
 typedef const char* LPCSTR;

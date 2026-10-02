@@ -122,7 +122,9 @@ public:
     PFN_vkAcquireNextImageKHR AcquireNextImageKHR = nullptr;
 
 private:
-    void* handle_ = nullptr;
+    /// The loader's module handle. It is `HMODULE`, not `void*`: on Windows
+    /// those are different types and `FreeLibrary` accepts only the former.
+    HMODULE handle_ = nullptr;
 };
 
 }  // namespace sonic::rex_host::gpu::vk

@@ -184,7 +184,7 @@ jobs:
             "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows *>&1 | Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) {
-            $tail = ((Get-Content $log -Tail 20) -join ' | ') -replace '%', '%25'
+            $tail = ((Get-Content $log -Tail 60) -join ' | ') -replace '%', '%25'
             Write-Host "::error title=rexgpu-native configure failed::$tail"
             exit 1
           }
@@ -201,7 +201,7 @@ jobs:
           cmake --build build-rex-plugin --config Release --target rexgpu-native --parallel 2 *>&1 |
             Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) {
-            $tail = ((Get-Content $log -Tail 20) -join ' | ') -replace '%', '%25'
+            $tail = ((Get-Content $log -Tail 60) -join ' | ') -replace '%', '%25'
             Write-Host "::error title=rexgpu-native build failed::$tail"
             exit 1
           }
@@ -236,14 +236,14 @@ jobs:
                      rex_pm4_tests rex_gpu_device_tests rex_render_state_tests --parallel 2 *>&1 |
             Tee-Object -FilePath $log
           if ($LASTEXITCODE -ne 0) {
-            $tail = ((Get-Content $log -Tail 20) -join ' | ') -replace '%', '%25'
+            $tail = ((Get-Content $log -Tail 60) -join ' | ') -replace '%', '%25'
             Write-Host "::error title=rexgpu-native device tests did not build::$tail"
             exit 1
           }
           ctest --test-dir build-rex-plugin -C Release -R '^(rex_presenter_logic|rex_stream_dump|rex_pm4|rex_gpu_device|rex_render_state)$' --output-on-failure --timeout 120 *>&1 |
             Tee-Object -FilePath $log -Append
           if ($LASTEXITCODE -ne 0) {
-            $tail = ((Get-Content $log -Tail 20) -join ' | ') -replace '%', '%25'
+            $tail = ((Get-Content $log -Tail 60) -join ' | ') -replace '%', '%25'
             Write-Host "::error title=rexgpu-native device tests failed::$tail"
             exit 1
           }

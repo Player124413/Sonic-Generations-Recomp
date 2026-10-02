@@ -26,6 +26,19 @@ def run_checker(*arguments: str) -> subprocess.CompletedProcess:
 
 
 class WindowsSyntaxTests(unittest.TestCase):
+    def test_the_stub_keeps_win32_handle_types_distinct(self):
+        # The stub exists to catch Windows-only type errors before a push. It
+        # defined HMODULE as void*, which hid exactly the bug that cost a CI run:
+        # FreeLibrary(void*) compiles here and is a hard error on Windows, where
+        # HMODULE is HINSTANCE__*. The stub must keep the handle types opaque.
+        stub = (ROOT / 'rex/tools/winstub/windows.h').read_text(encoding='utf-8')
+        for declaration in ('struct HINSTANCE__;', 'struct HWND__;',
+                            'typedef struct HINSTANCE__* HMODULE;',
+                            'typedef struct HWND__* HWND;'):
+            self.assertIn(declaration, stub)
+        self.assertNotIn('typedef void* HMODULE;', stub)
+        self.assertNotIn('typedef void* HWND;', stub)
+
     def test_windows_only_translation_units_check_out(self):
         completed = run_checker()
         report = (completed.stdout + completed.stderr).strip()

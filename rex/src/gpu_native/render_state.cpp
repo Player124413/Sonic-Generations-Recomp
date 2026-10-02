@@ -25,9 +25,7 @@ constexpr uint32_t kConstantTableRegisterBase = 0x2000;
 // VGT_DRAW_INITIATOR, bit for bit.
 constexpr uint32_t kPrimitiveTypeMask = 0x3F;
 constexpr uint32_t kSourceSelectShift = 6;
-constexpr uint32_t kSourceSelectMask = 0x3;
 constexpr uint32_t kMajorModeShift = 8;
-constexpr uint32_t kMajorModeMask = 0x3;
 constexpr uint32_t kIndexSizeBit = 0x800;      // bit 11: 1 = 32-bit indices
 constexpr uint32_t kNumIndicesShift = 16;
 

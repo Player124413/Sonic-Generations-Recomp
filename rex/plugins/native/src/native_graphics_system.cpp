@@ -1,3 +1,9 @@
+// std::getenv is the portable way to read the plugin's environment switches;
+// this silences MSVC's deprecation warning without switching to a Windows-only
+// API in code that is also syntax-checked elsewhere.
+#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_WARNINGS)
+#define _CRT_SECURE_NO_WARNINGS 1
+#endif
 #include "native_graphics_system.h"
 
 #include <rex/filesystem.h>
