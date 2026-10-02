@@ -367,6 +367,35 @@ class NativePluginBuildTests(unittest.TestCase):
         self.assertIn('LogSetContext("RefreshGuestOutput")', PRESENTER)
         self.assertIn('LogSetContext("PaintAndPresent")', PRESENTER)
 
+    def test_no_vulkan_call_happens_before_there_is_a_device(self):
+        # The presenter is constructed before the window exists, and the device is
+        # created when there is a surface to present to. Creating the command pool
+        # in the constructor made vkCreateCommandPool(NULL, ...) real: the loader
+        # dereferences the dispatch table of the handle it is given, so a null
+        # device is an access violation (0xC0000005) inside vulkan-1.dll, not an
+        # error code -- which is exactly how the first run of this plugin died
+        # before a single frame.
+        core = (PLUGIN / 'src/native_vulkan_core.cpp').read_text(encoding='utf-8')
+        core_header = (PLUGIN / 'src/native_vulkan_core.h').read_text(encoding='utf-8')
+        self.assertIn('bool Core::DeviceRequired(std::string& error, const char* what) const {',
+                      core)
+        self.assertIn('bool DeviceRequired(std::string& error, const char* what) const;', core_header)
+        for entry_point in ('vkCreateBuffer', 'vkCreateImage', 'vkCreateCommandPool',
+                            'vkAllocateCommandBuffers', 'vkQueueSubmit'):
+            self.assertIn(f'DeviceRequired(error, "{entry_point}")', core,
+                          f'{entry_point} is called without a device check')
+        # The presenter's constructor must stay free of device-level work...
+        constructor = PRESENTER.split('NativePresenter::NativePresenter(', 1)[1].split('\n}\n', 1)[0]
+        self.assertNotIn('CreateCommandPool', constructor)
+        self.assertNotIn('CreateDevice', constructor)
+        self.assertIn('the presenter exists; the device follows when a surface arrives',
+                      constructor)
+        # ...and the two paths that can run first must both bring the device up.
+        self.assertIn('bool NativePresenter::EnsureDevice() {', PRESENTER)
+        self.assertIn('if (!EnsureDevice()) return SurfacePaintConnectResult::kFailure;', PRESENTER)
+        self.assertIn('if (!EnsureDevice()) {', PRESENTER)
+        self.assertIn('bool EnsureDevice();', PRESENTER_HEADER)
+
     def test_the_crash_launcher_reports_from_outside_the_process(self):
         # The user's crash left no report anywhere in the process. Run-Native-GPU-Trace.cmd
         # runs the game under the debugger, which sees the exception even if the

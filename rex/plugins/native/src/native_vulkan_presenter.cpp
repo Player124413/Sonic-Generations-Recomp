@@ -110,8 +110,12 @@ NativePresenter::NativePresenter(std::shared_ptr<vk::Core> core,
     if (!InitializeCommonSurfaceIndependent()) {
         Log("the presenter could not initialize its common surface-independent state");
     }
-    std::string error;
-    if (!core_->CreateCommandPool(commandPool_, error)) Log("command pool: %s", error.c_str());
+    // Nothing device-level happens here on purpose. The device is created when
+    // there is a surface to present to (see EnsureDevice), because the presenter
+    // is constructed before the window exists; asking Vulkan for a command pool
+    // with a null device is an access violation inside the loader, not an error
+    // code, and it cost one real crash to learn that.
+    Log("the presenter exists; the device follows when a surface arrives");
 }
 
 NativePresenter::~NativePresenter() {
@@ -129,6 +133,26 @@ NativePresenter::~NativePresenter() {
         if (frameFence_) core.api().DestroyFence(core.device(), frameFence_, nullptr);
         core.DestroyBuffer(staging_);
     }
+}
+
+bool NativePresenter::EnsureDevice() {
+    // Called with deviceMutex_ held.
+    if (core_->device() == VK_NULL_HANDLE) {
+        std::string error;
+        if (!core_->CreateDevice(error)) {
+            Log("cannot present: %s", error.c_str());
+            return false;
+        }
+        Log("Vulkan device created for the presenter: %s", core_->adapterName().c_str());
+    }
+    if (!commandPool_) {
+        std::string error;
+        if (!core_->CreateCommandPool(commandPool_, error)) {
+            Log("cannot present: %s", error.c_str());
+            return false;
+        }
+    }
+    return true;
 }
 
 NativePresenter::Stats NativePresenter::GetStats() const {
@@ -461,20 +485,7 @@ NativePresenter::ConnectOrReconnectPaintingToSurfaceFromUIThread(
     LogSetContext("ConnectPainting");
     Log("connecting painting to a %ux%u surface", new_surface_width, new_surface_height);
     std::lock_guard<std::mutex> lock(deviceMutex_);
-    if (core_->device() == VK_NULL_HANDLE) {
-        std::string error;
-        if (!core_->CreateDevice(error)) {
-            Log("cannot present: %s", error.c_str());
-            return SurfacePaintConnectResult::kFailure;
-        }
-    }
-    if (!commandPool_) {
-        std::string error;
-        if (!core_->CreateCommandPool(commandPool_, error)) {
-            Log("cannot present: %s", error.c_str());
-            return SurfacePaintConnectResult::kFailure;
-        }
-    }
+    if (!EnsureDevice()) return SurfacePaintConnectResult::kFailure;
     if (!paintCommands_) {
         std::string error;
         VkCommandBuffer commands = VK_NULL_HANDLE;
@@ -586,6 +597,13 @@ bool NativePresenter::RefreshGuestOutputImpl(
     is_8bpc_out_ref = true;  // the guest output is 8_8_8_8
     LogSetContext("RefreshGuestOutput");
     std::lock_guard<std::mutex> lock(deviceMutex_);
+    // A refresh can arrive before the window has a surface (the guest swaps as
+    // soon as the device runs), so the device is brought up here too rather than
+    // assumed to exist.
+    if (!EnsureDevice()) {
+        ++stats_.refreshesWithoutFrame;
+        return false;
+    }
     if (!EnsureGuestOutputImage(mailbox_index, frontbuffer_width, frontbuffer_height)) {
         ++stats_.refreshesWithoutFrame;
         return false;

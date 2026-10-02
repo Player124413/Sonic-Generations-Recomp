@@ -101,6 +101,11 @@ public:
 
 private:
     bool ChooseAdapter(std::string& error);
+    /// Refuses a device-level call when there is no device yet. The presenter is
+    /// built before the device (the device needs the window's surface), so this
+    /// is a normal state, not a programming error -- but calling into Vulkan with
+    /// a null device is an access violation, not a failed call.
+    bool DeviceRequired(std::string& error, const char* what) const;
 
     mutable Api api_;
     VkInstance instance_ = VK_NULL_HANDLE;

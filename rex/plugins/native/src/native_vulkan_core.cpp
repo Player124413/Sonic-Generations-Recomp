@@ -253,9 +253,20 @@ uint32_t Core::FindMemoryType(uint32_t typeBits, VkMemoryPropertyFlags propertie
     return UINT32_MAX;
 }
 
+bool Core::DeviceRequired(std::string& error, const char* what) const {
+    if (device_ != VK_NULL_HANDLE) return true;
+    // Every device-level call goes through here. vkCreateCommandPool(NULL, ...)
+    // and its siblings are not error-returning calls: the loader dereferences the
+    // dispatch table of the handle it was given, so a null device is an access
+    // violation (0xC0000005) at the first frame of the plugin's life.
+    error = std::string(what) + " was called before the Vulkan device existed";
+    return false;
+}
+
 bool Core::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                         Buffer& buffer, std::string& error) const {
     buffer = Buffer{};
+    if (!DeviceRequired(error, "vkCreateBuffer")) return false;
     VkBufferCreateInfo buffer_info{};
     buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_info.size = size;
@@ -306,6 +317,7 @@ void Core::DestroyBuffer(Buffer& buffer) const noexcept {
 
 bool Core::CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
                        Image& image, std::string& error) const {
+    if (!DeviceRequired(error, "vkCreateImage")) return false;
     image = Image{};
     VkImageCreateInfo image_info{};
     image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -373,6 +385,10 @@ void Core::DestroyImage(Image& image) const noexcept {
 }
 
 bool Core::CreateCommandPool(VkCommandPool& pool, std::string& error) const {
+    if (!DeviceRequired(error, "vkCreateCommandPool")) {
+        pool = VK_NULL_HANDLE;
+        return false;
+    }
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
@@ -386,6 +402,15 @@ bool Core::CreateCommandPool(VkCommandPool& pool, std::string& error) const {
 }
 
 bool Core::BeginCommands(VkCommandPool pool, VkCommandBuffer& commands, std::string& error) const {
+    if (!DeviceRequired(error, "vkAllocateCommandBuffers")) {
+        commands = VK_NULL_HANDLE;
+        return false;
+    }
+    if (!pool) {
+        error = "the command buffer was asked for before a command pool existed";
+        commands = VK_NULL_HANDLE;
+        return false;
+    }
     VkCommandBufferAllocateInfo allocate_info{};
     allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocate_info.commandPool = pool;
@@ -419,6 +444,7 @@ bool Core::EndCommands(VkCommandBuffer commands, std::string& error) const {
 }
 
 bool Core::SubmitAndWait(VkCommandBuffer commands, std::string& error) const {
+    if (!DeviceRequired(error, "vkQueueSubmit")) return false;
     VkSubmitInfo submit_info{};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;

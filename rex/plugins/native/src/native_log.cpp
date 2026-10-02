@@ -7,7 +7,9 @@
 #include <rex/filesystem.h>
 
 #include <chrono>
+#include <array>
 #include <cstdarg>
+#include <utility>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -159,6 +161,29 @@ HMODULE& OwnModule() {
     return module;
 }
 
+bool IsOwnAddress(const void* address);
+
+/// Faults are reported once per instruction that raised them. A crash inside the
+/// Vulkan loader or a driver is as interesting as one inside our own code -- the
+/// first real crash of this plugin was a null device handed to vkCreateCommandPool
+/// inside vulkan-1.dll -- but a loop that faults every frame must not bury the
+/// log, so each site is remembered.
+bool FirstTimeAt(const void* instruction, DWORD code) {
+    static std::mutex mutex;
+    static std::array<std::pair<const void*, DWORD>, 24> seen{};
+    static size_t count = 0;
+    std::lock_guard<std::mutex> lock(mutex);
+    for (size_t index = 0; index < count; ++index) {
+        if (seen[index].first == instruction && seen[index].second == code) return false;
+    }
+    if (count < seen.size()) {
+        seen[count++] = {instruction, code};
+        return true;
+    }
+    // The table is full: keep reporting faults in our own code, drop the rest.
+    return IsOwnAddress(instruction);
+}
+
 bool IsOwnAddress(const void* address) {
     if (!address) return false;
     HMODULE module = nullptr;
@@ -199,17 +224,17 @@ LONG CALLBACK FirstChanceHandler(EXCEPTION_POINTERS* exception) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
     void* instruction = reinterpret_cast<void*>(InstructionPointer(exception->ContextRecord));
-    if (!IsOwnAddress(instruction) && !IsOwnAddress(record->ExceptionAddress)) {
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
+    if (!instruction) instruction = record->ExceptionAddress;
+    if (!FirstTimeAt(instruction, record->ExceptionCode)) return EXCEPTION_CONTINUE_SEARCH;
     // Faulting while already reporting would recurse forever.
     static std::atomic<bool> inside{false};
     if (inside.exchange(true, std::memory_order_acq_rel)) return EXCEPTION_CONTINUE_SEARCH;
     std::unique_lock<std::mutex> lock(LogMutex(), std::try_to_lock);
     if (lock.owns_lock()) {
         char line[512];
-        std::snprintf(line, sizeof(line), "[sonic-gpu] FIRST-CHANCE 0x%08lX in %s; step: %s",
+        std::snprintf(line, sizeof(line), "[sonic-gpu] FIRST-CHANCE 0x%08lX in %s%s; step: %s",
                       static_cast<unsigned long>(record->ExceptionCode),
+                      IsOwnAddress(instruction) ? "OUR CODE " : "another module ",
                       DescribeAddress(instruction).c_str(), StageStorage().c_str());
         WriteLine(line);
         if (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION &&

@@ -68,6 +68,9 @@ private:
 };
 
 class NativePresenter final : public rex::ui::Presenter {
+    // The device and the command pool are created on demand: the presenter is
+    // constructed before the window exists, and a Vulkan call with a null device
+    // crashes inside the loader instead of returning an error.
 public:
     explicit NativePresenter(std::shared_ptr<vk::Core> core,
                              HostGpuLossCallback host_gpu_loss_callback);
@@ -124,6 +127,11 @@ private:
     /// the image the frame must end up in; the layout is ours (GENERAL), so the
     /// only thing the refresher has to do is fill it.
     class RefreshContext;
+
+    /// Brings the device and the command pool up if they are not there yet.
+    /// Called with deviceMutex_ held, from the surface connection and from a
+    /// refresh, because either can happen first.
+    bool EnsureDevice();
 
     /// One mailbox image. The base presenter owns the mailbox semantics (which
     /// image is writable, ready, acquired); we own the image behind each slot.
