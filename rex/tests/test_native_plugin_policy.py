@@ -417,6 +417,14 @@ class NativePluginBuildTests(unittest.TestCase):
         self.assertIn('diagnostics\\native-gpu.log', dump)
         self.assertIn('diagnostics\\rex-runtime.log', dump)
 
+    def test_release_keeps_the_symbols_a_crash_report_needs(self):
+        # The symbols artifact is only as reliable as the build that produces it:
+        # the first attempt uploaded nothing, because a Release configuration
+        # emits no debug information at all.
+        plugin_cmake = (PLUGIN / 'CMakeLists.txt').read_text(encoding='utf-8')
+        self.assertIn('target_compile_options(rexgpu-native PRIVATE /Zi)', plugin_cmake)
+        self.assertIn('target_link_options(rexgpu-native PRIVATE /DEBUG)', plugin_cmake)
+
     def test_a_user_crash_can_be_symbolized(self):
         # Module+offset is only useful with the map from offset to function, so
         # the symbols travel with every build, and the package carries the

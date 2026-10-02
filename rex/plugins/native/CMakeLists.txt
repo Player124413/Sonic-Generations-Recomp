@@ -37,8 +37,15 @@ target_compile_definitions(rexgpu-native PRIVATE VK_NO_PROTOTYPES=1)
 if(MSVC)
     target_compile_options(rexgpu-native PRIVATE /W4)
     target_compile_definitions(rexgpu-native PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    # Symbols in Release on purpose: a crash report from somebody else's machine
+    # names a module and an offset ("rexgpu-native.dll+0x2f41"), and without the
+    # PDB that offset cannot be turned back into a function. The workflow keeps
+    # the PDB as its own artifact for exactly that, and it found none while the
+    # Release configuration emitted no debug information.
+    target_compile_options(rexgpu-native PRIVATE /Zi)
+    target_link_options(rexgpu-native PRIVATE /DEBUG)
 else()
-    target_compile_options(rexgpu-native PRIVATE -Wall -Wextra)
+    target_compile_options(rexgpu-native PRIVATE -Wall -Wextra -g)
 endif()
 
 # The loader looks for this exact file name, with no lib/cygwin decoration.
