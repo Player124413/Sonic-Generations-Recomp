@@ -124,6 +124,15 @@ class ReplayPolicyTests(unittest.TestCase):
         self.assertIn("$replaySmokeDir = Join-Path $env:RUNNER_TEMP 'rex-empty-replay'", WORKFLOW)
         self.assertIn("$replaySources = @('build-rex-game/Release/rex_gpu_replay.exe', 'native-plugin/rex_gpu_replay.exe')",
                       WORKFLOW)
+        # A step that checks two unrelated things cannot be read when it fails:
+        # the factory probe and the replay smoke check are separate steps, and
+        # both say what they saw through annotations, because the run logs are
+        # not always downloadable.
+        self.assertIn('name: Check the packaged Xenos Vulkan factory (no GPU required)', WORKFLOW)
+        self.assertIn('name: Check the replay tool reports an empty recording (no recording in CI)', WORKFLOW)
+        self.assertIn('::notice title=staged package-rex::', WORKFLOW)
+        self.assertIn('::notice title=rex_gpu_replay on an empty directory::', WORKFLOW)
+        self.assertIn('::notice title=packaged Xenos Vulkan factory probe::', WORKFLOW)
         # One click from the package: the replay reads the dump next to the game.
         self.assertIn('rex_gpu_replay.exe', SCRIPT)
         self.assertIn('assets\\rex-cache\\gpu-dump', SCRIPT)

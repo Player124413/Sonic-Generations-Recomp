@@ -398,18 +398,46 @@ jobs:
           Copy-Item "$env:REXSDK_PREFIX/share" package-rex/sdk-share -Recurse
           Get-ChildItem "$env:REXSDK_PREFIX" -File | Where-Object { $_.Name -match 'LICENSE|COPYING|NOTICE' } | Copy-Item -Destination package-rex/
           git rev-parse HEAD | Set-Content package-rex/revision.txt
-      - name: Check the actual packaged Xenos Vulkan factory (no GPU required)
+      # The two checks below were one step, and a failure in it said only
+      # "exit code 1": the probe of the packaged Xenos factory exits without a
+      # message, and the replay tool reports on stderr, which a native command
+      # under the runner's error preference turns into a terminating error. This
+      # job is the reference path, so its failures have to be readable from the
+      # annotation alone -- the run logs cannot always be downloaded.
+      - name: Check the packaged Xenos Vulkan factory (no GPU required)
         if: github.event_name == 'push' || inputs.build_game
         run: |
-          & ./package-rex/rex_vulkan_plugin_tests.exe
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # What the package actually contains, as an annotation: "the DLL is
+          # missing" and "the DLL is there but the factory fails" are different
+          # problems and must not look the same.
+          $listing = ((Get-ChildItem package-rex -File | Sort-Object Name |
+            ForEach-Object { "$($_.Name)=$($_.Length)" }) -join ' ')
+          if ($listing.Length -gt 1800) { $listing = $listing.Substring(0, 1800) + '...' }
+          Write-Host "::notice title=staged package-rex::$listing"
+
+          $previousErrorAction = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          & ./package-rex/rex_vulkan_plugin_tests.exe > vulkan-plugin-test.log 2>&1
+          $factoryCode = $LASTEXITCODE
+          $ErrorActionPreference = $previousErrorAction
+          $factoryTail = ''
+          if (Test-Path vulkan-plugin-test.log) {
+            $factoryTail = ((Get-Content vulkan-plugin-test.log -Tail 25) -join ' | ') -replace '%', '%25'
+          }
+          Write-Host "::notice title=packaged Xenos Vulkan factory probe::exit code $factoryCode; $factoryTail"
+          if ($factoryCode -ne 0) {
+            Write-Host "::error title=packaged Xenos Vulkan factory probe failed::exit code $factoryCode; $factoryTail"
+            exit 1
+          }
+      - name: Check the replay tool reports an empty recording (no recording in CI)
+        if: github.event_name == 'push' || inputs.build_game
+        run: |
           # Nothing has been recorded in CI, so the honest answer of the replay
           # tool is the "nothing to replay" exit code 2 with instructions -- not a
           # crash, and not a zero that would look like a successful replay. The
           # empty directory is passed explicitly so the check does not depend on
-          # the working directory, and the tool's own output is kept for the
-          # failure message: a step that only says "exit code 3" cannot be acted
-          # on, and these logs are not always downloadable.
+          # the working directory.
           $replay = './package-rex/rex_gpu_replay.exe'
           if (-not (Test-Path $replay)) {
             Write-Host '::error title=the package has no replay tool::rex_gpu_replay.exe is missing from package-rex'
@@ -418,15 +446,17 @@ jobs:
           $replaySmokeDir = Join-Path $env:RUNNER_TEMP 'rex-empty-replay'
           New-Item -ItemType Directory -Force $replaySmokeDir | Out-Null
           $previousErrorAction = $ErrorActionPreference
-          # Stderr from a native command must not be a terminating error here: the
-          # tool reports an empty recording on stderr on purpose.
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
           & $replay $replaySmokeDir --quiet > replay-smoke.log 2>&1
           $replayCode = $LASTEXITCODE
           $ErrorActionPreference = $previousErrorAction
-          if ($replayCode -ne 2) {
+          $replayTail = ''
+          if (Test-Path replay-smoke.log) {
             $replayTail = ((Get-Content replay-smoke.log -Tail 20) -join ' | ') -replace '%', '%25'
+          }
+          Write-Host "::notice title=rex_gpu_replay on an empty directory::exit code $replayCode; $replayTail"
+          if ($replayCode -ne 2) {
             Write-Host "::error title=rex_gpu_replay did not report an empty recording::exit code $replayCode; output: $replayTail"
             exit 1
           }
