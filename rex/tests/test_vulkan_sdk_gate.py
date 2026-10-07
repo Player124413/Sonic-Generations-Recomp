@@ -13,7 +13,12 @@ class VulkanSdkGateTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/windows-rexglue.yml").read_text(encoding='utf-8')
         self.assertIn("-DREXGLUE_USE_VULKAN=ON -DREXGLUE_USE_D3D12=OFF", workflow)
         self.assertNotIn("Invoke-WebRequest $url -OutFile sdk.zip", workflow)
-        self.assertLess(workflow.index("& ./package-rex/rex_vulkan_plugin_tests.exe"),
+        # The probe of the packaged plugin runs before the package is uploaded,
+        # and it runs through Start-Process so that a probe whose exit code is
+        # checked cannot become the step's own exit code.
+        probe = "Start-Process -FilePath ./package-rex/rex_vulkan_plugin_tests.exe"
+        self.assertIn(probe, workflow)
+        self.assertLess(workflow.index(probe),
                         workflow.index("name: windows-x64-rexglue-reference-candidate"))
 
     def test_runtime_failure_is_not_replaced_by_a_teardown_assumption(self):

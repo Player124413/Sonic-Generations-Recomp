@@ -148,6 +148,12 @@ class ReplayPolicyTests(unittest.TestCase):
                             msg=f'{step} does not end with an explicit exit code')
         self.assertIn('::notice title=rex_gpu_replay on an empty directory::', WORKFLOW)
         self.assertIn('::notice title=packaged Xenos Vulkan factory probe::', WORKFLOW)
+        # The suite step runs every policy test; when one fails it must name
+        # itself in an annotation, for the same reason.
+        self.assertIn('name: Run the policy test suite (annotated)', WORKFLOW)
+        self.assertIn("python -m unittest discover -s rex/tests -p \"test_*.py\" -v > policy-tests.log 2>&1",
+                      WORKFLOW)
+        self.assertIn('::error title=policy tests failed::', WORKFLOW)
         # One click from the package: the replay reads the dump next to the game.
         self.assertIn('rex_gpu_replay.exe', SCRIPT)
         self.assertIn('assets\\rex-cache\\gpu-dump', SCRIPT)

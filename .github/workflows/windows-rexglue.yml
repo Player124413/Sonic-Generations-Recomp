@@ -123,8 +123,24 @@ jobs:
             build-rex-contract/plugin-debuggee-exit.txt
             build-rex-contract/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
-      - name: Test bounded GPU capture inspection
-        run: python -m unittest discover -s rex/tests -p "test_*.py" -v
+      - name: Run the policy test suite (annotated)
+        # This step runs the whole suite, which is the only thing that catches a
+        # policy change breaking a test in a different file. A failure has to name
+        # the test: the run logs are not always readable, and "process completed
+        # with exit code 1" is not a diagnosis.
+        run: |
+          python -m unittest discover -s rex/tests -p "test_*.py" -v > policy-tests.log 2>&1
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $lines = Get-Content policy-tests.log |
+              Select-String -Pattern '^(FAIL|ERROR): |^AssertionError|^ValueError|^Ran \d+ tests|^FAILED' |
+              Select-Object -Last 30 | ForEach-Object { $_.Line -join ' ' }
+            $summary = ($lines -join ' | ') -replace '%', '%25'
+            if ($summary.Length -gt 3000) { $summary = $summary.Substring($summary.Length - 3000) }
+            Write-Host "::error title=policy tests failed::exit code $code; $summary"
+            exit 1
+          }
+          exit 0
       - name: Read generated-code pin
         if: github.event_name == 'push' || inputs.build_game
         id: source
