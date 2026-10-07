@@ -415,21 +415,26 @@ jobs:
           if ($listing.Length -gt 1800) { $listing = $listing.Substring(0, 1800) + '...' }
           Write-Host "::notice title=staged package-rex::$listing"
 
-          $previousErrorAction = $ErrorActionPreference
-          $ErrorActionPreference = 'Continue'
-          $PSNativeCommandUseErrorActionPreference = $false
-          & ./package-rex/rex_vulkan_plugin_tests.exe > vulkan-plugin-test.log 2>&1
-          $factoryCode = $LASTEXITCODE
-          $ErrorActionPreference = $previousErrorAction
+          # Start-Process is used instead of `&` on purpose: a probe whose
+          # nonzero exit code is expected must not leave that code in
+          # $LASTEXITCODE, because a step inherits the exit code of the last
+          # native command it ran.
+          $probe = Start-Process -FilePath ./package-rex/rex_vulkan_plugin_tests.exe -Wait -PassThru `
+            -NoNewWindow -RedirectStandardOutput vulkan-plugin-test.out -RedirectStandardError vulkan-plugin-test.log
+          $factoryCode = $probe.ExitCode
           $factoryTail = ''
           if (Test-Path vulkan-plugin-test.log) {
             $factoryTail = ((Get-Content vulkan-plugin-test.log -Tail 25) -join ' | ') -replace '%', '%25'
+          }
+          if (Test-Path vulkan-plugin-test.out) {
+            $factoryTail += ((Get-Content vulkan-plugin-test.out -Tail 25) -join ' | ') -replace '%', '%25'
           }
           Write-Host "::notice title=packaged Xenos Vulkan factory probe::exit code $factoryCode; $factoryTail"
           if ($factoryCode -ne 0) {
             Write-Host "::error title=packaged Xenos Vulkan factory probe failed::exit code $factoryCode; $factoryTail"
             exit 1
           }
+          exit 0
       - name: Check the replay tool reports an empty recording (no recording in CI)
         if: github.event_name == 'push' || inputs.build_game
         run: |
@@ -445,21 +450,27 @@ jobs:
           }
           $replaySmokeDir = Join-Path $env:RUNNER_TEMP 'rex-empty-replay'
           New-Item -ItemType Directory -Force $replaySmokeDir | Out-Null
-          $previousErrorAction = $ErrorActionPreference
-          $ErrorActionPreference = 'Continue'
-          $PSNativeCommandUseErrorActionPreference = $false
-          & $replay $replaySmokeDir --quiet > replay-smoke.log 2>&1
-          $replayCode = $LASTEXITCODE
-          $ErrorActionPreference = $previousErrorAction
+          # The tool reports "nothing to replay" on stderr and exits with 2, so
+          # the call is made through Start-Process: `&` would both raise a native
+          # stderr error under the runner's error preference and leave the
+          # expected exit code 2 in $LASTEXITCODE, which the step then inherits as
+          # its own result. Exit code 2 is the check passing, not the step
+          # failing.
+          $smoke = Start-Process -FilePath $replay -ArgumentList @($replaySmokeDir, '--quiet') -Wait -PassThru `
+            -NoNewWindow -RedirectStandardOutput replay-smoke.out -RedirectStandardError replay-smoke.log
+          $replayCode = $smoke.ExitCode
           $replayTail = ''
-          if (Test-Path replay-smoke.log) {
-            $replayTail = ((Get-Content replay-smoke.log -Tail 20) -join ' | ') -replace '%', '%25'
+          foreach ($log in @('replay-smoke.log', 'replay-smoke.out')) {
+            if (Test-Path $log) {
+              $replayTail += ((Get-Content $log -Tail 20) -join ' | ') -replace '%', '%25'
+            }
           }
           Write-Host "::notice title=rex_gpu_replay on an empty directory::exit code $replayCode; $replayTail"
           if ($replayCode -ne 2) {
             Write-Host "::error title=rex_gpu_replay did not report an empty recording::exit code $replayCode; output: $replayTail"
             exit 1
           }
+          exit 0
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push' || inputs.build_game
         with:

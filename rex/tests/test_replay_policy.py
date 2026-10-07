@@ -131,6 +131,21 @@ class ReplayPolicyTests(unittest.TestCase):
         self.assertIn('name: Check the packaged Xenos Vulkan factory (no GPU required)', WORKFLOW)
         self.assertIn('name: Check the replay tool reports an empty recording (no recording in CI)', WORKFLOW)
         self.assertIn('::notice title=staged package-rex::', WORKFLOW)
+        # A check whose subject is a nonzero exit code must not leave that code in
+        # $LASTEXITCODE: a step inherits the exit code of the last native command
+        # it ran, which is how a passing check made a failing step (exit code 2,
+        # reported as a bare "exit code 1" with no annotation).
+        self.assertNotIn('& $replay $replaySmokeDir', WORKFLOW)
+        self.assertIn('-RedirectStandardError replay-smoke.log', WORKFLOW)
+        self.assertIn('-RedirectStandardOutput vulkan-plugin-test.out', WORKFLOW)
+        # Both post-package steps end with an explicit exit code for the same
+        # reason, so the step's result is the check's verdict and not whatever
+        # the last native command happened to return.
+        for step in ('name: Check the packaged Xenos Vulkan factory (no GPU required)',
+                     'name: Check the replay tool reports an empty recording (no recording in CI)'):
+            body = WORKFLOW.split(step, 1)[1].split('\n      - ', 1)[0]
+            self.assertTrue(body.rstrip().endswith('exit 0'),
+                            msg=f'{step} does not end with an explicit exit code')
         self.assertIn('::notice title=rex_gpu_replay on an empty directory::', WORKFLOW)
         self.assertIn('::notice title=packaged Xenos Vulkan factory probe::', WORKFLOW)
         # One click from the package: the replay reads the dump next to the game.
