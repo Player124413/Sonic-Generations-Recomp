@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <string>
 #include <new>
 #include <set>
 
@@ -10,6 +11,15 @@ using namespace GuestGpu;
 
 namespace
 {
+// Refusals that quote the value they did not like turn the next run's report
+// into a feature request: a mismatch in the tile bits and a mismatch in the
+// format bits are different bugs, and decimal would hide which one happened.
+std::string Hex(uint32_t value)
+{
+    char buffer[11];
+    std::snprintf(buffer,sizeof(buffer),"0x%08X",value);
+    return buffer;
+}
 // sub_82DBF460, 0x82DBF4B8..0x82DBF59C: truncate viewport components
 // individually, intersect the explicit rectangle with viewport and enabled
 // scissor, then skip empty intersections. Do not apply stale disabled scissor.
@@ -49,11 +59,11 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
 {
     std::lock_guard lock(mutex);
     frameReady=false; frameImage=0; frameWidth=frameHeight=0;
-    auto reject=[&](const char* reason) {
+    auto reject=[&](const std::string& reason) {
         // Counted where it is decided, so the report and the log line cannot
         // disagree about what happened.
         const bool first=nativeReport.Refusals()==0;
-        NoteRefusal(reason);
+        NoteRefusal(reason.c_str());
         // The first refusal also prints the shape of the frame it refused: a
         // black window is otherwise indistinguishable from "the guest never
         // asked for a frame", and that difference decides who fixes what.
@@ -90,20 +100,22 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
         // Every refusal names what it refused. The report lists these by count, and
         // a single "unsupported" would make the next run unactionable -- which is
         // exactly how a blocked renderer stays blocked.
-        const char* reason = "the native frame was refused without a reason";
+        std::string reason = "the native frame was refused without a reason";
         auto validate=[&](const NativeTargets& targets,const NativeState& state,uint32_t device) {
             if(!targets.captured) { reason="render targets were not captured"; return false; }
             if(device!=batch.presentDevice) { reason="the command belongs to another device"; return false; }
             const auto& s=targets.surfaces[0];
             if(!s.resource) { reason="the command has no colour target"; return false; }
             if(s.resource!=state.ColorTargets()[0])
-            { reason="the colour target disagrees with the captured register"; return false; }
+            { reason="the colour target disagrees with the captured register (resource=" +
+                Hex(s.resource) + " register=" + Hex(state.ColorTargets()[0]) + ")"; return false; }
             if(s.status!=ConversionResult::Success)
             { reason="the colour surface descriptor cannot be read"; return false; }
             if(s.descriptor[1]&~kSurfaceInfoKnownBits)
             { reason="the colour surface has descriptor bits this renderer does not know"; return false; }
             if(state.words[10372/4]!=s.descriptor[1])
-            { reason="the colour surface disagrees with the surface register"; return false; }
+            { reason="the colour surface disagrees with the surface register (descriptor=" +
+                Hex(s.descriptor[1]) + " register=" + Hex(state.words[10372/4]) + ")"; return false; }
             // A guest multisampled target is drawn once per pixel -- what its own
             // resolve would produce -- and a format without an image here is drawn
             // as RGBA8. Both are counted instead of being assumed away.
@@ -152,7 +164,8 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 if(!depthPlan.contains(d.baseTile)) {
                     if(depthPlan.size()>=32)
                     { reason="the frame uses more depth targets than this renderer keeps"; return false; }
-                    depthPlan.emplace(d.baseTile,DepthImage{d});
+                    DepthImage planned{d}; planned.depthInitialized=planned.stencilInitialized=true;
+                    depthPlan.emplace(d.baseTile,std::move(planned));
                 }
             }
             for(const auto& [base,entry]:depthPlan)
@@ -171,7 +184,8 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
             {
                 if(surfacePlan.size()>=32)
                 { reason="the frame uses more colour targets than this renderer keeps"; return false; }
-                surfacePlan.emplace(s.baseTile,SurfaceImage{s});
+                SurfaceImage planned{s}; planned.initialized=true;
+                surfacePlan.emplace(s.baseTile,std::move(planned));
             }
             return true;
         };
@@ -181,17 +195,14 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
             {
                 const auto& draw=batch.draws[e.index];
                 if(!validate(draw.targets,draw.state,draw.device)) return reject(reason);
-                if(!surfacePlan.at(draw.targets.surfaces[0].baseTile).initialized)
-                    return reject("Native draw reads undefined EDRAM contents");
+                // A guest draw into a surface it never defined is not a reason to
+                // lose the frame: the surface was initialized when it was created
+                // (and keeps its contents across frames, as EDRAM does), so the
+                // draw happens and the initialization is counted instead.
                 const auto fixed=HostGpu::DecodeFixedState(draw.state);
                 const auto& d=draw.targets.surfaces[4];
-                if(fixed.depth.depthTestEnable || fixed.depth.depthWriteEnable || fixed.requiresStencil) {
+                if(fixed.depth.depthTestEnable || fixed.depth.depthWriteEnable || fixed.requiresStencil)
                     if(!d.resource) return reject("Depth/stencil state requires a native attachment");
-                    const auto& planned=depthPlan.at(d.baseTile);
-                    if(((fixed.depth.depthTestEnable || fixed.depth.depthWriteEnable) && !planned.depthInitialized) ||
-                       (fixed.requiresStencil && !planned.stencilInitialized))
-                        return reject("Native draw reads undefined depth/stencil contents");
-                }
             }
             else if(e.kind==1)
             {
@@ -199,28 +210,25 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 auto& rectangle=clearRectangles[e.index];
                 if(!validate(clear.targets,clear.state,clear.device)) return reject(reason);
                 if(!clear.flags || (clear.flags & ~0x31u))
-                    return reject("Native clear uses flags this renderer does not know");
+                    return reject("Native clear uses flags this renderer does not know (flags=" +
+                                  std::to_string(clear.flags) + ")");
                 if(!ClearRectangle(clear,s.width,s.height,rectangle))
                     return reject("Native clear viewport or rectangle is unusable");
                 if((clear.flags & 1) && std::any_of(clear.color.begin(),clear.color.end(),[](float f){return !std::isfinite(f); }))
                     return reject("Native colour clear has a non-finite colour");
                 const bool full=FullRectangle(rectangle,s.width,s.height);
-                if(clear.flags & 1) {
-                    auto& initialized=surfacePlan.at(s.baseTile).initialized;
-                    if(rectangle.extent.width && rectangle.extent.height && !initialized && !full)
-                        return reject("Partial clear cannot initialize the whole native surface");
-                    initialized=initialized || full;
-                }
+                if(clear.flags & 1)
+                    // A partial clear defines only its rectangle; the rest keeps
+                    // the initial contents or the previous frame's, which is what
+                    // the console's EDRAM would hold too.
+                    surfacePlan.at(s.baseTile).initialized=
+                        surfacePlan.at(s.baseTile).initialized || full;
                 if(clear.flags & 0x30) {
                     const auto& d=clear.targets.surfaces[4];
                     if(!d.resource || ((clear.flags & 0x10) &&
                        (!std::isfinite(clear.depth) || clear.depth<0 || clear.depth>1)))
                         return reject("Depth/stencil clear requires a valid D24S8 target");
                     auto& initialized=depthPlan.at(d.baseTile);
-                    const bool nonempty=rectangle.extent.width && rectangle.extent.height;
-                    if(nonempty && !full && (((clear.flags & 0x10) && !initialized.depthInitialized) ||
-                       ((clear.flags & 0x20) && !initialized.stencilInitialized)))
-                        return reject("Partial clear cannot initialize an undefined depth/stencil aspect");
                     if(clear.flags & 0x10) initialized.depthInitialized|=full;
                     if(clear.flags & 0x20) initialized.stencilInitialized|=full;
                 }
@@ -231,12 +239,14 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 const auto& t=resolve.destination;
                 if(!validate(resolve.targets,resolve.state,resolve.device)) return reject(reason);
                 if(resolve.flags || resolve.rectangle || resolve.point || resolve.mip || resolve.slice)
-                    return reject("Native resolve uses a mode this renderer does not implement");
+                    return reject("Native resolve uses a mode this renderer does not implement (flags=" +
+                        std::to_string(resolve.flags) + " rect=" + std::to_string(resolve.rectangle) +
+                        " point=" + std::to_string(resolve.point) + " mip=" + std::to_string(resolve.mip) +
+                        " slice=" + std::to_string(resolve.slice) + ")");
                 if(t.status!=ConversionResult::Success || !t.physical || !t.width || !t.height ||
                    t.width>8192 || t.height>8192)
                     return reject("Native resolve destination is not a readable texture view");
                 if(ResolveScales(s.width,s.height,t.width,t.height)) ++nativeReport.resolvesScaled;
-                if(!surfacePlan.at(s.baseTile).initialized) return reject("Resolve reads undefined EDRAM contents");
                 TextureLayout layout; size_t bytes=0;
                 if(TextureLayout::Decode(t.fetch,layout)!=ConversionResult::Success ||
                    TextureSourceExtent(layout,bytes)!=ConversionResult::Success || uint64_t(t.physical)+bytes>(uint64_t{1}<<32))
@@ -279,14 +289,35 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 surface.color=host.CreateImage(s.width,s.height,HostGpu::ImageKind::Rgba8);
                 // Attachment required by the current pipeline ABI, not a guest depth surface.
                 surface.depth=host.CreateImage(s.width,s.height,HostGpu::ImageKind::Depth32);
-                if(!surface.color || !surface.depth || !host.ClearDepth(surface.depth,1))
+                // Defined contents from the first draw onwards: the guest's silence
+                // about a fresh surface is a choice this renderer has to make, and
+                // transparent black is the one every console render target starts
+                // from. Counted, so the report still says how much of the frame the
+                // guest itself defined.
+                if(!surface.color || !surface.depth || !host.ClearDepth(surface.depth,1) ||
+                   !host.ClearColor(surface.color,{0,0,0,0}))
                     return reject("Native surface allocation failed");
+                surface.initialized=true;
+                ++nativeReport.colorInitialized;
             }
             const auto& d=targets.surfaces[4];
             HostGpu::Resource guestDepth=0;
             if(d.resource) {
                 auto [di,created]=nativeDepths.try_emplace(d.baseTile,DepthImage{d});
-                if(created) di->second.image=host.CreateImage(d.width,d.height,HostGpu::ImageKind::Depth24Stencil8);
+                if(created)
+                {
+                    di->second.image=host.CreateImage(d.width,d.height,HostGpu::ImageKind::Depth24Stencil8);
+                    // The same choice as for colour: an undefined depth aspect is
+                    // defined here as cleared, not treated as a reason to refuse.
+                    if(di->second.image &&
+                       host.ClearDepthStencilRegion(di->second.image,1,0,
+                           VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,
+                           VkRect2D{{0,0},{d.width,d.height}}))
+                    {
+                        di->second.depthInitialized=true; di->second.stencilInitialized=true;
+                        ++nativeReport.depthInitialized;
+                    }
+                }
                 guestDepth=di->second.image;
                 if(!guestDepth) return reject("Native D24S8 allocation/format unsupported");
             }
@@ -326,7 +357,8 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
             }
             else
             {
-                if(!surface.initialized) return reject("Native draw target must be initialized by a guest clear");
+                // Every surface image is created with defined contents (see the
+                // allocation above), so a draw never needs a guest clear first.
                 struct Restore
                 {
                     VulkanBackend& backend; HostGpu::Resource c,d; uint32_t w,h;

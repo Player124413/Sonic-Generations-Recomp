@@ -168,8 +168,8 @@ class TranslateModePolicyTests(unittest.TestCase):
         # how many draws failed and never what to fix.
         frame = NATIVE_FRAME.read_text(encoding='utf-8')
         self.assertIn('void NoteRefusal(const char* reason)', (ROOT / 'SonicGenerationsRecomp/gpu/vulkan_backend.h').read_text(encoding='utf-8'))
-        self.assertIn('NoteRefusal(reason);', frame)
-        self.assertIn('const char* reason = "the native frame was refused without a reason";', frame)
+        self.assertIn('NoteRefusal(reason.c_str());', frame)
+        self.assertIn('std::string reason = "the native frame was refused without a reason";', frame)
         self.assertIn('if(!validate(draw.targets,draw.state,draw.device)) return reject(reason);', frame)
         # The two refusals that will dominate a first run name the feature, so the
         # next step is readable off the report instead of guessed.
@@ -196,6 +196,28 @@ class TranslateModePolicyTests(unittest.TestCase):
         # the present count is what makes that state visible without a log.
         native = NATIVE.read_text(encoding='utf-8')
         self.assertIn('"\\nrenderer_presents=" << stats.presents', native)
+
+    def test_a_surface_the_guest_never_defined_is_drawn_and_counted(self):
+        # Refusing every draw into a surface without a full clear first is how a
+        # frame that the guest really submitted disappears: the console's EDRAM
+        # keeps its contents between frames, so "undefined" mostly means "defined
+        # by the previous frame". The surfaces are defined when they are created
+        # and the guest's silence is counted, not turned into a black screen.
+        frame = NATIVE_FRAME.read_text(encoding='utf-8')
+        self.assertNotIn('Native draw reads undefined EDRAM contents', frame)
+        self.assertNotIn('Native draw reads undefined depth/stencil contents', frame)
+        self.assertNotIn('Partial clear cannot initialize the whole native surface', frame)
+        self.assertNotIn('Resolve reads undefined EDRAM contents', frame)
+        self.assertNotIn('Native draw target must be initialized by a guest clear', frame)
+        self.assertIn('++nativeReport.colorInitialized;', frame)
+        self.assertIn('++nativeReport.depthInitialized;', frame)
+        self.assertIn('planned.initialized=true;', frame)
+        # A refusal that quotes the value it did not like is a feature request;
+        # one that does not is a mystery.
+        self.assertIn('Hex(s.descriptor[1])', frame)
+        self.assertIn('std::to_string(resolve.flags)', frame)
+        native = NATIVE.read_text(encoding='utf-8')
+        self.assertIn('"\\nrenderer_color_initialized=" << renderer.colorInitialized', native)
 
     def test_a_scaled_resolve_is_a_blit_and_not_a_refusal(self):
         # Rendering below the display resolution and resolving up into it is normal

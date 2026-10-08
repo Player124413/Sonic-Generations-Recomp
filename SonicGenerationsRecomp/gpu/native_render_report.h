@@ -38,6 +38,13 @@ namespace GuestGpu
         // fraction of the picture that goes through a blit rather than a copy.
         uint64_t resolves = 0;
         uint64_t resolvesScaled = 0;
+        // Surfaces the guest never defined and this renderer had to initialize
+        // itself. Drawing into undefined EDRAM used to refuse the frame; the
+        // picture is worth more than the refusal, so the guest's silence is
+        // counted here instead -- the count is how much of the frame may differ
+        // from the console, and zero means none of it may.
+        uint64_t colorInitialized = 0;
+        uint64_t depthInitialized = 0;
 
         void NoteRefusal(const char* reason)
         {
@@ -84,6 +91,8 @@ namespace GuestGpu
                     std::to_string(depthFormatApproximated) + "\n";
             text += "renderer_resolves=" + std::to_string(resolves) + "\n";
             text += "renderer_resolves_scaled=" + std::to_string(resolvesScaled) + "\n";
+            text += "renderer_color_initialized=" + std::to_string(colorInitialized) + "\n";
+            text += "renderer_depth_initialized=" + std::to_string(depthInitialized) + "\n";
             text += "renderer_refusals=" + std::to_string(Refusals()) + "\n";
             for (const auto& [reason, count] : RefusalsByCount())
                 text += "renderer_refusal=" + std::to_string(count) + " " + reason + "\n";

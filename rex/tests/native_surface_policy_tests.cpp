@@ -101,6 +101,8 @@ void ReportNamesEveryRefusalOnce()
     report.framesRendered = 4;
     report.resolves = 5;
     report.resolvesScaled = 2;
+    report.colorInitialized = 3;
+    report.depthInitialized = 1;
     report.NoteRefusal("secondary colour targets (MRT) are not rendered yet");
     report.NoteRefusal("secondary colour targets (MRT) are not rendered yet");
     report.NoteRefusal("colour surface has unknown descriptor bits");
@@ -115,6 +117,8 @@ void ReportNamesEveryRefusalOnce()
     ExpectText(text, "renderer_depth_format_approximated=1", "depth approximations are reported");
     ExpectText(text, "renderer_resolves=5", "resolves are reported");
     ExpectText(text, "renderer_resolves_scaled=2", "scaled resolves are reported separately");
+    ExpectText(text, "renderer_color_initialized=3", "colour surfaces this renderer defined are counted");
+    ExpectText(text, "renderer_depth_initialized=1", "depth surfaces this renderer defined are counted");
     ExpectText(text, "renderer_refusals=3", "the refusal total is reported");
     // The most frequent reason comes first: it is the next thing to fix.
     const auto mrt = text.find("renderer_refusal=2 secondary colour targets");
