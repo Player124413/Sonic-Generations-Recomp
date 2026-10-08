@@ -2,6 +2,7 @@
 #include <gpu/vulkan_backend.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <new>
 #include <set>
 
@@ -51,8 +52,21 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
     auto reject=[&](const char* reason) {
         // Counted where it is decided, so the report and the log line cannot
         // disagree about what happened.
+        const bool first=nativeReport.Refusals()==0;
         NoteRefusal(reason);
-        Fail(reason); ResetNativeTargets(); return SubmissionResult::Incomplete;
+        // The first refusal also prints the shape of the frame it refused: a
+        // black window is otherwise indistinguishable from "the guest never
+        // asked for a frame", and that difference decides who fixes what.
+        if(first)
+            std::fprintf(stderr,
+                "Native frame refused: draws=%zu clears=%zu resolves=%zu backbuffer=%s "
+                "physical=%08X status=%u %ux%u presentDevice=%u\n",
+                batch.draws.size(), batch.clears.size(), batch.resolves.size(),
+                batch.hasBackbuffer ? "yes" : "no", batch.backbuffer.physical,
+                unsigned(batch.backbuffer.status), batch.backbuffer.width,
+                batch.backbuffer.height, batch.presentDevice);
+        error=reason; // last_error in the report, without a second log line
+        ResetNativeTargets(); return SubmissionResult::Incomplete;
     };
     try
     {

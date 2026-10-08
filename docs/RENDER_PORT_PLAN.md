@@ -169,6 +169,14 @@ or EDRAM alias», то есть живой прогон не сказал бы, 
 - в `status.txt` появились `renderer_presents=` (хост-презенты — единственное
   число, отвечающее «видел ли игрок хоть что-то») и `renderer_resolves=` /
   `renderer_resolves_scaled=`;
+- `rex\windows\Run-ReXGlue-Capture.cmd` записывает `assets\rex-cache\gpu-capture.bin`
+  — сырые аргументы хуков (draw/clear/resolve/swap) и состояние устройства к каждому
+  вызову, максимум 4096 записей (первые кадры — как раз они и важны). Разбирается
+  офлайн, без GPU и без Windows:
+  `python rex\tools\decode_gpu_capture.py assets\rex-cache\gpu-capture.bin`
+  печатает, решён ли кадр (пишет ли какой-нибудь resolve в тот frontbuffer, который
+  выбирает swap) и не использует ли какой-нибудь resolve режим, который мы
+  отказываемся рисовать. Это ответ на «чёрный экран» из данных, а не из догадки;
 - resolve в текстуру destination **другого размера** больше не отказ: это
   `vkCmdBlitImage` с линейной фильтрацией (уменьшение разрешения при рендере —
   нормальный приём на этой консоли), а destination, меняющий размер по тому же

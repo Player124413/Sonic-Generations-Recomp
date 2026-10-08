@@ -23,6 +23,8 @@ SURFACE_POLICY = ROOT / 'SonicGenerationsRecomp/gpu/native_surface_policy.h'
 REPORT = ROOT / 'SonicGenerationsRecomp/gpu/native_render_report.h'
 CMAKE = ROOT / 'rex/CMakeLists.txt'
 LAUNCHER = ROOT / 'rex/windows/Run-ReXGlue-Translate.cmd'
+CAPTURE_LAUNCHER = ROOT / 'rex/windows/Run-ReXGlue-Capture.cmd'
+DECODER = ROOT / 'rex/tools/decode_gpu_capture.py'
 
 
 class TranslateModePolicyTests(unittest.TestCase):
@@ -213,6 +215,23 @@ class TranslateModePolicyTests(unittest.TestCase):
         # writing a texture the guest expects at its previous size is worse than a
         # frame without it.
         self.assertIn('the resolve destination changed size for the same address', frame)
+
+    def test_a_run_can_be_captured_and_read_without_windows(self):
+        # The user's machine is where the black screen happens, and it is not
+        # where the code is read. One double-click records the guest's own calls
+        # into a file the sandbox can decode, which is what makes a run that
+        # shows nothing still informative.
+        launcher = CAPTURE_LAUNCHER.read_text(encoding='utf-8')
+        self.assertIn('set "SONIC_REX_GPU_CAPTURE=1"', launcher)
+        self.assertIn('gpu-capture.bin', launcher)
+        self.assertIn('decode_gpu_capture.py', launcher)
+        decoder = DECODER.read_text(encoding='utf-8')
+        self.assertIn('Guest backbuffer has no matching resolved image', decoder)
+        # The frame path names the shape of the first frame it refused, so the
+        # console alone distinguishes "refused" from "never asked".
+        frame = NATIVE_FRAME.read_text(encoding='utf-8')
+        self.assertIn('Native frame refused: draws=', frame)
+        self.assertIn('batch.hasBackbuffer ? "yes" : "no"', frame)
 
     def test_the_reports_carry_the_renderer_numbers(self):
         native = NATIVE.read_text(encoding='utf-8')
