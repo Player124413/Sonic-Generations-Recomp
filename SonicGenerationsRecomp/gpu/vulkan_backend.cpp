@@ -149,6 +149,9 @@ void VulkanBackend::Shutdown()
     // Host waits idle before freeing every resource, including exceptional paths.
     host.Shutdown(); drawResources.clear(); states.clear(); color = depth = 0;
     nativeSurfaces.clear(); nativeTextures.clear(); frameImage=0;
+    // Nothing is presentable after the device is gone: a presenter that outlives
+    // the renderer must find "no frame", not the previous frame's handle.
+    frameReady = false; frameWidth = frameHeight = 0;
     shaderCache = {};
     resolvedShaders.clear();
 }

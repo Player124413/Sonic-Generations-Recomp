@@ -82,7 +82,7 @@ class TranslateModePolicyTests(unittest.TestCase):
 
     def test_the_device_is_created_with_the_window_surface_not_before_it(self):
         native = NATIVE.read_text(encoding='utf-8')
-        self.assertIn('if (!backend->HasPresentationSurface() || !targetWidth || !targetHeight)',
+        self.assertIn('if (!backendOwner->HasPresentationSurface() || !targetWidth || !targetHeight)',
                       native)
         self.assertIn('++framesWithoutSurface;', native)
         # A surface that arrives after the device cannot be attached, so the
@@ -106,6 +106,36 @@ class TranslateModePolicyTests(unittest.TestCase):
             self.assertIn(field, native,
                           'a translate run must report what reached the window')
         self.assertIn('presentation: frame(s)=', native)
+
+    def test_the_frame_notification_cannot_deadlock_against_the_present_path(self):
+        # The presenter reaches the translator through GetNativeGpuBackend() while
+        # it presents, and it presents *inside* the frame notification -- which the
+        # capture path invokes. One lock for both would be a self-deadlock on the
+        # first presented frame, which looks exactly like the game freezing.
+        native = NATIVE.read_text(encoding='utf-8')
+        self.assertIn('std::mutex publishMutex;', native)
+        self.assertIn('std::lock_guard publish(publishMutex);', native)
+        # The callback is taken under the publish lock and called after it is gone.
+        taken = native.index('notify = presentableFrame;')
+        called = native.index('if (notify(notifyUser, frameWidth, frameHeight))')
+        released = native.index('}', taken)
+        self.assertLess(taken, released)
+        self.assertLess(released, called, 'the callback must run with no lock held')
+
+    def test_the_presenter_never_touches_a_freed_device(self):
+        # The window outlives the translator's shutdown, so the device object is
+        # kept alive and unpublished instead of deleted: a late present then finds
+        # "nothing to present" rather than freed memory.
+        native = NATIVE.read_text(encoding='utf-8')
+        self.assertIn('std::unique_ptr<VulkanBackend> backendOwner;', native)
+        self.assertIn('VulkanBackend* backend = nullptr;', native)
+        self.assertIn('backendOwner->Shutdown();', native)
+        self.assertNotIn('backend.reset();', native)
+        # And the backend itself stops reporting a frame once its device is gone.
+        backend = BACKEND.read_text(encoding='utf-8')
+        shutdown = backend.index('void VulkanBackend::Shutdown()')
+        self.assertIn('frameReady = false; frameWidth = frameHeight = 0;',
+                      backend[shutdown:shutdown + 600])
 
     def test_the_launcher_sets_the_mode_and_prints_its_reports(self):
         script = LAUNCHER.read_text(encoding='utf-8')

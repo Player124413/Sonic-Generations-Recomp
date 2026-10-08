@@ -162,8 +162,9 @@ bool TranslatePresenter::OnTranslatedFrame(uint32_t width, uint32_t height, uint
         aspect_x = width;
         aspect_y = height;
     }
+    // The lambda names the context type, so it needs no capture.
     return RefreshGuestOutput(width, height, aspect_x, aspect_y,
-                              [this](GuestOutputRefreshContext& context) {
+                              [](GuestOutputRefreshContext& context) {
                                   static_cast<FrameContext&>(context).SetFrameComplete();
                                   return true;
                               });

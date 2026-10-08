@@ -172,16 +172,44 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows
           "-DSONIC_REX_GENERATED_DIR=${{ github.workspace }}/build-rex-source/${{ steps.source.outputs.directory }}"
       - name: Compile real host and first generated TU before the full game
+        # Compilers write diagnostics to stderr, and a PowerShell step that treats
+        # native stderr as terminating output turns a warning into "Process
+        # completed with exit code 1" with no error in it. The log is captured and
+        # the tail is published as an annotation instead, so the reason survives
+        # even when the runner's logs cannot be downloaded.
         if: github.event_name == 'push' || inputs.build_game
-        run: cmake --build build-rex-game --config Release --target sonic_rex_api_probe --parallel 2
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $log = 'host-compile.log'
+          cmake --build build-rex-game --config Release --target sonic_rex_api_probe --parallel 2 *>&1 |
+            Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ((Get-Content $log -Tail 40) -join ' | ') -replace '%', '%25'
+            Write-Host "::error title=Game host compile failed::$tail"
+            exit 1
+          }
       - name: Link native Vulkan backend and decode embedded SPIR-V before PPC build
         if: github.event_name == 'push' || inputs.build_game
         run: |
-          cmake --build build-rex-game --config Release --target rex_native_backend_link_test --parallel 2
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $log = 'native-backend-link.log'
+          cmake --build build-rex-game --config Release --target rex_native_backend_link_test --parallel 2 *>&1 |
+            Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ((Get-Content $log -Tail 40) -join ' | ') -replace '%', '%25'
+            Write-Host "::error title=Native backend link failed::$tail"
+            exit 1
+          }
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin/vulkan-1.dll" build-rex-game/Release/
-          ctest --test-dir build-rex-game -C Release -R '^rex_native_backend_link$' --output-on-failure --timeout 120
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build-rex-game -C Release -R '^rex_native_backend_link$' --output-on-failure --timeout 120 *>&1 |
+            Tee-Object -FilePath $log -Append
+          if ($LASTEXITCODE -ne 0) {
+            $tail = ((Get-Content $log -Tail 40) -join ' | ') -replace '%', '%25'
+            Write-Host "::error title=Native backend link test failed::$tail"
+            exit 1
+          }
       - name: Configure our own GPU plugin against the SDK
         # The plugin is a separate CMake project, so it needs the same dependency
         # wiring the game host gets. Without the vcpkg toolchain `find_package(

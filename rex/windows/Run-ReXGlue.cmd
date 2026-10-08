@@ -13,7 +13,13 @@ if not defined SONIC_REX_GRAPHICS_MODE set "SONIC_REX_GRAPHICS_MODE=reference"
 set "result=%errorlevel%"
 > "diagnostics\rex-exit-code.txt" echo %result%
 echo Exit code: %result%
-echo Visible rendering: ReXGlue Xenos/Vulkan reference.
+if "%SONIC_REX_GRAPHICS_MODE%"=="translate" (
+  echo Visible rendering: OUR translation renderer; the SDK keeps the guest device.
+) else if "%SONIC_REX_GRAPHICS_MODE%"=="native" (
+  echo Visible rendering: OUR device ^(no rasteriser yet^): the window is not a frame.
+) else (
+  echo Visible rendering: ReXGlue Xenos/Vulkan reference.
+)
 echo Keyboard: move WASD/arrows, jump Space, pause Enter, back Backspace, camera IJKL.
 echo Rebind keys in game with F4, or edit assets\rex-runtime.toml.
 if "%SONIC_REX_NATIVE_RENDER%"=="offscreen" echo Native offscreen results: assets\rex-cache\native\latest-session.txt

@@ -21,13 +21,26 @@
 
 namespace sonic::rex_host {
 namespace {
+// The session lock guards everything below it (counters, the bridge, the device
+// in use). The backend publish lock guards only what other threads may look up
+// while a frame is being captured: the backend pointer and the frame callback.
+// They must stay separate -- the presenter's present path reaches
+// GetNativeGpuBackend(), and it runs *inside* the frame notification, which the
+// capture path invokes with the session lock held. One lock there would be a
+// self-deadlock on the first presented frame.
 std::mutex mutex;
+std::mutex publishMutex;
 std::atomic<bool> enabled{false};
 NativeRenderMode renderMode = NativeRenderMode::Off;
 PresentableFrameCallback presentableFrame = nullptr;
 void* presentableFrameUser = nullptr;
 std::unique_ptr<NativeGpuBridge> bridge;
-std::unique_ptr<VulkanBackend> backend;
+// Owned forever once created: the window's presenter may hold the published
+// pointer, so shutting down disables the backend instead of freeing it. A
+// presenter that presents after shutdown then calls into a live object that
+// reports "nothing to present", not into freed memory.
+std::unique_ptr<VulkanBackend> backendOwner;
+VulkanBackend* backend = nullptr;
 std::filesystem::path directory;
 uint64_t batches = 0, submitted = 0, rejected = 0, skipped = 0;
 uint64_t replayMicros = 0, replayMaxMicros = 0;
@@ -113,7 +126,14 @@ void InitializeNativeGpu(const std::filesystem::path& cacheDirectory, GraphicsMo
     latest << directory.filename().string() << '\n';
     if (!latest) throw std::runtime_error("Cannot write native session marker");
     bridge = std::make_unique<NativeGpuBridge>();
-    backend = std::make_unique<VulkanBackend>(nullptr, false, true);
+    if (!backendOwner) backendOwner = std::make_unique<VulkanBackend>(nullptr, false, true);
+    {
+        std::lock_guard publish(publishMutex);
+        backend = backendOwner.get();
+        // A previous session's presenter must not be notified by this one.
+        presentableFrame = nullptr;
+        presentableFrameUser = nullptr;
+    }
     batches = submitted = rejected = skipped = 0;
     replayMicros = replayMaxMicros = 0; images = 0; initialized = false;
     presentableFrames = notifiedFrames = notifyRefused = framesWithoutSurface = framesWithoutPresenter = 0;
@@ -153,15 +173,15 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
                 // a presentation-less device first would mean never being able to
                 // show anything, because the surface belongs to the instance.
                 uint32_t targetWidth = 0, targetHeight = 0;
-                backend->GetTargetSize(targetWidth, targetHeight);
-                if (!backend->HasPresentationSurface() || !targetWidth || !targetHeight) {
+                backendOwner->GetTargetSize(targetWidth, targetHeight);
+                if (!backendOwner->HasPresentationSurface() || !targetWidth || !targetHeight) {
                     ++framesWithoutSurface;
                     return;
                 }
-                if (!backend->Init(VideoMode{targetWidth, targetHeight}))
-                    throw std::runtime_error(backend->GetLastError());
-            } else if (!backend->Init(VideoMode{})) {
-                throw std::runtime_error(backend->GetLastError());
+                if (!backendOwner->Init(VideoMode{targetWidth, targetHeight}))
+                    throw std::runtime_error(backendOwner->GetLastError());
+            } else if (!backendOwner->Init(VideoMode{})) {
+                throw std::runtime_error(backendOwner->GetLastError());
             }
             initialized = true;
         }
@@ -179,10 +199,10 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
             return;
         }
         const auto started = std::chrono::steady_clock::now();
-        const auto result = backend->SubmitGuestBatch(*batch);
+        const auto result = backendOwner->SubmitGuestBatch(*batch);
         const bool success = result == GuestGpu::SubmissionResult::Submitted;
         if (success) ++submitted; else ++rejected;
-        if (success && renderMode == NativeRenderMode::Present && backend->HasPresentableFrame()) {
+        if (success && renderMode == NativeRenderMode::Present && backendOwner->HasPresentableFrame()) {
             // The guest's swap produced a frame. The window's presenter owns the
             // paint cadence (vsync, paint mode, surface state), so the frame is
             // handed to it instead of presenting here: with the guest-output
@@ -190,10 +210,18 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
             // presents it on the next paint.
             ++presentableFrames;
             uint32_t frameWidth = 0, frameHeight = 0;
-            backend->GetPresentableFrameSize(frameWidth, frameHeight);
-            const PresentableFrameCallback notify = presentableFrame;
+            backendOwner->GetPresentableFrameSize(frameWidth, frameHeight);
+            PresentableFrameCallback notify = nullptr;
+            void* notifyUser = nullptr;
+            {
+                // Taken under the publish lock and then released: the presenter's
+                // present path looks the backend up under this same lock.
+                std::lock_guard publish(publishMutex);
+                notify = presentableFrame;
+                notifyUser = presentableFrameUser;
+            }
             if (notify) {
-                if (notify(presentableFrameUser, frameWidth, frameHeight))
+                if (notify(notifyUser, frameWidth, frameHeight))
                     ++notifiedFrames;
                 else
                     ++notifyRefused;
@@ -220,12 +248,12 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
         replayMicros += uint64_t(elapsed);
         replayMaxMicros = std::max(replayMaxMicros, uint64_t(elapsed));
         if (batches <= 16 || batches % 60 == 0) {
-            const auto stats = backend->GetHostStats();
+            const auto stats = backendOwner->GetHostStats();
             std::fprintf(stderr, "[native] batch=%llu result=%u draws=%zu submitted=%llu rejected=%llu vkDraws=%llu presents=%llu payload=%zu error=%s\n",
                 (unsigned long long)batches, unsigned(result), batch->draws.size(),
                 (unsigned long long)submitted, (unsigned long long)rejected,
                 (unsigned long long)stats.indexedDraws, (unsigned long long)stats.presents,
-                batch->payloadBytes, backend->GetLastError().c_str());
+                batch->payloadBytes, backendOwner->GetLastError().c_str());
             for (size_t i = 0; !success && i < batch->draws.size() && i < 4; ++i) {
                 const auto& d = batch->draws[i];
                 std::fprintf(stderr, "[native] draw=%zu VS=%016llX/%u PS=%016llX/%u resources=%u\n", i,
@@ -238,7 +266,7 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
         // and only when asked, because each one waits for the GPU.
         if (readbackEnabled && success && images < 8 && (submitted == 1 || submitted % 60 == 0)) {
             std::vector<uint8_t> rgba;
-            if (backend->ReadDiagnosticFrame(rgba)) {
+            if (backendOwner->ReadDiagnosticFrame(rgba)) {
                 WriteBmp(directory / ("frame-" + std::to_string(submitted) + ".bmp"),
                     batch->backbuffer.width, batch->backbuffer.height, rgba);
                 ++images;
@@ -253,14 +281,14 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
     }
 }
 VulkanBackend* GetNativeGpuBackend() {
-    std::lock_guard lock(mutex);
-    return backend.get();
+    std::lock_guard publish(publishMutex);
+    return backend;
 }
 
 NativeRenderMode GetNativeRenderMode() { return renderMode; }
 
 void SetPresentableFrameCallback(PresentableFrameCallback callback, void* user) {
-    std::lock_guard lock(mutex);
+    std::lock_guard publish(publishMutex);
     presentableFrame = callback;
     presentableFrameUser = user;
 }
@@ -286,10 +314,15 @@ void ShutdownNativeGpu() noexcept {
             (unsigned long long)coverage.Reason(DrawSupport::BackendRefused));
     }
     if (renderMode == NativeRenderMode::Present) {
-        // The window outlives this call, so the presenter must stop being handed
-        // a backend that is about to be gone.
-        presentableFrame = nullptr;
-        presentableFrameUser = nullptr;
+        // The window outlives this call, so stop publishing what the presenter
+        // looks up: it then presents nothing instead of touching a released
+        // device.
+        {
+            std::lock_guard publish(publishMutex);
+            presentableFrame = nullptr;
+            presentableFrameUser = nullptr;
+            backend = nullptr;
+        }
         std::fprintf(stderr,
             "[native] presentation: frame(s)=%llu presentable=%llu notified=%llu refused=%llu "
             "no_surface=%llu no_presenter=%llu\n",
@@ -308,7 +341,8 @@ void ShutdownNativeGpu() noexcept {
             (unsigned long long)rejected, double(replayMicros) / 1000.0 / replayed,
             double(replayMaxMicros) / 1000.0, frameStride);
     }
-    backend.reset(); bridge.reset(); initialized = false;
+    if (backendOwner) backendOwner->Shutdown();
+    bridge.reset(); initialized = false;
 }
 
 // Helpers stay in the anonymous namespace they were declared in: a definition
@@ -323,7 +357,7 @@ void WriteCoverage() {
 
 void WriteStatus() {
     WriteCoverage();
-    const auto stats = backend->GetHostStats();
+    const auto stats = backendOwner->GetHostStats();
     std::ofstream report(directory / "status.txt", std::ios::trunc);
     report << "mode=" << (renderMode == NativeRenderMode::Present ? "present"
                           : renderMode == NativeRenderMode::Offscreen ? "offscreen" : "off") << "\n"
@@ -337,8 +371,10 @@ void WriteStatus() {
            << "\naverage_replay_ms=" << (submitted ? double(replayMicros) / 1000.0 / double(submitted) : 0.0)
            << "\nmax_replay_ms=" << double(replayMaxMicros) / 1000.0
            << "\nvulkan_draws=" << stats.indexedDraws
-           << "\nnote=every replayed frame is a second full render on top of Xenos"
-           << "\nlast_error=" << backend->GetLastError() << '\n';
+           << (renderMode == NativeRenderMode::Present
+                   ? "\nnote=the frame on screen is the one this renderer drew"
+                   : "\nnote=every replayed frame is a second full render on top of Xenos")
+           << "\nlast_error=" << backendOwner->GetLastError() << '\n';
 }
 }  // namespace
 }
