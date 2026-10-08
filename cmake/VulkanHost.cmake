@@ -13,10 +13,18 @@ add_library(SonicVulkanHost STATIC
 target_compile_features(SonicVulkanHost PUBLIC cxx_std_20)
 if(WIN32)
     # The game host lets ReXGlue own the window, so the backend builds its own
-    # Win32 surface from the HWND instead of asking SDL for one. Defined for the
-    # translation units of this target only: vulkan_win32.h needs windows.h
-    # included first, which vulkan_backend.cpp does.
-    target_compile_definitions(SonicVulkanHost PRIVATE VK_USE_PLATFORM_WIN32_KHR=1)
+    # Win32 surface from the HWND instead of asking SDL for one.
+    #
+    # Where that define goes matters: vulkan.h includes windows.h as soon as
+    # VK_USE_PLATFORM_WIN32_KHR is set, and windows.h defines min/max as macros
+    # unless NOMINMAX is set. Target-wide, it broke `std::min` in another unit of
+    # this target (vulkan_host.cpp) -- on Windows only, so it took a CI run to
+    # see. The define is scoped to the unit that creates the surface, and NOMINMAX
+    # keeps every unit of the target immune regardless.
+    target_compile_definitions(SonicVulkanHost PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    set_property(SOURCE "${_vulkan_root}/SonicGenerationsRecomp/gpu/vulkan_backend.cpp"
+        TARGET_DIRECTORY SonicVulkanHost
+        APPEND PROPERTY COMPILE_DEFINITIONS VK_USE_PLATFORM_WIN32_KHR=1)
 endif()
 target_include_directories(SonicVulkanHost PUBLIC "${_vulkan_root}/SonicGenerationsRecomp")
 target_link_libraries(SonicVulkanHost PUBLIC Vulkan::Vulkan)

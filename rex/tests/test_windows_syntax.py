@@ -58,6 +58,28 @@ class WindowsSyntaxTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 1, 'a broken unit must fail the check')
         self.assertIn('anonymous namespace', report)
 
+    def test_windows_headers_cannot_inject_min_max_macros(self):
+        # vulkan.h includes windows.h as soon as VK_USE_PLATFORM_WIN32_KHR is set,
+        # and windows.h defines min/max as macros unless NOMINMAX is set. Applied
+        # to a whole CMake target, that broke `std::min` in a unit of the same
+        # target -- on Windows only, so nothing local noticed until CI did. The
+        # arrangement is pinned: the define is scoped to the unit that creates the
+        # surface, that unit includes windows.h only after defining NOMINMAX, and
+        # the target defines NOMINMAX anyway.
+        cmake = (ROOT / 'cmake/VulkanHost.cmake').read_text(encoding='utf-8')
+        self.assertIn('TARGET_DIRECTORY SonicVulkanHost', cmake,
+                      'the platform define must be scoped, not target-wide')
+        self.assertIn('target_compile_definitions(SonicVulkanHost PRIVATE NOMINMAX', cmake)
+        self.assertNotIn('target_compile_definitions(SonicVulkanHost PRIVATE VK_USE_PLATFORM_WIN32_KHR=1)',
+                         cmake)
+        backend = (ROOT / 'SonicGenerationsRecomp/gpu/vulkan_backend.cpp').read_text(encoding='utf-8')
+        self.assertLess(backend.index('#define NOMINMAX'), backend.index('#include <windows.h>'))
+        # The local Windows check mirrors the same split, so the unit that gets the
+        # define there is the unit that gets it in the build.
+        tool = (ROOT / 'rex/tools/check_windows_tus.py').read_text(encoding='utf-8')
+        self.assertIn("'SonicGenerationsRecomp/gpu/vulkan_backend.cpp': ('-DVK_USE_PLATFORM_WIN32_KHR=1',)",
+                      tool)
+
     def test_the_checker_is_honest_about_needing_a_toolchain(self):
         source = CHECKER.read_text(encoding='utf-8')
         self.assertIn('skipped: no', source,

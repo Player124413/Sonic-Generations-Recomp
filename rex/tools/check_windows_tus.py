@@ -26,6 +26,12 @@ Two toolchains are used, best first:
   units whose Win32 use is small, and the only option on a workstation without a
   cross compiler.
 
+What it cannot see: the MSVC Windows SDK defines `min`/`max` as macros in C++ too,
+while the headers of a cross toolchain usually do not, so a `std::min` collision
+that only happens when MSVC's `windows.h` is included stays invisible here. That
+class is pinned structurally instead (see `test_windows_syntax.py`: the platform
+define is scoped to the unit that creates the surface, and NOMINMAX is set).
+
 It skips (exit code 0) when no compiler, no `nm` or no Vulkan headers are
 available, so it can run on any host.
 """
@@ -87,9 +93,14 @@ WINDOWS_TARGET_UNITS = (
 # Mirrors the game host's own defines: headless (ReXGlue owns the window), the
 # Win32 surface branch the backend uses, and the native renderer that the EXE
 # defines for its own translation unit.
-WINDOWS_TARGET_DEFINES = ('-DSONIC_VULKAN_HEADLESS=1', '-DVK_USE_PLATFORM_WIN32_KHR=1',
-                          '-DWIN32_LEAN_AND_MEAN', '-DNOMINMAX',
-                          '-DSONIC_REX_NATIVE_RENDERER=1')
+WINDOWS_TARGET_DEFINES = ('-DSONIC_VULKAN_HEADLESS=1', '-DWIN32_LEAN_AND_MEAN',
+                          '-DNOMINMAX', '-DSONIC_REX_NATIVE_RENDERER=1')
+# The platform define is scoped to the unit that creates the surface, exactly as
+# CMake scopes it: vulkan.h includes windows.h when it is set, and applying it
+# target-wide once broke std::min elsewhere in the same target.
+WINDOWS_TARGET_UNIT_DEFINES = {
+    'SonicGenerationsRecomp/gpu/vulkan_backend.cpp': ('-DVK_USE_PLATFORM_WIN32_KHR=1',),
+}
 # Submodule roots the game host adds to its include path. Their absence is not a
 # failure: those units are skipped, and the report says why.
 CODEC_SUBDIRECTORIES = ('thirdparty/xxHash', 'thirdparty/zstd/lib', 'thirdparty/smol-v/source')
@@ -264,7 +275,8 @@ def check_default_set(compiler: str, windows: list[str] | None, nm: str, vulkan:
             if needs_codecs and codec_missing:
                 print(f'skip {unit} (needs tools/XenosRecomp/{" and ".join(codec_missing)})')
                 continue
-            code, report = check_unit(unit, windows, nm, vulkan, sdk, WINDOWS_TARGET_DEFINES,
+            defines = WINDOWS_TARGET_DEFINES + WINDOWS_TARGET_UNIT_DEFINES.get(unit, ())
+            code, report = check_unit(unit, windows, nm, vulkan, sdk, defines,
                                       list(extra_includes) + list(codec_includes), stub=False)
             if code == 0:
                 print(f'ok   {unit} (built as Windows)')
