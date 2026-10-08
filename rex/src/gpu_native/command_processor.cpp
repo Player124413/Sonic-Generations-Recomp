@@ -322,7 +322,18 @@ void CommandProcessor::Tick() noexcept {
         readPointer_ = write;
     }
     if (readPointerWriteback_) {
-        if (memory_->Write32(readPointerWriteback_, readPointer_)) ++stats_.readPointerWrites;
+        if (memory_->Write32(readPointerWriteback_, readPointer_)) {
+            // The guest spins on this value: it is how D3D learns the GPU
+            // consumed its commands. One line about the first write tells
+            // whether the guest is being told anything at all, and whether the
+            // address and the units are the ones it is polling.
+            if (stats_.readPointerWrites == 0) {
+                std::fprintf(stderr,
+                             "[gpu] read pointer writeback: %08X -> %08X (ring %08X, mask %08X)\n",
+                             readPointer_, readPointerWriteback_, ringBase_, ringMaskDwords_);
+            }
+            ++stats_.readPointerWrites;
+        }
     }
     if (observer_) {
         DrainInfo drain;

@@ -307,6 +307,22 @@ void NativeGraphicsSystem::Shutdown() {
     LogSetContext("Shutdown");
     if (!guestGpuReady_ && !vblankThread_ && !workerThread_ && !presenter_) return;
     Log("shutting the guest GPU down");
+    // The window shows our "no guest frame yet" colour when no frame reached it,
+    // and that is a different thing from a frame that failed to draw. This line
+    // is the explanation, and it is printed even when every count is zero --
+    // especially then.
+    Log("guest GPU traffic: mmio_reads=%llu mmio_writes=%llu kicks=%llu drains=%llu packets=%llu "
+        "swaps=%llu interrupts=%llu read_pointer_writes=%llu unsupported=%llu truncated=%llu",
+        static_cast<unsigned long long>(mmioReads_.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(mmioWrites_.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(ringKicks_.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(processor_.GetStats().drains),
+        static_cast<unsigned long long>(processor_.GetStats().packets),
+        static_cast<unsigned long long>(processor_.GetStats().swaps),
+        static_cast<unsigned long long>(processor_.GetStats().interrupts),
+        static_cast<unsigned long long>(processor_.GetStats().readPointerWrites),
+        static_cast<unsigned long long>(processor_.GetStats().unsupportedPackets),
+        static_cast<unsigned long long>(processor_.GetStats().truncatedDrains));
     // Stop the threads that enter the guest, then detach the device's sinks, and
     // only then let the presenter go: it is the last user of the Vulkan device.
     StopGpuWorker();
@@ -333,6 +349,16 @@ void NativeGraphicsSystem::Shutdown() {
             static_cast<unsigned long long>(stats.verticesSeen),
             static_cast<unsigned long long>(stats.shaderUploadsSeen),
             static_cast<unsigned long long>(stats.drawsWithNoState));
+        if (swapSink_.FrameCount() == 0) {
+            // Name the state of the window instead of leaving it to be guessed
+            // from a screenshot: the colour on screen is a placeholder, and the
+            // reason is in this line, not in the renderer.
+            Log("  no frame reached the window: the guest did not swap. kicks=%llu packets=%llu "
+                "(0 kicks means the guest never submitted; kicks without swaps means the ring was "
+                "kicked and carried no swap token)",
+                static_cast<unsigned long long>(ringKicks_.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(processor_.GetStats().packets));
+        }
         processor_.SetObserver(nullptr);
         streamDump_.Close();
         if (streamDump_.GetStats().drains) Log("  %s", streamDump_.Summary().c_str());
@@ -428,20 +454,31 @@ void NativeGraphicsSystem::WriteRegisterThunk(void* ppc_context, NativeGraphicsS
 }
 
 uint32_t NativeGraphicsSystem::ReadRegister(uint32_t address) {
-    static std::atomic<uint32_t> reads{0};
-    if (reads.fetch_add(1, std::memory_order_relaxed) < 5) {
+    // Counted, not just logged: "the guest never touched the register window" and
+    // "the guest polls one register forever" are different problems, and both are
+    // invisible in a log that only shows the first few accesses.
+    mmioReads_.fetch_add(1, std::memory_order_relaxed);
+    if (mmioReadsLogged_.fetch_add(1, std::memory_order_relaxed) < 5) {
         Log("MMIO read register %04X", address & 0xFFFF);
     }
     return processor_.registers().Read((address & 0xFFFF) / 4);
 }
 
 void NativeGraphicsSystem::WriteRegister(uint32_t address, uint32_t value) {
-    static std::atomic<uint32_t> writes{0};
-    if (writes.fetch_add(1, std::memory_order_relaxed) < 5) {
+    mmioWrites_.fetch_add(1, std::memory_order_relaxed);
+    if (mmioWritesLogged_.fetch_add(1, std::memory_order_relaxed) < 5) {
         Log("MMIO write register %04X = %08X", address & 0xFFFF, value);
     }
     const uint32_t index = (address & 0xFFFF) / 4;
     if (index == kCpRbWptr) {
+        // The kick is what makes the device do anything at all, so it is counted
+        // separately from the other register traffic, and the first one is
+        // logged: a guest that hangs after kicking looks exactly like a guest
+        // that never started, unless the log says which of the two happened.
+        if (ringKicks_.fetch_add(1, std::memory_order_relaxed) == 0) {
+            Log("first ring kick: write pointer %u (ring base %08X, ring mask %08X dwords)",
+                value, processor_.ringBase(), processor_.ringMaskDwords());
+        }
         // The guest kicks the command processor through MMIO; a packet writing
         // this register must never be treated as a kick, which is why the
         // register file keeps the origin.

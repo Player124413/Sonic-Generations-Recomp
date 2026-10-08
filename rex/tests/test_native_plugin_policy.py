@@ -287,6 +287,21 @@ class NativePluginBuildTests(unittest.TestCase):
         self.assertIn('processor_.SetRenderState(&renderState_);', system)
         self.assertIn('presenter_->SetRenderState(&renderState_);', system)
         self.assertIn('renderState_.FormatStats()', system)
+        # A window that shows our placeholder colour must be explainable from the
+        # device's own log, without a debugger and without guessing: the traffic
+        # counters are printed even when every one of them is zero, and the
+        # placeholder is named together with what a zero kick means.
+        self.assertIn('guest GPU traffic: mmio_reads=%llu mmio_writes=%llu kicks=%llu drains=%llu',
+                      system)
+        self.assertIn('no frame reached the window: the guest did not swap.', system)
+        self.assertIn('0 kicks means the guest never submitted; kicks without swaps means the ring was',
+                      system)
+        self.assertIn('first ring kick: write pointer %u (ring base %08X, ring mask %08X dwords)',
+                      system)
+        self.assertIn('if (ringKicks_.fetch_add(1, std::memory_order_relaxed) == 0)', system)
+        # The read pointer writeback is the value the guest spins on.
+        processor = (ROOT / 'rex/src/gpu_native/command_processor.cpp').read_text(encoding='utf-8')
+        self.assertIn('read pointer writeback: %08X -> %08X (ring %08X, mask %08X)', processor)
         presenter = (ROOT / 'rex/plugins/native/src/native_vulkan_presenter.cpp').read_text(encoding='utf-8')
         # The renderer is the consumer: it takes the frame's draws and counts them.
         self.assertIn('renderState_->TakeDraws()', presenter)

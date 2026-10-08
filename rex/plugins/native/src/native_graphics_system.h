@@ -149,6 +149,14 @@ private:
     uint32_t interruptData_ = 0;
     bool guestGpuReady_ = false;
 
+    // Guest register traffic, counted rather than sampled: the first few
+    // accesses are not enough to tell "never touched" from "polled forever".
+    std::atomic<uint64_t> mmioReads_{0};
+    std::atomic<uint64_t> mmioWrites_{0};
+    std::atomic<uint64_t> ringKicks_{0};
+    std::atomic<uint32_t> mmioReadsLogged_{0};
+    std::atomic<uint32_t> mmioWritesLogged_{0};
+
     // Both workers are SDK-owned threads (they must be visible to the guest);
     // the loop conditions are ours.
     std::atomic<bool> vblankRunning_{false};
