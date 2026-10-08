@@ -126,8 +126,16 @@ namespace GuestGpu
     class CommandStream
     {
     public:
-        static constexpr size_t MaxDraws = 128;
-        static constexpr size_t MaxPayloadBytes = 8 * 1024 * 1024;
+        // The budget one captured frame is allowed to use. It has to fit a real
+        // frame -- a level frame is hundreds to thousands of commands -- because
+        // going over it refuses the frame as a whole. The peak actually observed
+        // is reported (renderer_max_commands), so this number is a measurement
+        // away from being right rather than a guess.
+        static constexpr size_t MaxDraws = 4096;
+        // Per frame: indices, vertices and texture bytes, re-read for every draw
+        // in this design. Reaching it refuses the frame, so it is sized for a
+        // frame with a full level's worth of textures.
+        static constexpr size_t MaxPayloadBytes = 64 * 1024 * 1024;
         explicit CommandStream(size_t capacity = MaxDraws) noexcept;
         // Clears pending draws/errors; sequence remains process-lifetime monotonic.
         // Lifecycle changes must be made while guest producer threads are stopped.

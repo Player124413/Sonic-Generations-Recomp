@@ -277,5 +277,18 @@ class TranslateModePolicyTests(unittest.TestCase):
         self.assertIn('diagnostics\\rex-runtime.log', script)
 
 
+    def test_a_real_frame_fits_the_capture_budget(self):
+        # Going over the per-frame command budget refuses the whole frame (the
+        # overflow sets errors.Any()), so a 128-command budget turned every busy
+        # frame into a black one. Pin the budget above a level frame and keep the
+        # peak visible in the report.
+        header = (ROOT / 'SonicGenerationsRecomp/gpu/native_commands.h').read_text(encoding='utf-8')
+        self.assertIn('MaxDraws = 4096', header)
+        self.assertNotIn('MaxDraws = 128;', header)
+        report = (ROOT / 'SonicGenerationsRecomp/gpu/native_render_report.h').read_text(encoding='utf-8')
+        self.assertIn('renderer_max_commands=', (ROOT / 'rex/src/native_gpu.cpp').read_text(encoding='utf-8'))
+        self.assertIn('maxCommands', report)
+
+
 if __name__ == '__main__':
     unittest.main()

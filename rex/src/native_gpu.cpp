@@ -401,6 +401,7 @@ void WriteStatus() {
            << "\nrenderer_resolves_scaled=" << renderer.resolvesScaled
            << "\nrenderer_color_initialized=" << renderer.colorInitialized
            << "\nrenderer_depth_initialized=" << renderer.depthInitialized
+           << "\nrenderer_max_commands=" << renderer.maxCommands
            << "\nrenderer_refusals=" << renderer.Refusals()
            << "\nrenderer_color_multisampled=" << renderer.colorMultisampled
            << "\nrenderer_color_format_approximated=" << renderer.colorFormatApproximated

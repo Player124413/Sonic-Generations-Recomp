@@ -80,9 +80,21 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
     };
     try
     {
-        if(!host.IsReady() || batch.errors.Any() || !batch.hasBackbuffer ||
-           batch.backbuffer.status!=ConversionResult::Success)
-            return reject("Native frame requires valid capture and an explicit guest backbuffer");
+        if(!host.IsReady())
+            return reject("the native renderer has no device");
+        // A capture that lost commands cannot be drawn as one frame, and saying
+        // only that it is invalid hides the one number that fixes it: how much of
+        // the frame was lost, and how big the frame was.
+        if(batch.errors.Any())
+            return reject("the frame's capture is incomplete (commands=" + std::to_string(
+                batch.draws.size()+batch.clears.size()+batch.resolves.size()) +
+                " overflow=" + std::to_string(batch.errors.overflow) +
+                " invalidMemory=" + std::to_string(batch.errors.invalidMemory) +
+                " allocationFailure=" + std::to_string(batch.errors.allocationFailure) +
+                " resourceLimit=" + std::to_string(batch.errors.resourceLimit) +
+                " payload=" + std::to_string(batch.payloadBytes) + ")");
+        if(!batch.hasBackbuffer || batch.backbuffer.status!=ConversionResult::Success)
+            return reject("the frame has no readable guest backbuffer");
         struct Event { uint64_t sequence; unsigned kind; size_t index; };
         std::vector<Event> events;
         for(size_t i=0;i<batch.draws.size();++i) events.push_back({batch.draws[i].sequence,0,i});
@@ -371,6 +383,8 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
         }
         frameImage=nativeTextures.at(batch.backbuffer.physical).image;
         frameWidth=batch.backbuffer.width; frameHeight=batch.backbuffer.height;
+        nativeReport.maxCommands=std::max(nativeReport.maxCommands,
+            uint64_t(batch.draws.size()+batch.clears.size()+batch.resolves.size()));
         ++nativeReport.framesRendered;
         frameReady=true;
         return SubmissionResult::Submitted;

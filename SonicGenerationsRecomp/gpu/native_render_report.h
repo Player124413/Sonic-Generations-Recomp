@@ -45,6 +45,10 @@ namespace GuestGpu
         // from the console, and zero means none of it may.
         uint64_t colorInitialized = 0;
         uint64_t depthInitialized = 0;
+        // The largest number of commands one captured frame contained. The capture
+        // has a hard per-frame budget and refuses the frame when it is exceeded,
+        // so this is the number that says whether that budget fits real frames.
+        uint64_t maxCommands = 0;
 
         void NoteRefusal(const char* reason)
         {
@@ -93,6 +97,7 @@ namespace GuestGpu
             text += "renderer_resolves_scaled=" + std::to_string(resolvesScaled) + "\n";
             text += "renderer_color_initialized=" + std::to_string(colorInitialized) + "\n";
             text += "renderer_depth_initialized=" + std::to_string(depthInitialized) + "\n";
+            text += "renderer_max_commands=" + std::to_string(maxCommands) + "\n";
             text += "renderer_refusals=" + std::to_string(Refusals()) + "\n";
             for (const auto& [reason, count] : RefusalsByCount())
                 text += "renderer_refusal=" + std::to_string(count) + " " + reason + "\n";
