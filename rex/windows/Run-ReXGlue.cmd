@@ -15,6 +15,8 @@ set "result=%errorlevel%"
 echo Exit code: %result%
 if "%SONIC_REX_GRAPHICS_MODE%"=="translate" (
   echo Visible rendering: OUR translation renderer; the SDK keeps the guest device.
+  echo Reports: assets\rex-cache\native\latest-session.txt -^> status.txt and coverage.txt.
+  echo coverage.txt counts every refusal by reason; top_refusal in status.txt names the next fix.
 ) else if "%SONIC_REX_GRAPHICS_MODE%"=="native" (
   echo Visible rendering: OUR device ^(no rasteriser yet^): the window is not a frame.
 ) else (

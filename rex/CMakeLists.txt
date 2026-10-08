@@ -151,6 +151,16 @@ add_executable(rex_native_bridge_tests tests/native_bridge_tests.cpp)
 target_link_libraries(rex_native_bridge_tests PRIVATE sonic_rex_native_core)
 add_test(NAME rex_native_bridge COMMAND rex_native_bridge_tests)
 
+# What the translator promises about guest render targets -- a multisampled target
+# is drawn once per pixel, a format without an image here is drawn as RGBA8, an
+# undefined sample count is refused -- and what it then reports about each. Both
+# are decisions rather than plumbing, so both are checked without a GPU, in every
+# contract build.
+add_executable(rex_native_surface_policy_tests tests/native_surface_policy_tests.cpp)
+target_compile_features(rex_native_surface_policy_tests PRIVATE cxx_std_20)
+target_link_libraries(rex_native_surface_policy_tests PRIVATE SonicGpuResources)
+add_test(NAME rex_native_surface_policy COMMAND rex_native_surface_policy_tests)
+
 option(SONIC_REX_BUILD_GAME "Build the actual game host from external ReXGlue-generated PPC" OFF)
 set(SONIC_REX_GENERATED_DIR "" CACHE PATH "Directory containing sonicgenerations_init.h and sources.cmake")
 if(SONIC_REX_BUILD_GAME)

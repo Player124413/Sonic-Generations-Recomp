@@ -330,6 +330,21 @@ void ShutdownNativeGpu() noexcept {
             (unsigned long long)notifiedFrames, (unsigned long long)notifyRefused,
             (unsigned long long)framesWithoutSurface, (unsigned long long)framesWithoutPresenter);
     }
+    // What the renderer did, at the end of the run, where a reader will look: the
+    // refusal that fired most often is the next thing to fix.
+    if (backendOwner) {
+        const auto renderer = backendOwner->GetNativeRenderReport();
+        if (renderer.framesRendered || renderer.Refusals()) {
+            std::fprintf(stderr, "[native] renderer: frames=%llu refusals=%llu exact_color=%llu "
+                "multisampled_color=%llu exact_depth=%llu\n",
+                (unsigned long long)renderer.framesRendered, (unsigned long long)renderer.Refusals(),
+                (unsigned long long)renderer.colorExact, (unsigned long long)renderer.colorMultisampled,
+                (unsigned long long)renderer.depthExact);
+            if (const auto top = renderer.RefusalsByCount(); !top.empty())
+                std::fprintf(stderr, "[native] renderer: most refused: %llu x %s\n",
+                    (unsigned long long)top.front().second, top.front().first.c_str());
+        }
+    }
     // Final cost report: the number that decides whether this diagnostic can be
     // left on while playing.
     if (batches) {
@@ -352,12 +367,18 @@ namespace {
 void WriteCoverage() {
     std::ofstream file(directory / "coverage.txt", std::ios::trunc);
     file << coverage.Format();
+    // The renderer's own numbers: which guest targets it drew exactly, which it
+    // approximated (multisampling, formats it has no image for), and why it
+    // refused the rest. Without this the report says how many draws failed and
+    // never what to fix, which is how a blocked renderer stays blocked.
+    if (backendOwner) file << backendOwner->GetNativeRenderReport().Format();
     if (!file) std::fputs("[native] Cannot write coverage.txt\n", stderr);
 }
 
 void WriteStatus() {
     WriteCoverage();
     const auto stats = backendOwner->GetHostStats();
+    const auto renderer = backendOwner->GetNativeRenderReport();
     std::ofstream report(directory / "status.txt", std::ios::trunc);
     report << "mode=" << (renderMode == NativeRenderMode::Present ? "present"
                           : renderMode == NativeRenderMode::Offscreen ? "offscreen" : "off") << "\n"
@@ -371,10 +392,20 @@ void WriteStatus() {
            << "\naverage_replay_ms=" << (submitted ? double(replayMicros) / 1000.0 / double(submitted) : 0.0)
            << "\nmax_replay_ms=" << double(replayMaxMicros) / 1000.0
            << "\nvulkan_draws=" << stats.indexedDraws
+           << "\nrenderer_frames=" << renderer.framesRendered
+           << "\nrenderer_refusals=" << renderer.Refusals()
+           << "\nrenderer_color_multisampled=" << renderer.colorMultisampled
+           << "\nrenderer_color_format_approximated=" << renderer.colorFormatApproximated
+           << "\nrenderer_depth_multisampled=" << renderer.depthMultisampled
+           << "\nrenderer_depth_format_approximated=" << renderer.depthFormatApproximated
            << (renderMode == NativeRenderMode::Present
                    ? "\nnote=the frame on screen is the one this renderer drew"
                    : "\nnote=every replayed frame is a second full render on top of Xenos")
            << "\nlast_error=" << backendOwner->GetLastError() << '\n';
+    // Answer "why is nothing on screen" before it is asked: the most frequent
+    // refusal is the next thing to fix.
+    if (const auto top = renderer.RefusalsByCount(); !top.empty())
+        report << "top_refusal=" << top.front().second << ' ' << top.front().first << '\n';
 }
 }  // namespace
 }

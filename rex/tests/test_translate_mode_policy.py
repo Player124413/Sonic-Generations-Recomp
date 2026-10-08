@@ -18,6 +18,10 @@ APP = ROOT / 'rex/src/sonic_app.h'
 POLICY = ROOT / 'rex/src/host_policy.h'
 NATIVE = ROOT / 'rex/src/native_gpu.cpp'
 BACKEND = ROOT / 'SonicGenerationsRecomp/gpu/vulkan_backend.cpp'
+NATIVE_FRAME = ROOT / 'SonicGenerationsRecomp/gpu/native_frame.cpp'
+SURFACE_POLICY = ROOT / 'SonicGenerationsRecomp/gpu/native_surface_policy.h'
+REPORT = ROOT / 'SonicGenerationsRecomp/gpu/native_render_report.h'
+CMAKE = ROOT / 'rex/CMakeLists.txt'
 LAUNCHER = ROOT / 'rex/windows/Run-ReXGlue-Translate.cmd'
 
 
@@ -136,6 +140,50 @@ class TranslateModePolicyTests(unittest.TestCase):
         shutdown = backend.index('void VulkanBackend::Shutdown()')
         self.assertIn('frameReady = false; frameWidth = frameHeight = 0;',
                       backend[shutdown:shutdown + 600])
+
+    def test_a_guest_multisampled_target_is_drawn_and_counted_not_refused(self):
+        # MSAA used to be a refusal, which means whole frames were thrown away for
+        # a property that costs image quality and not correctness: this renderer
+        # draws single-sample, so a multisampled target drawn once per pixel *is*
+        # what the guest's own resolve produces. The decision lives in the policy
+        # header and the backend must ask it rather than test the fields itself.
+        policy = SURFACE_POLICY.read_text(encoding='utf-8')
+        self.assertIn('if (samples > kMaxGuestSamples) return result;', policy)
+        self.assertIn('kMaxGuestSamples = 2', policy)
+        self.assertIn('SurfaceFidelity::Degraded', policy)
+        frame = NATIVE_FRAME.read_text(encoding='utf-8')
+        self.assertIn('AcceptColorSurface(s.samples,s.format)', frame)
+        self.assertIn('AcceptDepthSurface(d.samples,d.format)', frame)
+        self.assertIn('++nativeReport.colorMultisampled;', frame)
+        self.assertIn('++nativeReport.depthFormatApproximated;', frame)
+        # The descriptor mask has to admit the format field, or a non-default
+        # format stays refused one check earlier than the policy that accepts it.
+        self.assertIn('s.descriptor[1]&~kSurfaceInfoKnownBits', frame)
+        self.assertIn('kSurfaceInfoKnownBits = 0xFFFu | (0xFu << 16)', policy)
+
+    def test_every_refusal_says_what_it_refused_and_is_counted(self):
+        # A refusal with no reason is a bug in the reporting: the run then says
+        # how many draws failed and never what to fix.
+        frame = NATIVE_FRAME.read_text(encoding='utf-8')
+        self.assertIn('void NoteRefusal(const char* reason)', (ROOT / 'SonicGenerationsRecomp/gpu/vulkan_backend.h').read_text(encoding='utf-8'))
+        self.assertIn('NoteRefusal(reason);', frame)
+        self.assertIn('const char* reason = "the native frame was refused without a reason";', frame)
+        self.assertIn('if(!validate(draw.targets,draw.state,draw.device)) return reject(reason);', frame)
+        # The two refusals that will dominate a first run name the feature, so the
+        # next step is readable off the report instead of guessed.
+        self.assertIn('a draw into multiple colour targets (MRT) is not rendered yet', frame)
+        self.assertIn('the colour surface has descriptor bits this renderer does not know', frame)
+
+    def test_the_reports_carry_the_renderer_numbers(self):
+        native = NATIVE.read_text(encoding='utf-8')
+        self.assertIn('backendOwner->GetNativeRenderReport().Format()', native)
+        self.assertIn('top_refusal=', native)
+        self.assertIn('renderer_refusals=', native)
+        # And the decision the C++ test exercises is built in every contract build,
+        # including the GPU-free ones.
+        cmake = CMAKE.read_text(encoding='utf-8')
+        self.assertIn('add_test(NAME rex_native_surface_policy COMMAND rex_native_surface_policy_tests)', cmake)
+        self.assertIn('tests/native_surface_policy_tests.cpp', cmake)
 
     def test_the_launcher_sets_the_mode_and_prints_its_reports(self):
         script = LAUNCHER.read_text(encoding='utf-8')

@@ -1,4 +1,5 @@
 #pragma once
+#include <gpu/native_render_report.h>
 #include <gpu/render_backend.h>
 #include <gpu/shader_cache.h>
 #include <gpu/vulkan_host.h>
@@ -9,7 +10,9 @@
 struct SDL_Window;
 
 // Vulkan resource/WSI backend with opt-in bounded direct-frame native draws.
-// Bounded native color/resolve replay; depth/MSAA and complete coverage remain open.
+// Color, depth and resolve replay; a guest multisampled target is drawn once per
+// pixel and a guest format without an image here is drawn as RGBA8 -- both are
+// counted in GetNativeRenderReport() instead of being silently assumed away.
 class VulkanBackend final : public IRenderBackend
 {
 public:
@@ -42,6 +45,11 @@ public:
     void Resize(uint32_t width, uint32_t height) override;
     HostGpu::VulkanStats GetHostStats() const;
     std::string GetLastError() const;
+    // What the native replay did: guest targets drawn exactly or approximately,
+    // frames that reached a presentable image, and every refusal by reason. This
+    // is the only honest answer to "how close is this to replacing the reference
+    // renderer", so it is a first-class result, not a log line.
+    GuestGpu::NativeRenderReport GetNativeRenderReport() const;
     // Read only a successfully submitted diagnostic frame; never stale contents.
     bool ReadDiagnosticFrame(std::vector<uint8_t>& rgba);
 private:
@@ -51,6 +59,9 @@ private:
     void ReleaseDrawResources();
     GuestGpu::SubmissionResult SubmitNativeFrame(const GuestGpu::NativeBatch& batch);
     void ResetNativeTargets();
+    // Refusals are counted where they are decided, so the count and the log line
+    // cannot disagree about what happened.
+    void NoteRefusal(const char* reason) { nativeReport.NoteRefusal(reason); }
     struct SurfaceImage { GuestGpu::NativeSurface descriptor; HostGpu::Resource color=0, depth=0; bool initialized=false; };
     struct DepthImage { GuestGpu::NativeSurface descriptor; HostGpu::Resource image=0; bool depthInitialized=false, stencilInitialized=false; };
     std::map<uint32_t,DepthImage> nativeDepths;
@@ -79,5 +90,6 @@ private:
     HostGpu::Resource color = 0, depth = 0;
     std::vector<HostGpu::Resource> drawResources;
     std::vector<HostGpu::VulkanFixedState> states;
+    GuestGpu::NativeRenderReport nativeReport;
     std::string error;
 };

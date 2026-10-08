@@ -69,6 +69,9 @@ bool VulkanBackend::InitWithShaderCache(const VideoMode& mode,GuestGpu::ShaderCa
     frameWidth = frameHeight = 0;
     shaderCache = {};
     resolvedShaders.clear();
+    // A new device is a new report: counts from a previous session would make the
+    // ratio meaningless, which is the one number the report exists for.
+    nativeReport = {};
     frameReady = false;
     error.clear(); width = mode.width; height = mode.height; resize = true;
     std::vector<const char*> extensions;
@@ -594,6 +597,13 @@ void VulkanBackend::Resize(uint32_t w, uint32_t h)
 }
 HostGpu::VulkanStats VulkanBackend::GetHostStats() const { std::lock_guard lock(mutex); return host.Stats(); }
 std::string VulkanBackend::GetLastError() const { std::lock_guard lock(mutex); return error; }
+GuestGpu::NativeRenderReport VulkanBackend::GetNativeRenderReport() const
+{
+    // A copy: the renderer keeps counting while the report is being written, and
+    // the host never holds this lock.
+    std::lock_guard lock(mutex);
+    return nativeReport;
+}
 
 bool VulkanBackend::ReadDiagnosticFrame(std::vector<uint8_t>& rgba)
 {
