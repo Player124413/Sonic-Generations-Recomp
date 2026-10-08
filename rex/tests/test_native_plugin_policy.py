@@ -302,6 +302,37 @@ class NativePluginBuildTests(unittest.TestCase):
         # The read pointer writeback is the value the guest spins on.
         processor = (ROOT / 'rex/src/gpu_native/command_processor.cpp').read_text(encoding='utf-8')
         self.assertIn('read pointer writeback: %08X -> %08X (ring %08X, mask %08X)', processor)
+        # EVENT_WRITE* is a writeback, not a drawing command: skipping it leaves
+        # the D3D driver spinning on a memory word the GPU never writes.
+        self.assertIn('owner_.ApplyEventWrite(header.opcode, payload);', processor)
+        self.assertIn('void CommandProcessor::ApplyEventWrite(uint32_t opcode,', processor)
+        self.assertIn('(initiator >> 31) ? stats_.gpuCounter : payload[2]', processor)
+        self.assertIn('case Opcode::kEventWriteExt:', processor)
+        self.assertIn('case Opcode::kEventWriteZpd:', processor)
+        self.assertNotIn('case pm4::Action::EventWrite:\n    case pm4::Action::ConditionalExec:',
+                         processor)
+        # The counter the fences read advances with vblanks and with swaps.
+        self.assertIn('++stats_.gpuCounter;', processor)          # one tick per vblank
+        self.assertIn('++owner_.stats_.gpuCounter;', processor)   # and one per swap
+        # A guest that stops submitting must be visible in the log: the heartbeat
+        # prints the counters whether or not they moved, and the first drain is
+        # preserved with its raw words.
+        self.assertIn('gpu heartbeat: mmio_reads=%llu mmio_writes=%llu kicks=%llu drains=%llu',
+                      system)
+        self.assertIn('first ring drain at %08X: %zu dword(s), first packets: %s', system)
+        self.assertIn('LogHeartbeat();', system)
+        self.assertIn('std::chrono::seconds(5)', system)
+        # And the recorder no longer waits for a clean shutdown to write what it
+        # has: the runs that hang are the ones that get killed.
+        dump = (ROOT / 'rex/src/gpu_native/stream_dump.cpp').read_text(encoding='utf-8')
+        self.assertIn('stream-raw.bin', dump)
+        self.assertIn('void StreamDump::AppendStreamBytes(const DrainInfo& drain);'.replace(';', ' {'), dump)
+        self.assertIn('report_.flush();', dump)
+        dump_header = (ROOT / 'rex/src/gpu_native/stream_dump.h').read_text(encoding='utf-8')
+        self.assertIn('maxStreamBytes = 64u << 20', dump_header)
+        # The decode of a live drain also lands in the report, so a hung run's
+        # packets are readable without the frame file it never wrote.
+        self.assertIn('packet " << line', dump)
         presenter = (ROOT / 'rex/plugins/native/src/native_vulkan_presenter.cpp').read_text(encoding='utf-8')
         # The renderer is the consumer: it takes the frame's draws and counts them.
         self.assertIn('renderState_->TakeDraws()', presenter)

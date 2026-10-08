@@ -8,6 +8,8 @@
 namespace sonic::rex_host::gpu {
 
 inline constexpr uint32_t kCpRbWptr = 0x01C5;  // CP_RB_WPTR, kicks the command processor
+inline constexpr uint32_t kVgtEventInitiator = 0x21F9;  // last event the GPU's writeback ran for
+inline constexpr uint32_t kRbSampleCountAddr = 0x2325;  // where occlusion counts are written
 inline constexpr uint32_t kRbEdramTiming = 0x0F00;
 inline constexpr uint32_t kRbBcControl = 0x0F01;
 inline constexpr uint32_t kAvivoD1GrphPrimarySurfaceAddress = 0x1844;

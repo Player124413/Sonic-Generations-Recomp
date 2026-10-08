@@ -19,6 +19,14 @@
 //                   indirect buffers. Without them a replay can read headers but
 //                   not the data the headers point at, which is exactly the part
 //                   the renderer needs. See memory_sidecar.h for the format.
+//   stream-raw.bin  every drained dword, appended and flushed as it arrives.
+//                   A frame file only appears when a swap closes the frame, and
+//                   the runs that need looking at are the ones that hang before
+//                   the first swap -- so the bytes are also kept here, one line
+//                   per drain is written to packets.txt, and both are flushed
+//                   immediately instead of at shutdown. A run that is killed
+//                   while the guest is stuck still leaves its data behind, which
+//                   is the difference between a diagnosis and a screenshot.
 //
 // This is a development instrument: it is off unless asked for, it caps every
 // buffer it grows, and it copies bytes -- it never writes guest memory.
@@ -50,6 +58,9 @@ public:
         /// Total size of the guest-memory regions kept in memory.bin. Bounded so
         /// a broken stream cannot make the recorder eat all memory.
         size_t maxCaptureBytes = 32u << 20;
+        /// Total size of stream-raw.bin. Bounded for the same reason as the raw
+        /// frames, and big enough for the first seconds of a boot.
+        size_t maxStreamBytes = 64u << 20;
     };
 
     struct Stats {
@@ -65,6 +76,7 @@ public:
         uint64_t capturedBytes = 0;
         uint64_t capturesSkipped = 0;   // over the capture cap
         uint64_t capturesFailed = 0;    // unreadable guest memory
+        uint64_t streamBytes = 0;       // drained bytes kept in stream-raw.bin
     };
 
     StreamDump() = default;
@@ -103,6 +115,7 @@ private:
     void WriteReportLine(const std::string& line);
     /// Appends the drained dwords, in guest byte order, to the current frame.
     void AppendDrainedBytes(const DrainInfo& drain);
+    void AppendStreamBytes(const DrainInfo& drain);
     std::string DescribePacket(const pm4::Header& header, pm4::Action action,
                                std::span<const uint32_t> payload) const;
     std::string FrameHistogram() const;
@@ -117,6 +130,10 @@ private:
     std::ofstream report_;
     /// Raw bytes of the frame currently being assembled, in guest byte order.
     std::vector<uint8_t> frameBytes_;
+    /// Every drained byte, written and flushed as it arrives, so a run that is
+    /// killed before its first swap still leaves the stream behind.
+    std::ofstream stream_;
+    bool streamCapped_ = false;
     std::string frameLog_;
     size_t packetsLogged_ = 0;
     bool frameTruncated_ = false;

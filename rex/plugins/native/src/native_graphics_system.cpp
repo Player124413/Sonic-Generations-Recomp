@@ -234,8 +234,15 @@ void NativeGraphicsSystem::StartGpuWorker(rex::system::KernelState* kernel_state
     workerRunning_.store(true, std::memory_order_release);
     workerThread_ = std::make_unique<rex::system::XHostThread>(
         kernel_state, 128 * 1024, 0, [this]() {
+            auto nextHeartbeat = std::chrono::steady_clock::now() + std::chrono::seconds(5);
             while (workerRunning_.load(std::memory_order_acquire)) {
                 processor_.Tick();
+                LogFirstDrain();
+                const auto now = std::chrono::steady_clock::now();
+                if (now >= nextHeartbeat) {
+                    nextHeartbeat = now + std::chrono::seconds(5);
+                    LogHeartbeat();
+                }
                 std::unique_lock<std::mutex> lock(workerMutex_);
                 workerSignal_.wait_for(lock, std::chrono::milliseconds(1), [this]() {
                     return !workerRunning_.load(std::memory_order_acquire) || workerWakeup_;
@@ -259,6 +266,42 @@ void NativeGraphicsSystem::StopGpuWorker() {
         workerThread_->Wait(0, 0, 0, nullptr);
         workerThread_.reset();
     }
+}
+
+void NativeGraphicsSystem::LogFirstDrain() {
+    if (firstDrainLogged_ || processor_.FirstDrainWords().empty()) return;
+    firstDrainLogged_ = true;
+    // The first submission is the most informative thing this device can report
+    // while it renders nothing: it says what the guest asked for, in order, and
+    // whether a guest that then stopped was waiting for its own fence value or
+    // for something the device never answered.
+    const std::span<const uint32_t> words = processor_.FirstDrainWords();
+    std::string hex;
+    char word[16];
+    for (size_t index = 0; index < words.size(); ++index) {
+        std::snprintf(word, sizeof(word), "%08X ", words[index]);
+        hex += word;
+    }
+    Log("first ring drain at %08X: %zu dword(s), first packets: %s", processor_.FirstDrainAddress(),
+        words.size(), hex.c_str());
+}
+
+void NativeGraphicsSystem::LogHeartbeat() {
+    // Printed whether or not anything changed: a counter that stopped moving is
+    // the answer to "the game is stuck", and a log that only reports progress
+    // cannot show the absence of it.
+    const auto& stats = processor_.GetStats();
+    Log("gpu heartbeat: mmio_reads=%llu mmio_writes=%llu kicks=%llu drains=%llu packets=%llu "
+        "swaps=%llu presents_seen=%llu event_writes=%llu guest_frames=%llu",
+        static_cast<unsigned long long>(mmioReads_.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(mmioWrites_.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(ringKicks_.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(stats.drains),
+        static_cast<unsigned long long>(stats.packets),
+        static_cast<unsigned long long>(stats.swaps),
+        static_cast<unsigned long long>(swapSink_.FrameCount()),
+        static_cast<unsigned long long>(stats.eventWrites),
+        static_cast<unsigned long long>(presenter_ ? presenter_->GetStats().refreshes : 0));
 }
 
 void NativeGraphicsSystem::WakeGpuWorker() {

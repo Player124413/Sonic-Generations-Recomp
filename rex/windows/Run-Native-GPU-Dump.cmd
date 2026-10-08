@@ -58,6 +58,8 @@ echo Stream recorder: ON
 echo   environment: SONIC_REX_GPU_DUMP=1
 echo Output: assets\rex-cache\gpu-dump\ (packets.txt, frame-NNN.txt/.bin)
 echo Play until a few frames have been shown, then quit and send those files.
+echo If the game stops instead of playing, close it and send the same files:
+echo the recorder writes as it goes, so a run that hung still has its stream.
 call "%~dp0Run-ReXGlue.cmd"
 set "result=%errorlevel%"
 echo.
@@ -71,7 +73,10 @@ rem redirects the executable's output there), and our device writes
 rem diagnostics\native-gpu.log. Printing both tails here means one screenshot or
 rem one file answers most questions about a run that died early.
 echo.
-echo Last lines of diagnostics\native-gpu.log (our device's own log):
+echo Last lines of assets\rex-cache\gpu-dump\packets.txt (what our decoder saw):
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path 'assets\rex-cache\gpu-dump\packets.txt') { Get-Content 'assets\rex-cache\gpu-dump\packets.txt' -Tail 25 } else { 'no packets.txt: nothing reached our decoder' }"
+echo.
+echo Last lines of diagnostics\native-gpu.log (our device's own log, heartbeats included):
 powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path 'diagnostics\native-gpu.log') { Get-Content 'diagnostics\native-gpu.log' -Tail 30 } else { 'the plugin never wrote it: it did not start' }"
 echo.
 echo Last lines of diagnostics\rex-runtime.log (the host's log):

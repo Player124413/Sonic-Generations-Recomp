@@ -132,6 +132,12 @@ private:
     void StartGpuWorker(rex::system::KernelState* kernel_state);
     void StopGpuWorker();
     void WakeGpuWorker();
+    /// The first drain's raw words: what the guest asked for before anything it
+    /// can see happened.
+    void LogFirstDrain();
+    /// Counters every few seconds, including when nothing moved -- the absence of
+    /// progress is the report.
+    void LogHeartbeat();
 
     SdkGuestMemory memory_;
     GuestFrontbufferSource frameSource_;
@@ -155,6 +161,7 @@ private:
     std::atomic<uint64_t> mmioWrites_{0};
     std::atomic<uint64_t> ringKicks_{0};
     std::atomic<uint32_t> mmioReadsLogged_{0};
+    bool firstDrainLogged_ = false;
     std::atomic<uint32_t> mmioWritesLogged_{0};
 
     // Both workers are SDK-owned threads (they must be visible to the guest);

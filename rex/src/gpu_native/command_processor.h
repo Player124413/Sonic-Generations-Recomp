@@ -86,8 +86,29 @@ public:
         uint64_t unreadableMemoryWrites = 0;
         uint64_t unmappedIndirect = 0;
         uint64_t invalidRingInitializations = 0;
+        /// EVENT_WRITE* packets: the GPU's writebacks the guest polls. Skipping
+        /// them is not "an unsupported opcode", it is the guest spinning on a
+        /// value that never arrives.
+        uint64_t eventWrites = 0;
+        uint64_t eventWriteValues = 0;
+        uint64_t eventWriteFailures = 0;
+        /// The counter D3D's fences read (EVENT_WRITE_SHD with the top bit set).
+        uint32_t gpuCounter = 0;
         std::string Format() const;
     };
+
+    /// The counter the guest sees through EVENT_WRITE_SHD when the initiator's
+    /// top bit is set: one tick per vblank plus one per swap, exactly like the
+    /// hardware counter D3D waits on.
+    uint32_t GpuCounter() const noexcept { return stats_.gpuCounter; }
+
+    /// Raw guest words of the first drain, so a run can be understood without
+    /// waiting for a dump file: what the guest submitted first is the most
+    /// informative thing a device that renders nothing can report.
+    std::span<const uint32_t> FirstDrainWords() const noexcept {
+        return std::span<const uint32_t>(firstDrainWords_.data(), firstDrainCount_);
+    }
+    uint32_t FirstDrainAddress() const noexcept { return firstDrainAddress_; }
 
     void SetMemory(GuestMemory* memory) noexcept { memory_ = memory; }
     /// The renderer's state feed. Without it the device still runs the guest, but
@@ -184,6 +205,13 @@ private:
     void ApplyMemoryWrite(std::span<const uint32_t> payload) noexcept;
 
     GuestMemory* memory_ = nullptr;
+    /// EVENT_WRITE*: the GPU writing a value the guest's CPU polls. Handled here
+    /// rather than in the renderer because it is a device-level writeback, not a
+    /// drawing command.
+    void ApplyEventWrite(uint32_t opcode, std::span<const uint32_t> payload);
+    /// One guest word, with the byte order the packet's address asks for.
+    void ApplyEventWriteValue(uint32_t address, uint32_t value);
+
     SwapPresenter* presenter_ = nullptr;
     InterruptDispatcher* interrupts_ = nullptr;
     PacketObserver* observer_ = nullptr;
@@ -204,6 +232,9 @@ private:
 
     uint64_t vblankCount_ = 0;
     Stats stats_{};
+    std::array<uint32_t, 16> firstDrainWords_{};
+    uint32_t firstDrainCount_ = 0;
+    uint32_t firstDrainAddress_ = 0;
 };
 
 } // namespace sonic::rex_host::gpu

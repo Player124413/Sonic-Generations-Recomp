@@ -160,6 +160,43 @@ void TestWritesTheRawFrameAndItsDecode() {
     Check(dump.GetStats().framesWritten == 1, "one frame recorded");
 }
 
+/// A run that hangs before its first swap is the run that needs looking at, and
+/// it is killed rather than shut down. Everything the recorder has must already
+/// be on disk at that point, or the only evidence is a screenshot.
+void TestSurvivesBeingKilledBeforeTheFirstSwap() {
+    const auto directory = std::filesystem::temp_directory_path() / "sonic-stream-dump-killed";
+    std::filesystem::remove_all(directory);
+    FakeMemory memory;
+    memory.Resize(1 << 16);
+    const std::vector<uint8_t> frame = MakeFrameBytes();
+    const uint32_t ringBase = 0x1000;
+    memory.WriteBytes(ringBase, frame);
+
+    StreamDump dump;
+    dump.SetMemory(&memory);
+    std::string error;
+    Check(dump.Open(directory, error), "the dump opens its directory");
+
+    // One drain, no swap: this is the "the guest submitted a few words and
+    // stopped" case. Nothing is closed, nothing is flushed by hand.
+    DrainInfo drain;
+    drain.ringBase = ringBase;
+    drain.ringMaskDwords = 0x3FF;
+    drain.readPointer = 0;
+    drain.availableWords = uint32_t(frame.size() / 4);
+    drain.completedWords = drain.availableWords;
+    drain.hadSwap = false;
+    WalkInto(dump, frame);
+    dump.OnDrain(drain);
+
+    const std::string run = ReadText(directory / "packets.txt");
+    Check(run.find("drain 1") != std::string::npos,
+          "the drained stream is reported before the run ends");
+    const std::vector<uint8_t> stream = ReadBytes(directory / "stream-raw.bin");
+    Check(stream == frame, "stream-raw.bin holds the drained bytes while the run is alive");
+    Check(dump.GetStats().streamBytes == frame.size(), "the stream byte count is reported");
+}
+
 void TestFollowsTheRingWrap() {
     const auto directory = std::filesystem::temp_directory_path() / "sonic-stream-dump-wrap";
     std::filesystem::remove_all(directory);
@@ -258,6 +295,7 @@ void TestUnreadableMemoryIsReportedNotSilent() {
 int main() {
     TestWritesTheRawFrameAndItsDecode();
     TestFollowsTheRingWrap();
+    TestSurvivesBeingKilledBeforeTheFirstSwap();
     TestStaysWithinItsCaps();
     TestUnreadableMemoryIsReportedNotSilent();
     if (failures) {

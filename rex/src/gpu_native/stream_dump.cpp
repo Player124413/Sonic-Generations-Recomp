@@ -75,6 +75,8 @@ bool StreamDump::Open(const std::filesystem::path& directory, std::string& error
     WriteReportLine("# frame-NNN.txt decodes that stream: opcode histogram and first packets.");
     WriteReportLine("# memory.bin holds the guest bytes the stream referenced (shaders,");
     WriteReportLine("# constants, indirect buffers), so rex_gpu_replay can execute it.");
+    WriteReportLine("# stream-raw.bin is every drained dword, flushed as it arrives: a run that");
+    WriteReportLine("# hangs before its first swap still leaves the stream here.");
     StartFrame();
     return true;
 }
@@ -94,7 +96,8 @@ void StreamDump::Close() {
             << " memory_regions=" << stats_.capturedRegions
             << " memory_bytes=" << stats_.capturedBytes
             << " captures_skipped=" << stats_.capturesSkipped
-            << " captures_failed=" << stats_.capturesFailed << "\n";
+            << " captures_failed=" << stats_.capturesFailed
+            << " stream_bytes=" << stats_.streamBytes << "\n";
     report_ << "# opcode histogram (whole run, opcode 7F = Type-0/1 writes):\n";
     for (uint32_t opcode = 0; opcode < 128; ++opcode) {
         if (!opcodeCounts_[opcode]) continue;
@@ -103,6 +106,10 @@ void StreamDump::Close() {
     }
     report_.flush();
     report_.close();
+    if (stream_.is_open()) {
+        stream_.flush();
+        stream_.close();
+    }
 }
 
 void StreamDump::StartFrame() {
@@ -163,6 +170,56 @@ void StreamDump::FinishFrame(bool hadSwap) {
 
 void StreamDump::WriteReportLine(const std::string& line) {
     if (report_.is_open()) report_ << line << "\n";
+}
+
+void StreamDump::AppendStreamBytes(const DrainInfo& drain) {
+    if (!memory_ || !drain.completedWords) return;
+    if (stats_.streamBytes >= config_.maxStreamBytes) {
+        if (!streamCapped_) {
+            streamCapped_ = true;
+            WriteReportLine("# stream-raw.bin reached its size cap; later drains are not appended");
+        }
+        return;
+    }
+    if (!stream_.is_open()) {
+        stream_.open(directory_ / "stream-raw.bin", std::ios::binary | std::ios::trunc);
+        if (!stream_) {
+            WriteReportLine("# stream-raw.bin could not be opened");
+            return;
+        }
+    }
+    // The same bytes the walker consumed, in ring order, exactly as
+    // frame-NNN.bin would contain them -- but written as they arrive.
+    const uint32_t ringDwords = drain.ringMaskDwords + 1;
+    uint32_t remaining = drain.completedWords;
+    uint32_t index = drain.readPointer & drain.ringMaskDwords;
+    uint8_t scratch[1024];
+    std::vector<uint8_t> buffer;
+    while (remaining) {
+        const uint32_t contiguous = std::min(remaining, ringDwords - index);
+        const size_t bytes = size_t(contiguous) * 4u;
+        const size_t room = config_.maxStreamBytes - size_t(stats_.streamBytes);
+        const size_t take = std::min(bytes, room);
+        std::span<uint8_t> target;
+        buffer.clear();
+        if (take <= sizeof(scratch)) {
+            target = std::span<uint8_t>(scratch, take);
+        } else {
+            buffer.resize(take);
+            target = std::span<uint8_t>(buffer.data(), take);
+        }
+        if (!memory_->Read(drain.ringBase + index * 4u, target)) {
+            WriteReportLine("# stream-raw.bin: guest memory at " +
+                            std::to_string(drain.ringBase + index * 4u) +
+                            " could not be read");
+            break;
+        }
+        stream_.write(reinterpret_cast<const char*>(target.data()), std::streamsize(take));
+        stream_.flush();
+        stats_.streamBytes += take;
+        remaining -= contiguous;
+        index = (index + contiguous) & drain.ringMaskDwords;
+    }
 }
 
 void StreamDump::AppendDrainedBytes(const DrainInfo& drain) {
@@ -248,7 +305,15 @@ void StreamDump::OnPacket(const pm4::Header& header, pm4::Action action,
     if (header.type == pm4::PacketType::kType3) ++frameCounts_[header.opcode & 0x7F];
     if (packetsLogged_ >= config_.loggedPacketsPerFrame) return;
     ++packetsLogged_;
-    frameLog_ += DescribePacket(header, action, payload);
+    const std::string line = DescribePacket(header, action, payload);
+    frameLog_ += line;
+    // The decode also goes into the run report as it happens: the frames that
+    // need looking at are the ones that never complete, and their frame file is
+    // never written. Flushed with the drain, so a killed run still has it.
+    if (report_.is_open()) {
+        report_ << "  packet " << line;
+        if ((packetsLogged_ & 63u) == 0u) report_.flush();
+    }
 }
 
 std::string StreamDump::DescribePacket(const pm4::Header& header, pm4::Action action,
@@ -285,6 +350,16 @@ std::string StreamDump::DescribePacket(const pm4::Header& header, pm4::Action ac
 void StreamDump::OnDrain(const DrainInfo& drain) {
     ++stats_.drains;
     AppendDrainedBytes(drain);
+    // Flushed here, not at shutdown: the interesting runs are the ones that end
+    // with the guest stuck and the process killed, and a recorder that only
+    // writes on a clean exit records exactly the runs that need it least.
+    AppendStreamBytes(drain);
+    WriteReportLine("# drain " + std::to_string(stats_.drains) + ": available=" +
+                    std::to_string(drain.availableWords) + " completed=" +
+                    std::to_string(drain.completedWords) +
+                    (drain.truncated ? " (packet not complete yet)" : "") +
+                    (drain.hadSwap ? " swap" : ""));
+    report_.flush();
     if (frameTruncated_ && !frameTruncatedLogged_) {
         frameTruncatedLogged_ = true;
         WriteReportLine("# frame " + std::to_string(frameIndex_) +

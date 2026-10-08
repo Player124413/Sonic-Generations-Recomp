@@ -52,6 +52,10 @@ bool CommandProcessor::HasWork() const noexcept {
 
 void CommandProcessor::MarkVblank() noexcept {
     ++vblankCount_;
+    // The same counter the swap advances: D3D's fences count vblanks as well as
+    // frames, and a counter that only moved on swaps would stall a wait issued
+    // while the game is idle.
+    ++stats_.gpuCounter;
     if (interrupts_) interrupts_->DispatchInterrupt(0, 2);
 }
 
@@ -243,6 +247,7 @@ void CommandProcessor::Sink::OnPacket(const pm4::Header& header, pm4::Action act
         owner_.drainHadSwap_ = true;
         if (payload.size() < 4) break;
         ++owner_.stats_.swaps;
+        ++owner_.stats_.gpuCounter;  // the guest's frame counter advances with the frame
         if (owner_.presenter_)
             owner_.presenter_->OnSwap(payload[1], payload[2], payload[3]);
         if (owner_.renderState_) owner_.renderState_->EndFrame();
@@ -283,6 +288,8 @@ void CommandProcessor::Sink::OnPacket(const pm4::Header& header, pm4::Action act
         owner_.ApplyMemoryWrite(payload);
         break;
     case pm4::Action::EventWrite:
+        owner_.ApplyEventWrite(header.opcode, payload);
+        break;
     case pm4::Action::ConditionalExec:
         ++owner_.stats_.unsupportedPackets;
         break;
@@ -294,6 +301,102 @@ void CommandProcessor::Sink::OnPacket(const pm4::Header& header, pm4::Action act
     (void)header;
 }
 
+namespace {
+
+/// The byte order a writeback wants, from the low two bits of its address. The
+/// Xenos register map defines these four modes; anything else keeps the value
+/// as it is instead of guessing.
+uint32_t GpuSwap(uint32_t value, uint32_t endianness) noexcept {
+    switch (endianness & 3u) {
+    case 1:  // 8-in-16: bytes inside each halfword
+        return ((value & 0x00FF00FFu) << 8) | ((value & 0xFF00FF00u) >> 8);
+    case 2:  // 8-in-32: the whole word
+        return (value << 24) | ((value & 0x0000FF00u) << 8) | ((value & 0x00FF0000u) >> 8) |
+               (value >> 24);
+    case 3:  // 16-in-32: the halves
+        return (value >> 16) | (value << 16);
+    default:  // 0: as stored
+        return value;
+    }
+}
+
+/// Occlusion queries do not need real sample counts to be answered: D3D only
+/// asks whether a query finished, and reports "everything passed" as fake
+/// counts. The extents follow the same idea (US20060055701).
+constexpr uint32_t kFakeOcclusionExtent = 8192;
+
+}  // namespace
+
+void CommandProcessor::ApplyEventWriteValue(uint32_t address, uint32_t value) {
+    const uint32_t endianness = address & 3u;
+    const uint32_t target = address & ~3u;
+    const uint32_t stored = GpuSwap(value, endianness);
+    if (!memory_ || !memory_->Write32(target, stored)) {
+        ++stats_.eventWriteFailures;
+        return;
+    }
+    ++stats_.eventWriteValues;
+}
+
+void CommandProcessor::ApplyEventWrite(uint32_t opcode, std::span<const uint32_t> payload) {
+    using Opcode = pm4::Opcode;
+    if (payload.empty()) {
+        ++stats_.unsupportedPackets;
+        return;
+    }
+    ++stats_.eventWrites;
+    const uint32_t initiator = payload[0];
+    // The hardware latches the initiator so the driver can read back what the
+    // GPU last did; the same six bits go into the register file.
+    registers_.Write(kVgtEventInitiator, initiator & 0x3Fu, RegisterFile::WriteOrigin::kPacket);
+    switch (static_cast<Opcode>(opcode)) {
+    case Opcode::kEventWriteShd: {
+        if (payload.size() < 3) {
+            ++stats_.unsupportedPackets;
+            return;
+        }
+        // Bit 31 asks for the GPU's own counter instead of the payload value:
+        // this is how D3D waits for "the GPU has reached frame N".
+        const uint32_t value = (initiator >> 31) ? stats_.gpuCounter : payload[2];
+        ApplyEventWriteValue(payload[1], value);
+        return;
+    }
+    case Opcode::kEventWriteExt: {
+        if (payload.size() < 2) {
+            ++stats_.unsupportedPackets;
+            return;
+        }
+        // Six 16-bit extent values (occlusion query screen extents). They are
+        // read back as 16-bit guest values, so each pair is written as one
+        // 32-bit word in guest byte order; the address's endianness bits are
+        // part of the packet but the value the driver reads is the extent.
+        const uint16_t extents[6] = {0, uint16_t(kFakeOcclusionExtent >> 3), 0,
+                                    uint16_t(kFakeOcclusionExtent >> 3), 0, 1};
+        const uint32_t base = payload[1] & ~3u;
+        for (uint32_t pair = 0; pair < 3; ++pair) {
+            const uint32_t word =
+                (uint32_t(extents[pair * 2]) << 16) | uint32_t(extents[pair * 2 + 1]);
+            ApplyEventWriteValue(base + pair * 4u, word);
+        }
+        return;
+    }
+    case Opcode::kEventWriteZpd:
+        // Occlusion query begin/end. The sample-count writeback needs the
+        // renderer's occlusion tracking, so nothing is written here; the packet
+        // is answered (initiator latched) and counted, never silently dropped.
+        return;
+    case Opcode::kEventWrite:
+        // Initiator only: the hardware has nothing else to write.
+        return;
+    case Opcode::kEventWriteCfl:
+        // Cache flush; nothing to write back.
+        return;
+    default:
+        ++stats_.unsupportedPackets;
+        return;
+    }
+}
+
 void CommandProcessor::Tick() noexcept {
     if (!initialized_ || !memory_) return;
     const uint32_t write = writePointer_.load(std::memory_order_acquire);
@@ -302,6 +405,24 @@ void CommandProcessor::Tick() noexcept {
     ++stats_.drains;
     indirectUsed_ = 0;
     drainHadSwap_ = false;
+    if (stats_.drains == 1) {
+        // Preserved for the log: the first thing the guest submits is what a
+        // device that renders nothing can report most usefully.
+        firstDrainAddress_ = ringBase_;
+        firstDrainCount_ = std::min<uint32_t>(available, uint32_t(firstDrainWords_.size()));
+        const uint32_t ringDwords = ringMaskDwords_ + 1;
+        for (uint32_t index = 0; index < firstDrainCount_; ++index) {
+            const uint32_t at = ringBase_ + ((readPointer_ + index) & ringMaskDwords_) * 4u;
+            (void)ringDwords;
+            uint8_t bytes[4] = {0, 0, 0, 0};
+            if (!memory_ || !memory_->Read(at, std::span<uint8_t>(bytes, 4))) {
+                firstDrainCount_ = index;
+                break;
+            }
+            firstDrainWords_[index] = (uint32_t(bytes[0]) << 24) | (uint32_t(bytes[1]) << 16) |
+                                      (uint32_t(bytes[2]) << 8) | uint32_t(bytes[3]);
+        }
+    }
     ring_.Begin(readPointer_, available);
     Sink sink(*this);
     pm4::Limits limits;
@@ -365,6 +486,12 @@ std::string CommandProcessor::Stats::Format() const {
                   (unsigned long long)truncatedDrains, (unsigned long long)unsupportedPackets,
                   (unsigned long long)unmappedIndirect,
                   (unsigned long long)invalidRingInitializations);
+    text += line;
+    std::snprintf(line, sizeof(line),
+                  "event_writes=%llu event_write_values=%llu event_write_failures=%llu "
+                  "gpu_counter=%u\n",
+                  (unsigned long long)eventWrites, (unsigned long long)eventWriteValues,
+                  (unsigned long long)eventWriteFailures, gpuCounter);
     text += line;
     return text;
 }

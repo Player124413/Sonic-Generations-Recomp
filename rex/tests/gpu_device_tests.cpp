@@ -368,6 +368,107 @@ void TestEmptyKickDoesNothing() {
     CHECK(device.processor.GetStats().kicks == 1);
 }
 
+/// EVENT_WRITE_SHD is how the GPU writes a value the guest's CPU polls. Skipping
+/// it does not lose a drawing command, it loses the answer the guest is waiting
+/// for -- the D3D driver spins on this memory word.
+void TestEventWriteShdWritesTheFenceValue() {
+    Device device;
+    device.Initialize(0x3000, 8);
+    device.Submit({pm4::MakePacketType3(0x58, 3), 0x00000007, 0x00010000, 0xDEADBEEF});
+    device.Kick();
+    device.processor.Tick();
+    // Guest byte order: the driver reads this with a big-endian load.
+    CHECK(device.memory.Load(0x00010000) == 0xDEADBEEF);
+    // The initiator is latched where the driver reads it back.
+    CHECK(device.processor.registers().Raw(kVgtEventInitiator) == 0x00000007);
+    CHECK(device.processor.GetStats().eventWrites == 1);
+    CHECK(device.processor.GetStats().eventWriteValues == 1);
+    // Nothing about this packet is unsupported: before this was implemented the
+    // device reported it and the guest waited forever.
+    CHECK(device.processor.GetStats().unsupportedPackets == 0);
+}
+
+/// Bit 31 of the initiator asks for the GPU's own counter instead of the payload
+/// value: that is D3D's "wait until the GPU reaches frame N" fence.
+void TestEventWriteShdWithTheCounterBitWritesTheGpuCounter() {
+    Device device;
+    device.Initialize(0x3000, 8);
+    device.processor.MarkVblank();
+    device.processor.MarkVblank();
+    const uint32_t counter = device.processor.GpuCounter();
+    CHECK(counter == 2);
+    device.Submit({pm4::MakePacketType3(0x58, 3), 0x80000007, 0x00020000, 0x11111111});
+    device.Kick();
+    device.processor.Tick();
+    CHECK(device.memory.Load(0x00020000) == counter);
+    // A swap advances the same counter, so a fence issued against the frame
+    // counter moves when the game presents.
+    device.Submit(SwapTokenStream(0x00A00000, 640, 480));
+    device.Kick();
+    device.processor.Tick();
+    CHECK(device.processor.GpuCounter() == 3);
+}
+
+/// The address's low two bits select the byte order the driver wants; getting
+/// this wrong produces a plausible-looking wrong value instead of a missing one.
+void TestEventWriteHonoursTheEndiannessBits() {
+    Device device;
+    device.Initialize(0x3000, 8);
+    device.Submit({pm4::MakePacketType3(0x58, 3), 0x00000007, 0x00030003, 0x11223344});
+    device.Kick();
+    device.processor.Tick();
+    // 16-in-32: the halves are swapped before the store.
+    CHECK(device.memory.Load(0x00030000) == 0x33441122);
+    CHECK(device.processor.GetStats().eventWriteFailures == 0);
+}
+
+/// EVENT_WRITE with a single word latches the initiator and writes nothing;
+/// EVENT_WRITE_EXT writes the six occlusion extents the driver reads back.
+void TestEventWriteVariantsAreAnsweredNotDropped() {
+    Device device;
+    device.Initialize(0x3000, 8);
+    device.Submit({pm4::MakePacketType3(0x46, 1), 0x0000000C});
+    device.Kick();
+    device.processor.Tick();
+    CHECK(device.processor.registers().Raw(kVgtEventInitiator) == 0x0C);
+    CHECK(device.processor.GetStats().eventWrites == 1);
+
+    device.Submit({pm4::MakePacketType3(0x5a, 2), 0x0000000C, 0x00040000});
+    device.Kick();
+    device.processor.Tick();
+    const uint32_t extents[3] = {device.memory.Load(0x00040000), device.memory.Load(0x00040004),
+                                 device.memory.Load(0x00040008)};
+    CHECK(((extents[0] >> 16) & 0xFFFF) == 0);
+    CHECK((extents[0] & 0xFFFF) == (8192 >> 3));
+    CHECK(((extents[2] >> 16) & 0xFFFF) == 0);
+    CHECK((extents[2] & 0xFFFF) == 1);
+
+    device.Submit({pm4::MakePacketType3(0x5b, 1), 0x0000000D});
+    device.Kick();
+    device.processor.Tick();
+    CHECK(device.processor.GetStats().unsupportedPackets == 0);
+    CHECK(device.processor.GetStats().eventWrites == 3);
+}
+
+/// The first drain is preserved because it is the only thing a device that
+/// renders nothing can usefully report about the guest's first submission.
+void TestFirstDrainIsPreservedForTheLog() {
+    Device device;
+    device.Initialize(0x3000, 8);
+    device.Submit({pm4::MakePacketType3(0x58, 3), 0x00000007, 0x00010000, 0xDEADBEEF});
+    device.Kick();
+    device.processor.Tick();
+    const std::span<const uint32_t> words = device.processor.FirstDrainWords();
+    CHECK(words.size() == 4);
+    CHECK(words.size() >= 2 && words[1] == 0x00000007);
+    CHECK(device.processor.FirstDrainAddress() == 0x3000);
+    // The second drain does not overwrite it.
+    device.Submit(SwapTokenStream(0x00A00000, 640, 480));
+    device.Kick();
+    device.processor.Tick();
+    CHECK(device.processor.FirstDrainWords().size() == 4);
+}
+
 void TestStatsFormatIsComplete() {
     Device device;
     device.Initialize(0xE000, 8);
@@ -379,6 +480,8 @@ void TestStatsFormatIsComplete() {
     CHECK(text.find("swaps=1") != std::string::npos);
     CHECK(text.find("truncated_drains=0") != std::string::npos);
     CHECK(text.find("unmapped_indirect=0") != std::string::npos);
+    CHECK(text.find("event_writes=0") != std::string::npos);
+    CHECK(text.find("gpu_counter=") != std::string::npos);
 }
 } // namespace
 
@@ -399,6 +502,11 @@ int main() {
     TestUnreadableIndirectBufferIsCounted();
     TestInvalidRingIsRefused();
     TestEmptyKickDoesNothing();
+    TestEventWriteShdWritesTheFenceValue();
+    TestEventWriteShdWithTheCounterBitWritesTheGpuCounter();
+    TestEventWriteHonoursTheEndiannessBits();
+    TestEventWriteVariantsAreAnsweredNotDropped();
+    TestFirstDrainIsPreservedForTheLog();
     TestStatsFormatIsComplete();
     if (failures) {
         std::printf("gpu device: %d failure(s)\n", failures);
