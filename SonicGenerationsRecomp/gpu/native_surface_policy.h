@@ -26,6 +26,15 @@ namespace GuestGpu
     // something unsupported, and guessing would be worse than refusing.
     inline constexpr uint32_t kSurfaceInfoKnownBits = 0xFFFu | (0xFu << 16);
 
+    // A guest resolve goes from an EDRAM render target to a texture, and the two
+    // need not agree on size: a title that renders below the display resolution
+    // resolves up into it, which is a scale and not an error.
+    constexpr bool ResolveScales(uint32_t sourceWidth, uint32_t sourceHeight,
+                                 uint32_t destinationWidth, uint32_t destinationHeight) noexcept
+    {
+        return sourceWidth != destinationWidth || sourceHeight != destinationHeight;
+    }
+
     enum class SurfaceFidelity : uint32_t { Exact, Degraded, Unsupported };
 
     inline const char* SurfaceFidelityName(SurfaceFidelity fidelity)

@@ -4,6 +4,7 @@
 #include <gpu/shader_cache.h>
 #include <gpu/vulkan_host.h>
 #include <gpu/vulkan_state.h>
+#include <cstdio>
 #include <mutex>
 #include <map>
 
@@ -61,7 +62,17 @@ private:
     void ResetNativeTargets();
     // Refusals are counted where they are decided, so the count and the log line
     // cannot disagree about what happened.
-    void NoteRefusal(const char* reason) { nativeReport.NoteRefusal(reason); }
+    void NoteRefusal(const char* reason)
+    {
+        const size_t known = nativeReport.refusals.size();
+        nativeReport.NoteRefusal(reason);
+        // Every distinct reason is said once, where a black window can be read:
+        // a refused frame that is only counted is a mystery until the report is
+        // opened, and the report is written by a run that already ended.
+        if (nativeReport.refusals.size() != known)
+            std::fprintf(stderr, "Vulkan backend: frame refused: %s\n",
+                         nativeReport.refusals.back().first.c_str());
+    }
     struct SurfaceImage { GuestGpu::NativeSurface descriptor; HostGpu::Resource color=0, depth=0; bool initialized=false; };
     struct DepthImage { GuestGpu::NativeSurface descriptor; HostGpu::Resource image=0; bool depthInitialized=false, stencilInitialized=false; };
     std::map<uint32_t,DepthImage> nativeDepths;
@@ -79,6 +90,9 @@ private:
     void* win32Hinstance = nullptr;
     bool validation;
     bool drawEnabled = false, frameReady = false;
+    // The first present and the first refused present are the two facts a black
+    // window needs explained; after that they are counters (host stats, report).
+    bool presentLogged = false, presentFailureLogged = false;
     HostGpu::VulkanHost host;
     GuestGpu::ShaderCache shaderCache;
     std::map<uint64_t, GuestGpu::ShaderModule> resolvedShaders;

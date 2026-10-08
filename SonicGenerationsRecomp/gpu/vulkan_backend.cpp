@@ -73,6 +73,7 @@ bool VulkanBackend::InitWithShaderCache(const VideoMode& mode,GuestGpu::ShaderCa
     // ratio meaningless, which is the one number the report exists for.
     nativeReport = {};
     frameReady = false;
+    presentLogged = presentFailureLogged = false;
     error.clear(); width = mode.width; height = mode.height; resize = true;
     std::vector<const char*> extensions;
     HostGpu::VulkanConfig config;
@@ -586,7 +587,24 @@ void VulkanBackend::Present()
     if (HasPresentationSurface())
     {
         const bool ok=frameReady ? host.PresentImage(frameImage ? frameImage : color) : host.PresentClear({0,0,0,1});
-        if(!ok && !host.SwapchainNeedsResize()) Fail(host.Error());
+        // A refused present that leaves no trace is the worst kind of black
+        // screen: PresentFrame also refuses while the swapchain is out of date,
+        // which is not an error, so the reason has to be named here -- once, and
+        // then kept in the host stats and last_error the report reads.
+        if(!ok && !presentFailureLogged)
+        {
+            presentFailureLogged = true;
+            std::fprintf(stderr, "Vulkan backend: presentation refused: %s\n",
+                !host.Error().empty() ? host.Error().c_str()
+                : host.SwapchainNeedsResize() ? "the swapchain needs a resize"
+                                              : "no presentation surface");
+        }
+        if(ok && !presentLogged)
+        {
+            presentLogged = true;
+            std::fprintf(stderr, "%s: first frame presented to the window (%ux%u)\n",
+                GetName(), width, height);
+        }
     }
     frameReady=false;
 }

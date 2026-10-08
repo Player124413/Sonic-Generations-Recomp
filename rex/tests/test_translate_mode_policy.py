@@ -174,6 +174,46 @@ class TranslateModePolicyTests(unittest.TestCase):
         self.assertIn('a draw into multiple colour targets (MRT) is not rendered yet', frame)
         self.assertIn('the colour surface has descriptor bits this renderer does not know', frame)
 
+    def test_a_frame_that_never_reaches_the_window_says_why(self):
+        # The counters can be healthy while the screen is black: a frame is drawn,
+        # a paint is requested, and the present is refused (out-of-date swapchain,
+        # no surface) with no error set at all. PresentFrame refuses silently by
+        # design, so the present path and the refusal path name the reason once.
+        backend = BACKEND.read_text(encoding='utf-8')
+        self.assertIn('presentation refused', backend)
+        self.assertIn('the swapchain needs a resize', backend)
+        self.assertIn('no presentation surface', backend)
+        self.assertIn('first frame presented to the window', backend)
+        header = (ROOT / 'SonicGenerationsRecomp/gpu/vulkan_backend.h').read_text(encoding='utf-8')
+        # Every distinct refusal reason is printed where the run can be read,
+        # not only counted for a report written after the session ends.
+        self.assertIn('Vulkan backend: frame refused: %s', header)
+
+    def test_the_report_counts_what_reached_the_window(self):
+        # Draws and rendered frames can look healthy while nothing is presented, so
+        # the present count is what makes that state visible without a log.
+        native = NATIVE.read_text(encoding='utf-8')
+        self.assertIn('"\\nrenderer_presents=" << stats.presents', native)
+
+    def test_a_scaled_resolve_is_a_blit_and_not_a_refusal(self):
+        # Rendering below the display resolution and resolving up into it is normal
+        # on this hardware. Requiring equal sizes refused the frame the game
+        # actually presents -- the one that would have been visible.
+        policy = SURFACE_POLICY.read_text(encoding='utf-8')
+        self.assertIn('constexpr bool ResolveScales(', policy)
+        frame = NATIVE_FRAME.read_text(encoding='utf-8')
+        self.assertNotIn('t.width!=s.width || t.height!=s.height', frame)
+        self.assertIn('host.BlitImage(surface.color,dest->second.image)', frame)
+        self.assertIn('host.CopyImage(surface.color,dest->second.image)', frame)
+        self.assertIn('++nativeReport.resolvesScaled;', frame)
+        host = (ROOT / 'SonicGenerationsRecomp/gpu/vulkan_host.cpp').read_text(encoding='utf-8')
+        self.assertIn('vkCmdBlitImage(p.command,src->image,src->layout,dst->image,dst->layout,1,&region,VK_FILTER_LINEAR)',
+                      host)
+        # A destination that changes size at the same address is still refused:
+        # writing a texture the guest expects at its previous size is worse than a
+        # frame without it.
+        self.assertIn('the resolve destination changed size for the same address', frame)
+
     def test_the_reports_carry_the_renderer_numbers(self):
         native = NATIVE.read_text(encoding='utf-8')
         self.assertIn('backendOwner->GetNativeRenderReport().Format()', native)

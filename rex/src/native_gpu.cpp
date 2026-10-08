@@ -392,7 +392,13 @@ void WriteStatus() {
            << "\naverage_replay_ms=" << (submitted ? double(replayMicros) / 1000.0 / double(submitted) : 0.0)
            << "\nmax_replay_ms=" << double(replayMaxMicros) / 1000.0
            << "\nvulkan_draws=" << stats.indexedDraws
+           // The one number that answers "did the player see anything": host
+           // presents. Draws and rendered frames can be healthy while the window
+           // stays black, so it belongs in the report, not only in a log line.
+           << "\nrenderer_presents=" << stats.presents
            << "\nrenderer_frames=" << renderer.framesRendered
+           << "\nrenderer_resolves=" << renderer.resolves
+           << "\nrenderer_resolves_scaled=" << renderer.resolvesScaled
            << "\nrenderer_refusals=" << renderer.Refusals()
            << "\nrenderer_color_multisampled=" << renderer.colorMultisampled
            << "\nrenderer_color_format_approximated=" << renderer.colorFormatApproximated

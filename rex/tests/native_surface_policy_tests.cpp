@@ -81,6 +81,17 @@ void PolicyAcceptsWhatItCanDraw()
     Expect((0x1u << 20) & ~kSurfaceInfoKnownBits, "bits above the format field are not known");
 }
 
+void ResolveScalesOnlyWhenTheSizesDiffer()
+{
+    // The common 360 arrangement: render below the display resolution, resolve up
+    // into it. Equal sizes stay a copy, because a blit filters and a copy does not.
+    Expect(!ResolveScales(1280, 720, 1280, 720), "an equal-size resolve is a copy");
+    Expect(ResolveScales(1120, 585, 1280, 720), "a smaller source resolved into the display is a scale");
+    Expect(ResolveScales(1280, 720, 1120, 585), "a downscaled resolve is a scale");
+    Expect(ResolveScales(1280, 585, 1280, 720), "a height-only difference is still a scale");
+    Expect(ResolveScales(0, 720, 1280, 720), "an empty source cannot be a copy");
+}
+
 void ReportNamesEveryRefusalOnce()
 {
     NativeRenderReport report;
@@ -88,6 +99,8 @@ void ReportNamesEveryRefusalOnce()
     report.colorMultisampled = 2;
     report.depthFormatApproximated = 1;
     report.framesRendered = 4;
+    report.resolves = 5;
+    report.resolvesScaled = 2;
     report.NoteRefusal("secondary colour targets (MRT) are not rendered yet");
     report.NoteRefusal("secondary colour targets (MRT) are not rendered yet");
     report.NoteRefusal("colour surface has unknown descriptor bits");
@@ -100,6 +113,8 @@ void ReportNamesEveryRefusalOnce()
     ExpectText(text, "renderer_color_exact=3", "exact colour targets are reported");
     ExpectText(text, "renderer_color_multisampled=2", "multisampled targets are reported");
     ExpectText(text, "renderer_depth_format_approximated=1", "depth approximations are reported");
+    ExpectText(text, "renderer_resolves=5", "resolves are reported");
+    ExpectText(text, "renderer_resolves_scaled=2", "scaled resolves are reported separately");
     ExpectText(text, "renderer_refusals=3", "the refusal total is reported");
     // The most frequent reason comes first: it is the next thing to fix.
     const auto mrt = text.find("renderer_refusal=2 secondary colour targets");
@@ -127,6 +142,7 @@ void ReportNamesEveryRefusalOnce()
 int main()
 {
     PolicyAcceptsWhatItCanDraw();
+    ResolveScalesOnlyWhenTheSizesDiffer();
     ReportNamesEveryRefusalOnce();
     if (failures)
     {

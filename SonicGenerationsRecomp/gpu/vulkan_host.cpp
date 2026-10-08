@@ -1086,3 +1086,23 @@ bool HostGpu::VulkanHost::CopyImage(Resource source,Resource destination)
     vkCmdCopyImage(p.command,src->image,src->layout,dst->image,dst->layout,1,&region);
     return p.Submit();
 }
+
+bool HostGpu::VulkanHost::BlitImage(Resource source,Resource destination)
+{
+    auto& p=*impl; auto* src=p.FindImage(source); auto* dst=p.FindImage(destination);
+    if(!src || !dst) return false;
+    // Same image, different format kind or an undefined source cannot be sampled.
+    // A zero-size target is a decode mistake, not a scale.
+    if(source==destination || src->kind!=dst->kind || src->layout==VK_IMAGE_LAYOUT_UNDEFINED ||
+       !src->width || !src->height || !dst->width || !dst->height) return p.Fail("Invalid scaled image resolve");
+    if(!p.Begin()) return false;
+    p.Transition(*src,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,VK_ACCESS_TRANSFER_READ_BIT);
+    p.Transition(*dst,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_ACCESS_TRANSFER_WRITE_BIT);
+    VkImageBlit region{};
+    region.srcSubresource={src->Aspect(),0,0,1};
+    region.srcOffsets[1]={int32_t(src->width),int32_t(src->height),1};
+    region.dstSubresource={dst->Aspect(),0,0,1};
+    region.dstOffsets[1]={int32_t(dst->width),int32_t(dst->height),1};
+    vkCmdBlitImage(p.command,src->image,src->layout,dst->image,dst->layout,1,&region,VK_FILTER_LINEAR);
+    return p.Submit();
+}

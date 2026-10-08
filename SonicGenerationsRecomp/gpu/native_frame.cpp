@@ -218,8 +218,10 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 if(!validate(resolve.targets,resolve.state,resolve.device)) return reject(reason);
                 if(resolve.flags || resolve.rectangle || resolve.point || resolve.mip || resolve.slice)
                     return reject("Native resolve uses a mode this renderer does not implement");
-                if(t.status!=ConversionResult::Success || t.width!=s.width || t.height!=s.height || !t.physical)
-                    return reject("Native resolve destination is not a readable same-size surface");
+                if(t.status!=ConversionResult::Success || !t.physical || !t.width || !t.height ||
+                   t.width>8192 || t.height>8192)
+                    return reject("Native resolve destination is not a readable texture view");
+                if(ResolveScales(s.width,s.height,t.width,t.height)) ++nativeReport.resolvesScaled;
                 if(!surfacePlan.at(s.baseTile).initialized) return reject("Resolve reads undefined EDRAM contents");
                 TextureLayout layout; size_t bytes=0;
                 if(TextureLayout::Decode(t.fetch,layout)!=ConversionResult::Success ||
@@ -296,8 +298,17 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
                 const auto& t=batch.resolves[e.index].destination;
                 auto [dest,newTexture]=nativeTextures.try_emplace(t.physical,ResolvedImage{t});
                 if(newTexture) dest->second.image=host.CreateImage(t.width,t.height,HostGpu::ImageKind::Rgba8);
-                if(!dest->second.image || !host.CopyImage(surface.color,dest->second.image))
+                // A destination that changes size at the same address would need a
+                // new image with the old contents in it: refuse instead of writing
+                // a texture the guest still expects at its previous size.
+                if(!dest->second.image || dest->second.descriptor.width!=t.width ||
+                   dest->second.descriptor.height!=t.height)
+                    return reject("the resolve destination changed size for the same address");
+                const bool scaled=ResolveScales(s.width,s.height,t.width,t.height);
+                if(!(scaled ? host.BlitImage(surface.color,dest->second.image)
+                            : host.CopyImage(surface.color,dest->second.image)))
                     return reject("Native surface-to-texture resolve failed");
+                ++nativeReport.resolves;
             }
             else
             {

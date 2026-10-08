@@ -34,6 +34,10 @@ namespace GuestGpu
         std::vector<std::pair<std::string, uint64_t>> refusals;
         // Frames that reached a presentable image.
         uint64_t framesRendered = 0;
+        // Guest resolves into a texture, and how many of them scaled -- the
+        // fraction of the picture that goes through a blit rather than a copy.
+        uint64_t resolves = 0;
+        uint64_t resolvesScaled = 0;
 
         void NoteRefusal(const char* reason)
         {
@@ -78,6 +82,8 @@ namespace GuestGpu
             text += "renderer_depth_multisampled=" + std::to_string(depthMultisampled) + "\n";
             text += "renderer_depth_format_approximated=" +
                     std::to_string(depthFormatApproximated) + "\n";
+            text += "renderer_resolves=" + std::to_string(resolves) + "\n";
+            text += "renderer_resolves_scaled=" + std::to_string(resolvesScaled) + "\n";
             text += "renderer_refusals=" + std::to_string(Refusals()) + "\n";
             for (const auto& [reason, count] : RefusalsByCount())
                 text += "renderer_refusal=" + std::to_string(count) + " " + reason + "\n";
