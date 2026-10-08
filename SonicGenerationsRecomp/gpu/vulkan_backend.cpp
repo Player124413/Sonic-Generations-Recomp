@@ -1,3 +1,15 @@
+// The Win32 surface is created from native handles, and vulkan_win32.h expects
+// windows.h to be included before it, so the platform types come first: the
+// header below pulls in vulkan.h.
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #include <gpu/vulkan_backend.h>
 #ifndef SONIC_VULKAN_HEADLESS
 #include <SDL.h>
@@ -13,6 +25,32 @@
 
 VulkanBackend::VulkanBackend(SDL_Window* w, bool enableValidation, bool enableGameDraws) : window(w), validation(enableValidation), drawEnabled(enableGameDraws) {}
 VulkanBackend::~VulkanBackend() { Shutdown(); }
+void VulkanBackend::SetWin32Surface(void* hwnd, void* hinstance)
+{
+    std::lock_guard lock(mutex);
+    // The surface is part of the instance the device is created from, so a
+    // surface that arrives after Init() cannot be attached: say so instead of
+    // rendering into nothing. The window's presenter connects before the guest
+    // starts, which is what makes the normal order surface-then-Init.
+    if (host.IsReady())
+    {
+        Fail("The Win32 surface must be set before the device is created");
+        return;
+    }
+    win32Hwnd = hwnd; win32Hinstance = hinstance;
+}
+bool VulkanBackend::HasPresentableFrame() const { std::lock_guard lock(mutex); return frameReady; }
+void VulkanBackend::GetPresentableFrameSize(uint32_t& outWidth, uint32_t& outHeight) const
+{
+    std::lock_guard lock(mutex);
+    outWidth = frameWidth; outHeight = frameHeight;
+}
+bool VulkanBackend::SwapchainNeedsResize() const { std::lock_guard lock(mutex); return host.IsReady() && host.SwapchainNeedsResize(); }
+void VulkanBackend::GetTargetSize(uint32_t& outWidth, uint32_t& outHeight) const
+{
+    std::lock_guard lock(mutex);
+    outWidth = width; outHeight = height;
+}
 bool VulkanBackend::Fail(const std::string& text)
 {
     if (error != text) std::fprintf(stderr, "Vulkan backend: %s\n", text.c_str());
@@ -28,6 +66,7 @@ bool VulkanBackend::InitWithShaderCache(const VideoMode& mode,GuestGpu::ShaderCa
     std::lock_guard lock(mutex);
     host.Shutdown(); drawResources.clear(); states.clear(); color = depth = 0;
     nativeSurfaces.clear(); nativeTextures.clear(); frameImage=0;
+    frameWidth = frameHeight = 0;
     shaderCache = {};
     resolvedShaders.clear();
     frameReady = false;
@@ -53,6 +92,39 @@ bool VulkanBackend::InitWithShaderCache(const VideoMode& mode,GuestGpu::ShaderCa
         int w = 0, h = 0;
         SDL_Vulkan_GetDrawableSize(window, &w, &h);
         width = uint32_t(std::max(0, w)); height = uint32_t(std::max(0, h));
+#endif
+    }
+    else if (win32Hwnd)
+    {
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+        // ReXGlue owns the window, so SDL is not asked for anything here: the
+        // instance enables the two platform surface extensions, and the surface
+        // is created from the HWND once the instance exists. The size comes from
+        // the window's presenter (Resize before Init), not from SDL.
+        static const char* const kSurfaceExtensions[] = {
+            VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+        extensions.assign(kSurfaceExtensions, kSurfaceExtensions + 2);
+        config.instanceExtensions = extensions;
+        const void* hwnd = win32Hwnd;
+        const void* hinstance = win32Hinstance;
+        config.createSurface = [hwnd, hinstance](VkInstance instance) -> VkSurfaceKHR {
+            // Fetched per instance: the loader only exposes it once the instance
+            // enabled VK_KHR_win32_surface, which the config above does.
+            auto create = reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(
+                vkGetInstanceProcAddr(instance, "vkCreateWin32SurfaceKHR"));
+            if (!create)
+            {
+                std::fputs("Vulkan backend: vkCreateWin32SurfaceKHR is unavailable\n", stderr);
+                return VK_NULL_HANDLE;
+            }
+            VkWin32SurfaceCreateInfoKHR info{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
+            info.hinstance = static_cast<HINSTANCE>(const_cast<void*>(hinstance));
+            info.hwnd = static_cast<HWND>(const_cast<void*>(hwnd));
+            VkSurfaceKHR surface = VK_NULL_HANDLE;
+            return create(instance, &info, nullptr, &surface) == VK_SUCCESS ? surface : VK_NULL_HANDLE;
+        };
+#else
+        return Fail("The Win32 presentation surface needs VK_USE_PLATFORM_WIN32_KHR");
 #endif
     }
     std::string cacheError;
@@ -83,7 +155,7 @@ void VulkanBackend::Shutdown()
 bool VulkanBackend::RecreateTargets()
 {
     if (!width || !height) return false;
-    if (window && !host.ResizeSwapchain(width, height)) return Fail(host.Error());
+    if (HasPresentationSurface() && !host.ResizeSwapchain(width, height)) return Fail(host.Error());
     const auto newColor = host.CreateImage(width, height, HostGpu::ImageKind::Rgba8);
     if (!newColor) return Fail(host.Error());
     const auto newDepth = host.CreateImage(width, height, HostGpu::ImageKind::Depth32);
@@ -95,7 +167,7 @@ bool VulkanBackend::RecreateTargets()
     }
     if (color) host.Destroy(color);
     if (depth) host.Destroy(depth);
-    color = newColor; depth = newDepth; resize = false; frameReady=false;
+    color = newColor; depth = newDepth; resize = false; frameReady=false; frameWidth = frameHeight = 0;
     return true;
 }
 HostGpu::Resource VulkanBackend::Upload(std::span<const uint8_t> bytes, VkBufferUsageFlags usage)
@@ -482,6 +554,7 @@ try
         if(!applyClear(batch.clears[nextClear++]))
         { ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
     frameReady=graphics;
+    if(graphics) { frameWidth=width; frameHeight=height; }
     return graphics ? GuestGpu::SubmissionResult::Submitted : GuestGpu::SubmissionResult::ResourcesUploaded;
 }
 catch (const std::bad_alloc&)
@@ -499,12 +572,12 @@ void VulkanBackend::Present()
     {
         if(frameImage)
         {
-            if(window && !host.ResizeSwapchain(width,height)) { Fail(host.Error()); return; }
+            if(HasPresentationSurface() && !host.ResizeSwapchain(width,height)) { Fail(host.Error()); return; }
             resize=false;
         }
         else if(!RecreateTargets()) return;
     }
-    if (window)
+    if (HasPresentationSurface())
     {
         const bool ok=frameReady ? host.PresentImage(frameImage ? frameImage : color) : host.PresentClear({0,0,0,1});
         if(!ok && !host.SwapchainNeedsResize()) Fail(host.Error());

@@ -46,7 +46,7 @@ void VulkanBackend::ResetNativeTargets()
 GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& batch)
 {
     std::lock_guard lock(mutex);
-    frameReady=false; frameImage=0;
+    frameReady=false; frameImage=0; frameWidth=frameHeight=0;
     auto reject=[&](const char* reason) {
         Fail(reason); ResetNativeTargets(); return SubmissionResult::Incomplete;
     };
@@ -259,6 +259,7 @@ GuestGpu::SubmissionResult VulkanBackend::SubmitNativeFrame(const NativeBatch& b
             }
         }
         frameImage=nativeTextures.at(batch.backbuffer.physical).image;
+        frameWidth=batch.backbuffer.width; frameHeight=batch.backbuffer.height;
         frameReady=true;
         return SubmissionResult::Submitted;
     }

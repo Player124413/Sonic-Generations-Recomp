@@ -7,7 +7,7 @@
 #include <vector>
 
 namespace sonic::rex_host {
-enum class GraphicsMode { Reference, Forward, Native };
+enum class GraphicsMode { Reference, Forward, Native, Translate };
 inline GraphicsMode ParseGraphicsMode(std::string_view mode) {
     if (mode.empty() || mode == "reference") return GraphicsMode::Reference;
     if (mode == "forward") return GraphicsMode::Forward;
@@ -17,8 +17,13 @@ inline GraphicsMode ParseGraphicsMode(std::string_view mode) {
     // is also the only way to record the real command stream (SONIC_REX_GPU_DUMP=1),
     // because our command processor is the component that walks it.
     if (mode == "native") return GraphicsMode::Native;
+    // The SDK keeps running the guest GPU device, but the window shows the frame
+    // our translation renderer produced: the translator (guest draw hooks ->
+    // Vulkan) draws it and our presenter owns the window's swapchain.
+    if (mode == "translate") return GraphicsMode::Translate;
     throw std::invalid_argument(
-        "SONIC_REX_GRAPHICS_MODE must be reference, forward or native; shadow is not implemented");
+        "SONIC_REX_GRAPHICS_MODE must be reference, forward, native or translate; "
+        "shadow is not implemented");
 }
 struct Paths {
     std::filesystem::path game, user, update, cache, metadata, config;

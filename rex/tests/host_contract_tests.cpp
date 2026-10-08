@@ -93,6 +93,10 @@ int main() {
     CHECK(ParseGraphicsMode("reference")==GraphicsMode::Reference);
     CHECK(ParseGraphicsMode("forward")==GraphicsMode::Forward);
     CHECK(ParseGraphicsMode("native")==GraphicsMode::Native);
+    // Translate mode is the one that puts our rendered frame on screen, so the
+    // parser has to accept it by name and the error message has to list it.
+    CHECK(ParseGraphicsMode("translate")==GraphicsMode::Translate);
+    try { ParseGraphicsMode("translate "); CHECK(false); } catch(const std::invalid_argument&) {}
     for(const char* mode : {"shadow","d3d12","typo"}) {
         try { ParseGraphicsMode(mode); CHECK(false); } catch(const std::invalid_argument&) {}
     }

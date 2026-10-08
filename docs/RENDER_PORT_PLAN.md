@@ -34,24 +34,69 @@ draw-вызовов, штатный Xenos не трогаем. Трек `rexgpu-
    `SONIC_REX_GRAPHICS_MODE=translate`), чтобы `reference` оставался ровно тем,
    чем был.
 
-## 3. Решение по устройству (записано, чтобы не переделывать дважды)
+## 3. Решение по устройству (уточнено по коду, чтобы не переделывать дважды)
 
-- **Владелец устройства и swapchain — плагин** (`rexgpu-native`): он уже получает
-  окно/поверхность и создаёт swapchain, и именно он отвечает за презент.
-- **Переводчик переезжает в плагин**: `vulkan_host`/`vulkan_backend`/`native_frame`
-  компилируются в `rexgpu-native` вместо хостового offscreen-пути. Один
-  `VkDevice`, один swapchain, никакой межпроцессной/межустройственной передачи.
-- **Хост остаётся источником данных**: хуки `rex/src/gpu_hooks.cpp` собирают
-  `NativeBatch` и передают его в плагин через наш собственный экспорт
-  (`GetProcAddress` по уже загруженному модулю: SDK грузит плагин из каталога EXE,
-  мы можем взять тот же handle). Мост не тянет SDK-типы через границу DLL:
-  батч — POD-описание + указатели на байты, которыми владеет хост на время вызова.
-- **SDK-плагин Xenos остаётся нетронутым** и продолжает работать в `reference`.
+Первая редакция этого плана предполагала «устройство и swapchain принадлежат
+плагину `rexgpu-native`, переводчик переезжает в плагин». Чтение кода показало,
+что это лишняя работа: переводчик (`SonicGenerationsRecomp/gpu/*`) **уже имеет
+полноценное устройство с WSI** в хосте (`HostGpu::VulkanHost`: instance/device/
+очередь, `createSurface`, `ResizeSwapchain`, `PresentImage`), а `VulkanBackend`
+уже принимает окно. Поэтому:
+
+- **Устройство и swapchain — хостовые**, в переводчике. Ничего никуда не
+  переезжает, граница DLL не участвует, `rexgpu-native` в этом режиме вообще не
+  задействован.
+- **Презентер — наш, хостовый** (`rex/src/translate_presenter.{h,cpp}`): окно
+  само отдаёт презентеру поверхность (`Window::SetPresenter` →
+  `CreateSurface(GetSupportedSurfaceTypes())`), мы строим Vulkan-поверхность из
+  HWND/hinstance и презентуем кадр переводчика через `PresentImage`.
+- **SDK-устройство остаётся SDK-у**: гостевое кольцо, writeback, фенсы,
+  прерывания и shader storage — как в `reference`, поэтому игра ведёт себя
+  одинаково в обоих режимах. Меняется ровно одно: **кто подключён к окну**.
+  Внутренний презентер Xenos никуда не подключается (в него SDK-шный command
+  processor и пишет кадры), так что на HWND всегда один swapchain — как требует
+  платформа.
+- **Подменить SDK-шный презентер своим нельзя, и это проверяемо:** его command
+  processor (`src/graphics/vulkan/command_processor.cpp:2411`) приводит контекст
+  refresh к `VulkanPresenter::VulkanGuestOutputRefreshContext`. Чужой презентер
+  там — это UB, а не «не поддерживается». Поэтому наш презентер — отдельный
+  объект для окна, а не замена их.
 - **`plume` не добавляем сейчас.** Он нужен, если мы захотим D3D12/Metal или
   захотим выкинуть свой RHI ради сопровождаемого. Наш `vulkan_host` уже тонкий
   RHI с WSI, пайплайнами и барьерами; сначала показываем кадр им, а замену RHI
   делаем измеренной задачей, а не верой. (Если позже понадобится — `plume` MIT,
   лицензия совместима.)
+
+## 3a. Что уже сделано (этот шаг)
+
+- Режим `SONIC_REX_GRAPHICS_MODE=translate` (`host_policy.h`, `sonic_app.h`) и
+  обёртка `TranslateGraphics` (`rex/src/translate_graphics.h`): гостевые сервисы
+  идут в SDK, презентер окна — наш, `provider()` намеренно `nullptr` (overlay'ев
+  в этом режиме пока нет).
+- `TranslatePresenter` (`rex/src/translate_presenter.{h,cpp}`): поверхность
+  Win32 → `VulkanBackend::SetWin32Surface`, презент кадра переводчика, счётчики
+  `frames/presents/refused`, `CaptureGuestOutput` для скриншотов.
+- Win32-поверхность без SDL в `vulkan_backend.cpp` (+
+  `VK_USE_PLATFORM_WIN32_KHR` в `cmake/VulkanHost.cmake`): ReXGlue владеет окном,
+  поэтому SDL не спрашиваем вообще.
+- Устройство создаётся **вместе с поверхностью**: до подключения презентера
+  кадры считаются (`frames_without_surface`), а не рендерятся в никуда — иначе
+  устройство создалось бы без расширений платформы и презентовать было бы некуда.
+- Отчёты прогона: `status.txt` (`mode=present`, `presentable`, `notified`,
+  `notify_refused`, `frames_without_surface`, `frames_without_presenter`) и
+  `coverage.txt` (по каким причинам draw-вызовы не приняты) — в
+  `assets/rex-cache/native/<сессия>/`.
+- Запуск: `rex/windows/Run-ReXGlue-Translate.cmd` — ставит режим и печатает
+  оба отчёта, чтобы «чёрное окно» было диагнозом, а не загадкой.
+- Проверки: `host_contract_tests` (разбор режима, включая отказ на `translate `),
+  `test_translate_mode_policy` (что видимый кадр — наш и что SDK-презентер к окну
+  не подключён), `rex/tools/check_windows_tus.py` теперь компилирует **Windows-ветку**
+  презентера на Linux (со заглушками Win32-заголовков из `rex/tools/winstub`).
+
+## 3b. Что осталось в шаге 1
+
+- Первый живой прогон: он покажет `presentable`/`notified` (доходит ли кадр до
+  окна) и `coverage.txt` (что именно переводчик отказывается рисовать).
 
 ## 4. Порядок работ
 

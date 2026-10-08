@@ -23,11 +23,19 @@ namespace sonic::rex_host {
 namespace {
 std::mutex mutex;
 std::atomic<bool> enabled{false};
+NativeRenderMode renderMode = NativeRenderMode::Off;
+PresentableFrameCallback presentableFrame = nullptr;
+void* presentableFrameUser = nullptr;
 std::unique_ptr<NativeGpuBridge> bridge;
 std::unique_ptr<VulkanBackend> backend;
 std::filesystem::path directory;
 uint64_t batches = 0, submitted = 0, rejected = 0, skipped = 0;
 uint64_t replayMicros = 0, replayMaxMicros = 0;
+// Presentation counters. In translate mode the interesting number is not how
+// many frames were rendered but how many reached the window: a frame that was
+// rendered and not shown is a frame the player never saw.
+uint64_t presentableFrames = 0, notifiedFrames = 0, notifyRefused = 0, framesWithoutSurface = 0,
+         framesWithoutPresenter = 0;
 unsigned images = 0;
 uint32_t frameStride = 1;
 bool readbackEnabled = false;
@@ -61,23 +69,40 @@ void WriteBmp(const std::filesystem::path& path, uint32_t w, uint32_t h, std::sp
     if (!file) throw std::runtime_error("Cannot write native frame BMP");
 }
 }
-void InitializeNativeGpu(const std::filesystem::path& cacheDirectory) {
+void InitializeNativeGpu(const std::filesystem::path& cacheDirectory, GraphicsMode graphicsMode) {
     const char* requested = std::getenv("SONIC_REX_NATIVE_RENDER");
-    if (!requested || !*requested || std::string_view(requested) == "off") return;
-    if (std::string_view(requested) != "offscreen")
-        throw std::invalid_argument("SONIC_REX_NATIVE_RENDER must be off or offscreen; native replacement is not enabled");
-    // A typo in a diagnostic knob must not be able to kill a play session, so the
-    // mode turns itself off with a message instead of failing the whole app.
+    const bool offscreenRequested = requested && *requested && std::string_view(requested) != "off";
+    NativeRenderMode mode = NativeRenderMode::Off;
+    if (graphicsMode == GraphicsMode::Translate) {
+        // In translate mode the translated frame is the visible one, so an
+        // offscreen replay request would be a contradiction, not an addition.
+        if (offscreenRequested)
+            std::fputs("[native] SONIC_REX_NATIVE_RENDER is ignored in translate mode: "
+                       "the translated frame is presented\n", stderr);
+        mode = NativeRenderMode::Present;
+    } else if (offscreenRequested) {
+        // A typo in a diagnostic knob must not be able to kill a play session, so
+        // the mode turns itself off with a message instead of failing the whole app.
+        mode = NativeRenderMode::Offscreen;
+    }
+    if (mode == NativeRenderMode::Off) {
+        if (offscreenRequested && std::string_view(requested) != "offscreen")
+            std::fputs("[native] SONIC_REX_NATIVE_RENDER must be off or offscreen; "
+                       "the translator stays off\n", stderr);
+        return;
+    }
     uint32_t stride = 1;
     bool readback = false;
-    try {
-        const char* strideText = std::getenv("SONIC_REX_NATIVE_FRAME_STRIDE");
-        stride = ParseNativeFrameStride(strideText ? strideText : "");
-        const char* readbackText = std::getenv("SONIC_REX_NATIVE_READBACK");
-        readback = ParseNativeReadback(readbackText ? readbackText : "");
-    } catch (const std::invalid_argument& error) {
-        std::fprintf(stderr, "[native] %s. Offscreen replay stays off; Xenos remains the renderer.\n", error.what());
-        return;
+    if (mode == NativeRenderMode::Offscreen) {
+        try {
+            const char* strideText = std::getenv("SONIC_REX_NATIVE_FRAME_STRIDE");
+            stride = ParseNativeFrameStride(strideText ? strideText : "");
+            const char* readbackText = std::getenv("SONIC_REX_NATIVE_READBACK");
+            readback = ParseNativeReadback(readbackText ? readbackText : "");
+        } catch (const std::invalid_argument& error) {
+            std::fprintf(stderr, "[native] %s. Offscreen replay stays off; Xenos remains the renderer.\n", error.what());
+            return;
+        }
     }
     std::lock_guard lock(mutex);
     if (enabled.load()) return;
@@ -91,14 +116,27 @@ void InitializeNativeGpu(const std::filesystem::path& cacheDirectory) {
     backend = std::make_unique<VulkanBackend>(nullptr, false, true);
     batches = submitted = rejected = skipped = 0;
     replayMicros = replayMaxMicros = 0; images = 0; initialized = false;
+    presentableFrames = notifiedFrames = notifyRefused = framesWithoutSurface = framesWithoutPresenter = 0;
     frameStride = stride; readbackEnabled = readback;
+    renderMode = mode;
     coverage = Coverage{};
     enabled.store(true, std::memory_order_release);
-    std::fprintf(stderr,
-        "[native] Offscreen Sonic Vulkan replay enabled (every %u frame(s), readback %s); "
-        "Xenos remains the visible reference. Every replayed frame is a second full render, "
-        "so a larger stride costs less.\n",
-        frameStride, readbackEnabled ? "on" : "off");
+    if (mode == NativeRenderMode::Present) {
+        // Everything the player needs to know about this mode, in the order it
+        // becomes true: our renderer draws, the window's presenter shows it, and
+        // the SDK keeps running the guest device underneath.
+        std::fprintf(stderr,
+            "[native] Translation renderer active (SONIC_REX_GRAPHICS_MODE=translate): the frame the "
+            "player sees is drawn by our Vulkan translator and presented by our window presenter. "
+            "The SDK still runs the guest GPU device services. Reports: %s\n",
+            directory.string().c_str());
+    } else {
+        std::fprintf(stderr,
+            "[native] Offscreen Sonic Vulkan replay enabled (every %u frame(s), readback %s); "
+            "Xenos remains the visible reference. Every replayed frame is a second full render, "
+            "so a larger stride costs less.\n",
+            frameStride, readbackEnabled ? "on" : "off");
+    }
 }
 void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* base) noexcept {
     if (!enabled.load(std::memory_order_acquire)) return;
@@ -108,7 +146,23 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
         if (!enabled.load(std::memory_order_relaxed)) return;
         // Lazy init on guest GPU thread; never invoke SDL or touch the SDK window.
         if (!initialized) {
-            if (!backend->Init(VideoMode{})) throw std::runtime_error(backend->GetLastError());
+            if (renderMode == NativeRenderMode::Present) {
+                // The device is created with the window surface, so presenting is
+                // decided by whether the window's presenter has handed us one
+                // yet. Before that the frames are counted, not rendered: creating
+                // a presentation-less device first would mean never being able to
+                // show anything, because the surface belongs to the instance.
+                uint32_t targetWidth = 0, targetHeight = 0;
+                backend->GetTargetSize(targetWidth, targetHeight);
+                if (!backend->HasPresentationSurface() || !targetWidth || !targetHeight) {
+                    ++framesWithoutSurface;
+                    return;
+                }
+                if (!backend->Init(VideoMode{targetWidth, targetHeight}))
+                    throw std::runtime_error(backend->GetLastError());
+            } else if (!backend->Init(VideoMode{})) {
+                throw std::runtime_error(backend->GetLastError());
+            }
             initialized = true;
         }
         auto batch = bridge->Capture(entry, args, {{}, ReadGuestMemory, base});
@@ -128,6 +182,27 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
         const auto result = backend->SubmitGuestBatch(*batch);
         const bool success = result == GuestGpu::SubmissionResult::Submitted;
         if (success) ++submitted; else ++rejected;
+        if (success && renderMode == NativeRenderMode::Present && backend->HasPresentableFrame()) {
+            // The guest's swap produced a frame. The window's presenter owns the
+            // paint cadence (vsync, paint mode, surface state), so the frame is
+            // handed to it instead of presenting here: with the guest-output
+            // paint mode this presents on this thread, otherwise the UI thread
+            // presents it on the next paint.
+            ++presentableFrames;
+            uint32_t frameWidth = 0, frameHeight = 0;
+            backend->GetPresentableFrameSize(frameWidth, frameHeight);
+            const PresentableFrameCallback notify = presentableFrame;
+            if (notify) {
+                if (notify(presentableFrameUser, frameWidth, frameHeight))
+                    ++notifiedFrames;
+                else
+                    ++notifyRefused;
+            } else {
+                // Normal for the first frames: the window exists before the
+                // guest device does, but the presenter is created by the app.
+                ++framesWithoutPresenter;
+            }
+        }
         // Ledger for the Xenos-free decision: a resolved shader/resource pair
         // still refused by the backend means missing renderer features, not a
         // missing resource.
@@ -146,10 +221,11 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
         replayMaxMicros = std::max(replayMaxMicros, uint64_t(elapsed));
         if (batches <= 16 || batches % 60 == 0) {
             const auto stats = backend->GetHostStats();
-            std::fprintf(stderr, "[native] batch=%llu result=%u draws=%zu submitted=%llu rejected=%llu vkDraws=%llu payload=%zu error=%s\n",
+            std::fprintf(stderr, "[native] batch=%llu result=%u draws=%zu submitted=%llu rejected=%llu vkDraws=%llu presents=%llu payload=%zu error=%s\n",
                 (unsigned long long)batches, unsigned(result), batch->draws.size(),
                 (unsigned long long)submitted, (unsigned long long)rejected,
-                (unsigned long long)stats.indexedDraws, batch->payloadBytes, backend->GetLastError().c_str());
+                (unsigned long long)stats.indexedDraws, (unsigned long long)stats.presents,
+                batch->payloadBytes, backend->GetLastError().c_str());
             for (size_t i = 0; !success && i < batch->draws.size() && i < 4; ++i) {
                 const auto& d = batch->draws[i];
                 std::fprintf(stderr, "[native] draw=%zu VS=%016llX/%u PS=%016llX/%u resources=%u\n", i,
@@ -176,6 +252,19 @@ void CaptureNativeGpu(GpuEntry entry, const CaptureArguments& args, uint8_t* bas
         std::fputs("[native] Disabled after unexpected failure; Xenos stays active.\n", stderr);
     }
 }
+VulkanBackend* GetNativeGpuBackend() {
+    std::lock_guard lock(mutex);
+    return backend.get();
+}
+
+NativeRenderMode GetNativeRenderMode() { return renderMode; }
+
+void SetPresentableFrameCallback(PresentableFrameCallback callback, void* user) {
+    std::lock_guard lock(mutex);
+    presentableFrame = callback;
+    presentableFrameUser = user;
+}
+
 void ShutdownNativeGpu() noexcept {
     enabled.store(false, std::memory_order_release);
     std::lock_guard lock(mutex);
@@ -195,6 +284,18 @@ void ShutdownNativeGpu() noexcept {
             (unsigned long long)coverage.Reason(DrawSupport::PixelShaderUnresolved),
             (unsigned long long)coverage.Reason(DrawSupport::ResourcesUnsupported),
             (unsigned long long)coverage.Reason(DrawSupport::BackendRefused));
+    }
+    if (renderMode == NativeRenderMode::Present) {
+        // The window outlives this call, so the presenter must stop being handed
+        // a backend that is about to be gone.
+        presentableFrame = nullptr;
+        presentableFrameUser = nullptr;
+        std::fprintf(stderr,
+            "[native] presentation: frame(s)=%llu presentable=%llu notified=%llu refused=%llu "
+            "no_surface=%llu no_presenter=%llu\n",
+            (unsigned long long)batches, (unsigned long long)presentableFrames,
+            (unsigned long long)notifiedFrames, (unsigned long long)notifyRefused,
+            (unsigned long long)framesWithoutSurface, (unsigned long long)framesWithoutPresenter);
     }
     // Final cost report: the number that decides whether this diagnostic can be
     // left on while playing.
@@ -224,9 +325,15 @@ void WriteStatus() {
     WriteCoverage();
     const auto stats = backend->GetHostStats();
     std::ofstream report(directory / "status.txt", std::ios::trunc);
-    report << "frames=" << batches << "\nreplayed=" << submitted << "\nskipped=" << skipped
+    report << "mode=" << (renderMode == NativeRenderMode::Present ? "present"
+                          : renderMode == NativeRenderMode::Offscreen ? "offscreen" : "off") << "\n"
+           << "frames=" << batches << "\nreplayed=" << submitted << "\nskipped=" << skipped
            << "\nrejected=" << rejected << "\nstride=" << frameStride
            << "\nreadback=" << (readbackEnabled ? 1 : 0)
+           << "\npresentable=" << presentableFrames << "\nnotified=" << notifiedFrames
+           << "\nnotify_refused=" << notifyRefused
+           << "\nframes_without_surface=" << framesWithoutSurface
+           << "\nframes_without_presenter=" << framesWithoutPresenter
            << "\naverage_replay_ms=" << (submitted ? double(replayMicros) / 1000.0 / double(submitted) : 0.0)
            << "\nmax_replay_ms=" << double(replayMaxMicros) / 1000.0
            << "\nvulkan_draws=" << stats.indexedDraws

@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include "graphics_bridge.h"
 #include "host_policy.h"
+#include "translate_graphics.h"
 #include "input_defaults.h"
 #include "gpu_capture.h"
 #ifdef SONIC_REX_NATIVE_RENDERER
@@ -25,12 +26,14 @@ public:
         // driver and its layout are in place when the guest first polls a pad.
         // An explicit choice by the player always wins.
         ApplyKeyboardInputDefaults();
-        InitializeGpuCapture(BuildPaths(rex::filesystem::GetExecutableFolder()).cache);
-#ifdef SONIC_REX_NATIVE_RENDERER
-        InitializeNativeGpu(BuildPaths(rex::filesystem::GetExecutableFolder()).cache);
-#endif
+        // The mode decides what the translator does with the frames it renders, so
+        // it is parsed before anything that could start it.
         const char* requested = std::getenv("SONIC_REX_GRAPHICS_MODE");
         const auto mode = ParseGraphicsMode(requested ? requested : "");
+        InitializeGpuCapture(BuildPaths(rex::filesystem::GetExecutableFolder()).cache);
+#ifdef SONIC_REX_NATIVE_RENDERER
+        InitializeNativeGpu(BuildPaths(rex::filesystem::GetExecutableFolder()).cache, mode);
+#endif
         const bool native = mode == GraphicsMode::Native;
         // Explicit Vulkan selection: Windows must not default to the SDK's D3D12
         // backend. In native mode the plugin is ours; if it cannot be loaded the
@@ -52,10 +55,21 @@ public:
                 stderr);
         }
         config.gpu_plugin.clear();
-        if (mode == GraphicsMode::Forward)
+        if (mode == GraphicsMode::Forward) {
             config.graphics = std::make_unique<GraphicsBridge>(std::move(original));
-        else
+        } else if (mode == GraphicsMode::Translate) {
+            // The guest GPU stays the SDK's, so the game itself behaves exactly as
+            // it does in reference mode; the window's presenter is ours, so the
+            // frame on screen is the one our translator rendered.
+            std::fputs(
+                "[sonic-gpu] SONIC_REX_GRAPHICS_MODE=translate: our Vulkan translation renderer "
+                "draws the frame and our presenter shows it. The SDK still runs the guest GPU "
+                "device services.\n",
+                stderr);
+            config.graphics = std::make_unique<TranslateGraphics>(std::move(original));
+        } else {
             config.graphics = std::move(original);
+        }
         // Intentionally leave audio_factory, input_factory, kernel_init and
         // tool_mode untouched. ReXApp configures those to the SDK defaults.
     }

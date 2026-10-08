@@ -229,7 +229,11 @@ if(SONIC_REX_BUILD_GAME)
         target_compile_options(sonic_rex_ppc PRIVATE -fasync-exceptions)
     endif()
     target_precompile_headers(sonic_rex_ppc PRIVATE "${SONIC_REX_GENERATED_DIR}/sonicgenerations_pch.h")
-    add_executable(SonicGenerationsRecomp-ReXGlue WIN32 src/main.cpp src/gpu_hooks.cpp)
+    # The presenter is part of the host, not of the GPU plugin: in translate mode
+    # the app attaches our presenter to the window while the SDK keeps running the
+    # guest GPU device services.
+    add_executable(SonicGenerationsRecomp-ReXGlue WIN32 src/main.cpp src/gpu_hooks.cpp
+        src/translate_presenter.cpp)
     target_include_directories(SonicGenerationsRecomp-ReXGlue PRIVATE src "${SONIC_REX_GENERATED_DIR}")
     target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_ppc sonic_rex_math sonic_rex_capture sonic_rex_pm4 sonic_rex_host_policy rex::runtime)
     target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_RENDERER=1)

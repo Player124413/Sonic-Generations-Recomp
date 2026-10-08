@@ -15,6 +15,22 @@ class VulkanBackend final : public IRenderBackend
 public:
     explicit VulkanBackend(SDL_Window* window = nullptr, bool validation = false, bool enableGameDraws = false);
     ~VulkanBackend() override;
+    // Win32 presentation without SDL. When ReXGlue owns the window it hands us
+    // the native handles instead of an SDL_Window, so the backend builds the
+    // surface itself (vkCreateWin32SurfaceKHR) and never asks SDL for instance
+    // extensions. The handles are borrowed and must outlive the backend; the
+    // device is created with them, so this has to happen before Init().
+    void SetWin32Surface(void* hwnd, void* hinstance);
+    // A presentation surface is configured (an SDL window or a Win32 HWND).
+    bool HasPresentationSurface() const { return window != nullptr || win32Hwnd != nullptr; }
+    // The last submitted frame is ready for Present().
+    bool HasPresentableFrame() const;
+    // Size of the frame the guest's last swap produced (0,0 when there is none).
+    void GetPresentableFrameSize(uint32_t& outWidth, uint32_t& outHeight) const;
+    // The host swapchain is out of date (resized or suboptimal).
+    bool SwapchainNeedsResize() const;
+    // Target size in pixels; (0,0) until a surface or an explicit Resize says so.
+    void GetTargetSize(uint32_t& outWidth, uint32_t& outHeight) const;
     const char* GetName() const override { return drawEnabled ? "vulkan-direct-draw" : "vulkan-transfer"; }
     bool Init(const VideoMode& mode) override;
     // Explicit cache dependency (e.g. a validated external cache or test fixture).
@@ -46,12 +62,19 @@ private:
     // Native replay invokes the existing validated draw path under the same lock.
     mutable std::recursive_mutex mutex;
     SDL_Window* window;
+    // Borrowed Win32 window handles (see SetWin32Surface); null unless the host
+    // chose the non-SDL presentation path.
+    void* win32Hwnd = nullptr;
+    void* win32Hinstance = nullptr;
     bool validation;
     bool drawEnabled = false, frameReady = false;
     HostGpu::VulkanHost host;
     GuestGpu::ShaderCache shaderCache;
     std::map<uint64_t, GuestGpu::ShaderModule> resolvedShaders;
     uint32_t width = 0, height = 0;
+    // Guest frontbuffer size of the frame in frameImage; the swapchain may be a
+    // different size, so the presenter and the diagnostics need both.
+    uint32_t frameWidth = 0, frameHeight = 0;
     bool resize = true;
     HostGpu::Resource color = 0, depth = 0;
     std::vector<HostGpu::Resource> drawResources;
