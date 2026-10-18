@@ -1,7 +1,8 @@
 include_guard(GLOBAL)
 find_package(Vulkan REQUIRED)
 option(SONIC_VULKAN_HEADLESS "Build Vulkan backend without SDL WSI" OFF)
-if(NOT SONIC_VULKAN_HEADLESS)
+if(NOT SONIC_VULKAN_HEADLESS AND NOT TARGET SDL2::SDL2)
+    # Skipped when SDL2 is already provided as a target (Android FetchContent).
     find_package(SDL2 REQUIRED)
 endif()
 set(_vulkan_root "${CMAKE_CURRENT_LIST_DIR}/..")

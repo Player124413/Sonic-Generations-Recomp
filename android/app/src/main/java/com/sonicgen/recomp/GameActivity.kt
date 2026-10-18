@@ -24,7 +24,7 @@ class GameActivity : SDLActivity() {
         NativeBridge.setTouchEnabled(settings.touchControls)
         if (settings.touchControls) {
             val view = TouchOverlayView(this, TouchOverlayView.Mode.GAME)
-            view.setControls(TouchLayout.load(this))
+            view.loadControls(TouchLayout.load(this))
             view.opacity = settings.touchOpacity
             view.globalScale = settings.touchScale
             overlay = view

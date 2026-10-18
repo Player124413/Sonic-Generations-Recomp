@@ -71,7 +71,7 @@ class TouchOverlayView(context: Context, private val mode: Mode) : View(context)
 
     private enum class DragMode { NONE, MOVE, RESIZE }
 
-    fun setControls(newControls: List<Control>) {
+    fun loadControls(newControls: List<Control>) {
         controls = newControls
         invalidate()
     }

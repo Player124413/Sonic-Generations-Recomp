@@ -40,7 +40,7 @@ class TouchEditorActivity : Activity() {
         }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         editor = TouchOverlayView(this, TouchOverlayView.Mode.EDITOR)
-        editor.setControls(controls)
+        editor.loadControls(controls)
         editor.opacity = settings.touchOpacity
         editor.globalScale = settings.touchScale
         editor.onLayoutChanged = { /* persisted on Save */ }
@@ -84,7 +84,7 @@ class TouchEditorActivity : Activity() {
             text = "Сброс"
             setOnClickListener {
                 controls = TouchLayout.defaults()
-                editor.setControls(controls)
+                editor.loadControls(controls)
             }
         })
         toolbar.addView(Button(this).apply {
