@@ -141,7 +141,9 @@ option(SONIC_GENERATIONS_ENABLE_XMA_FRAMES "Decode guest XMA with the pinned FFm
 if (SONIC_GENERATIONS_ENABLE_XMA_FRAMES)
     include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/XmaFrameDecoder.cmake")
 else()
-    add_library(SonicXmaFrames STATIC "apu/xma_frame_decoder_stub.cpp")
+    # The stream/ring logic is platform-independent; only the frame
+    # decoder is FFmpeg-backed, so only it is stubbed out.
+    add_library(SonicXmaFrames STATIC "apu/xma_frame_decoder_stub.cpp" "apu/xma_stream.cpp")
     target_compile_features(SonicXmaFrames PUBLIC cxx_std_20)
     target_include_directories(SonicXmaFrames PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
