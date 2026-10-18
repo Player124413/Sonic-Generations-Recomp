@@ -6,7 +6,8 @@ plugins {
 android {
     namespace = "com.sonicgen.recomp"
     compileSdk = 34
-    ndkVersion = "26.3.11579264"
+    // r29: libc++ 21 provides std::atomic_ref used by the guest kernel.
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "com.sonicgen.recomp"

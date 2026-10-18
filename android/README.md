@@ -15,7 +15,7 @@ cd android
 gradle assembleDebug   # Android Studio тоже подходит: открыть эту папку
 ```
 
-Нужны JDK 17, Android SDK 34, NDK 26.3.11579264, CMake 3.22.
+Нужны JDK 17, Android SDK 34, NDK 29.0.14206865, CMake 3.22.
 APK появится в `app/build/outputs/apk/debug/`.
 
 Использование: открыть приложение → «Импорт игры» (папка с `default.xex`
