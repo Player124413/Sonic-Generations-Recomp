@@ -122,6 +122,7 @@ round-trip градиентов (PSNR > 35 дБ), альфа, некратные
 ## Сборка
 
 Требуется: JDK 17, Android SDK (API 34), NDK 26.3.11579264, CMake 3.22,
+устройство на Android 14+ (API 34, arm64-v8a),
 сабмодули репозитория.
 
 ```bash
@@ -136,7 +137,7 @@ gradle assembleDebug        # или открыть android/ в Android Studio
 ```bash
 cmake -S android/app/src/main/cpp -B build/android \
   -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-34 \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build build/android -j
 ```

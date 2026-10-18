@@ -10,8 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "com.sonicgen.recomp"
-        // Vulkan requires API 24+; 26 keeps SAF/DocumentsContract simple.
-        minSdk = 26
+        // Android 14. The runtime uses std::jthread/std::atomic_ref, which
+        // libc++ only exposes at API 33+, and Vulkan gaming devices are
+        // overwhelmingly on Android 14+ anyway.
+        minSdk = 34
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
