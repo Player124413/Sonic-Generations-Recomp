@@ -44,12 +44,16 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # Optional regeneration of ppc/ from the game's default.xex.
+# The recompiler tools are host binaries; they do not exist in Android
+# (cross-compiled) builds, where referencing them would fail at generate.
+if (TARGET XenonRecomp AND TARGET XenonAnalyse)
 add_custom_target(recomp
     COMMAND $<TARGET_FILE:XenonRecomp> "${SONIC_GENERATIONS_RECOMP_ROOT}/config.toml" "${SONIC_GENERATIONS_PPC_DIR}/ppc_context.h"
     COMMAND $<TARGET_FILE:XenonAnalyse> "${SONIC_GENERATIONS_RECOMP_ROOT}/default.xex" "${SONIC_GENERATIONS_RECOMP_ROOT}/switch_tables.toml"
     WORKING_DIRECTORY "${SONIC_GENERATIONS_RECOMP_ROOT}"
     COMMENT "Recompiling default.xex to C++ (XenonAnalyse + XenonRecomp)"
     USES_TERMINAL)
+endif()
 
 # Shader cache seam: SonicGenerationsRecompLib/shader/shader_cache.cpp is
 # produced by tools/XenosRecomp once the shaders are recompiled. It is

@@ -74,7 +74,7 @@ jobs:
           code=$?
           tail -n 40 /tmp/gradle-debug.log
           if [ $code -ne 0 ]; then
-            grep -E "error:|FAILED|What went wrong|Execution failed|Caused by:|^e: |Could not|failed" /tmp/gradle-debug.log | head -n 45 | while IFS= read -r line; do
+            grep -E "error:|CMake Error|FAILED|What went wrong|Execution failed|Caused by:|^e: |Could not|failed|No target|Cannot find" /tmp/gradle-debug.log | head -n 45 | while IFS= read -r line; do
               esc=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r/%0D/g')
               echo "::error::${esc}"
             done
@@ -89,7 +89,7 @@ jobs:
           code=$?
           tail -n 40 /tmp/gradle-release.log
           if [ $code -ne 0 ]; then
-            grep -E "error:|FAILED|What went wrong|Execution failed|Caused by:|^e: |Could not|failed" /tmp/gradle-release.log | head -n 45 | while IFS= read -r line; do
+            grep -E "error:|CMake Error|FAILED|What went wrong|Execution failed|Caused by:|^e: |Could not|failed|No target|Cannot find" /tmp/gradle-release.log | head -n 45 | while IFS= read -r line; do
               esc=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r/%0D/g')
               echo "::error::${esc}"
             done
