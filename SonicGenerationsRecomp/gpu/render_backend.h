@@ -47,6 +47,11 @@ public:
     // Called from the present path (VdSwap). Backends flush/swap here.
     virtual void Present() = 0;
 
+    // Present-resolution scale in (0, 1] (Config RenderScale). The guest
+    // frame is produced at guest resolution; only the swapchain/present
+    // target shrinks. Backends that present ignore or clamp as needed.
+    virtual void SetPresentScale(float) {}
+
     // Resize notification (host window changed size).
     virtual void Resize(uint32_t width, uint32_t height) = 0;
 };

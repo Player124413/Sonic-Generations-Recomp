@@ -32,6 +32,7 @@ set(SONIC_GENERATIONS_CORE_SOURCES
     "apu/xma.cpp"
     "apu/driver/sdl2_driver.cpp"
     "hid/hid.cpp"
+    "hid/touch_input.cpp"
     "hid/driver/sdl_hid.cpp"
     "install/installer.cpp"
     "install/iso_file_system.cpp"
@@ -50,6 +51,12 @@ set(SONIC_GENERATIONS_CORE_SOURCES
     "os/win32/version_win32.cpp"
     "os/linux/version_linux.cpp"
     "os/macos/version_macos.cpp"
+    "os/android/logger_android.cpp"
+    "os/android/process_android.cpp"
+    "os/android/user_android.cpp"
+    "os/android/media_android.cpp"
+    "os/android/version_android.cpp"
+    "os/android/jni_bridge.cpp"
     "user/config.cpp"
     "user/paths.cpp"
     "ui/game_window.cpp")
@@ -63,6 +70,9 @@ if (NOT APPLE)
 endif()
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux")
     list(FILTER SONIC_GENERATIONS_CORE_SOURCES EXCLUDE REGEX "linux/")
+endif()
+if (NOT ANDROID)
+    list(FILTER SONIC_GENERATIONS_CORE_SOURCES EXCLUDE REGEX "android/")
 endif()
 
 add_library(SonicGenerationsRecompCore STATIC ${SONIC_GENERATIONS_CORE_SOURCES})
@@ -91,18 +101,50 @@ if (WIN32)
     target_compile_definitions(SonicGenerationsRecompCore PUBLIC SDL_MAIN_HANDLED)
 endif()
 
+if (ANDROID)
+    # __android_log_print (os/android/logger_android.cpp).
+    target_link_libraries(SonicGenerationsRecompCore PUBLIC log)
+endif()
+
 
 # ---------------------------------------------------------------------------
-# Game executable.
+# Game executable (desktop) / libmain.so (Android, loaded by SDLActivity).
 # ---------------------------------------------------------------------------
 
-add_executable(SonicGenerationsRecomp "main.cpp")
-target_link_libraries(SonicGenerationsRecomp PRIVATE SonicGenerationsRecompCore)
-target_precompile_headers(SonicGenerationsRecomp PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/ppc_compat.h")
+if (ANDROID)
+    add_library(main SHARED "main.cpp")
+    set_target_properties(main PROPERTIES OUTPUT_NAME "main")
+    target_link_libraries(main PRIVATE SonicGenerationsRecompCore)
+    if (TARGET SDL2::SDL2main)
+        target_link_libraries(main PRIVATE SDL2::SDL2main)
+    endif()
+    target_precompile_headers(main PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/ppc_compat.h")
+else()
+    add_executable(SonicGenerationsRecomp "main.cpp")
+    target_link_libraries(SonicGenerationsRecomp PRIVATE SonicGenerationsRecompCore)
+    target_precompile_headers(SonicGenerationsRecomp PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/ppc_compat.h")
+endif()
 
 # Guest audio requires frame-level XMA, not the system FFmpeg packet decoder.
-include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/XmaFrameDecoder.cmake")
+# The pinned FFmpeg fork config currently supports x86-64 hosts only, so on
+# Android (ARM64) XMA frame decoding is disabled by default and a stub that
+# reports no PCM is linked instead (other audio paths keep working). See
+# docs/ANDROID.md.
+if (ANDROID)
+    set(_sonic_xma_default OFF)
+else()
+    set(_sonic_xma_default ON)
+endif()
+option(SONIC_GENERATIONS_ENABLE_XMA_FRAMES "Decode guest XMA with the pinned FFmpeg fork" ${_sonic_xma_default})
+if (SONIC_GENERATIONS_ENABLE_XMA_FRAMES)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/XmaFrameDecoder.cmake")
+else()
+    add_library(SonicXmaFrames STATIC "apu/xma_frame_decoder_stub.cpp")
+    target_compile_features(SonicXmaFrames PUBLIC cxx_std_20)
+    target_include_directories(SonicXmaFrames PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
 target_link_libraries(SonicGenerationsRecompCore PUBLIC SonicXmaFrames)
 
 # Explicit opt-in: SDK/loader is required; never silently substitute NullBackend.

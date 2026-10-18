@@ -1,5 +1,7 @@
 #include <stdafx.h>
+#if defined(__x86_64__) || defined(_M_X64)
 #include <cpuid.h>
+#endif
 #include <apu/audio.h>
 #include <apu/xma.h>
 #include <cpu/guest_thread.h>
@@ -19,8 +21,15 @@
 #include <user/config.h>
 #include <user/paths.h>
 
+#include <fstream>
+
 #include <file.h>
 #include <xex.h>
+
+#if defined(__ANDROID__)
+// SDLActivity loads libmain.so and calls SDL_main (see docs/ANDROID.md).
+#include <SDL_main.h>
+#endif
 
 // ---------------------------------------------------------------------------
 // Sonic Generations (Xbox 360) recompilation runtime.
@@ -280,6 +289,35 @@ int main(int argc, char* argv[])
     }
 
     Config::Load();
+
+#if defined(__ANDROID__)
+    // The launcher copies the user's dump into internal storage and leaves
+    // pending_install.txt (source path on its first line) next to the game
+    // folder. Install it through the same code path as --install, once.
+    {
+        const auto pendingPath = GetUserPath() / "pending_install.txt";
+        std::ifstream pending(pendingPath);
+        std::string sourcePath;
+        if (pending && std::getline(pending, sourcePath) && !sourcePath.empty())
+        {
+            std::filesystem::path modulePath;
+            if (!Installer::checkGameInstall(GetGamePath(), modulePath))
+            {
+                Installer::Input input;
+                input.gameSource = sourcePath;
+                InstallJournal journal;
+                printf("Installing game files from '%s'...\n", sourcePath.c_str());
+                if (Installer::install(input, GetGamePath(), journal))
+                    printf("Installation complete.\n");
+                else
+                    printf("Installation failed (%d): %s\n", int(journal.lastResult), journal.lastErrorMessage.c_str());
+            }
+            pending.close();
+            std::error_code ec;
+            std::filesystem::remove(pendingPath, ec);
+        }
+    }
+#endif
 
     std::filesystem::path modulePath;
     bool isGameInstalled = Installer::checkGameInstall(GetGamePath(), modulePath);

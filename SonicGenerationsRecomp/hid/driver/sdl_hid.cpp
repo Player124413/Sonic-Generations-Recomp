@@ -2,6 +2,7 @@
 #include <SDL.h>
 #include <user/config.h>
 #include <hid/hid.h>
+#include <hid/touch_input.h>
 #include <os/logger.h>
 #include <ui/game_window.h>
 #include <kernel/xdm.h>
@@ -322,6 +323,9 @@ int HID_OnSDLEvent(void*, SDL_Event* event)
 
 void hid::Init()
 {
+    // Virtual touch gamepad (Android overlay). Disabled in config -> the
+    // pad never reports, exactly as if no overlay existed.
+    hid::touch::SetEnabled(Config::TouchControls);
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_GAMECUBE, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS3, "1");
@@ -352,10 +356,36 @@ uint32_t hid::GetState(uint32_t dwUserIndex, XAMINPUT_STATE* pState)
 
     pState->dwPacketNumber = packet++;
 
-    if (!g_activeController)
+    // Virtual touch gamepad: merged over (or instead of) a physical pad,
+    // so touch and controller input can be used interchangeably.
+    const auto touchPad = hid::touch::Snapshot();
+    const bool touchConnected = hid::touch::IsEnabled() && touchPad.active;
+
+    if (!g_activeController && !touchConnected)
         return ERROR_DEVICE_NOT_CONNECTED;
 
-    pState->Gamepad = g_activeController->state;
+    if (g_activeController)
+        pState->Gamepad = g_activeController->state;
+
+    if (touchConnected)
+    {
+        auto& pad = pState->Gamepad;
+        pad.wButtons |= touchPad.buttons;
+        if (touchPad.leftStickX || touchPad.leftStickY)
+        {
+            pad.sThumbLX = touchPad.leftStickX;
+            pad.sThumbLY = touchPad.leftStickY;
+        }
+        if (touchPad.rightStickX || touchPad.rightStickY)
+        {
+            pad.sThumbRX = touchPad.rightStickX;
+            pad.sThumbRY = touchPad.rightStickY;
+        }
+        if (touchPad.leftTrigger)
+            pad.bLeftTrigger = touchPad.leftTrigger;
+        if (touchPad.rightTrigger)
+            pad.bRightTrigger = touchPad.rightTrigger;
+    }
 
     return ERROR_SUCCESS;
 }
@@ -378,7 +408,10 @@ uint32_t hid::GetCapabilities(uint32_t dwUserIndex, XAMINPUT_CAPABILITIES* pCaps
     if (!pCaps)
         return ERROR_BAD_ARGUMENTS;
 
-    if (!g_activeController)
+    const auto touchPad = hid::touch::Snapshot();
+    const bool touchConnected = hid::touch::IsEnabled() && touchPad.active;
+
+    if (!g_activeController && !touchConnected)
         return ERROR_DEVICE_NOT_CONNECTED;
 
     memset(pCaps, 0, sizeof(*pCaps));
@@ -386,8 +419,13 @@ uint32_t hid::GetCapabilities(uint32_t dwUserIndex, XAMINPUT_CAPABILITIES* pCaps
     pCaps->Type = XAMINPUT_DEVTYPE_GAMEPAD;
     pCaps->SubType = XAMINPUT_DEVSUBTYPE_GAMEPAD; // TODO: other types?
     pCaps->Flags = 0;
-    pCaps->Gamepad = g_activeController->state;
-    pCaps->Vibration = g_activeController->vibration;
+    if (g_activeController)
+    {
+        pCaps->Gamepad = g_activeController->state;
+        pCaps->Vibration = g_activeController->vibration;
+    }
+    if (touchConnected)
+        pCaps->Gamepad.wButtons |= touchPad.buttons;
 
     return ERROR_SUCCESS;
 }

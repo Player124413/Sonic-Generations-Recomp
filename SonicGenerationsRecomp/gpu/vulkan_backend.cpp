@@ -15,6 +15,8 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 #endif
+#include <user/config.h>
+#include <user/paths.h>
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -541,12 +543,58 @@ try
                     continue; // sample the GPU resolve, never stale CPU capture bytes
                 }
             }
-            id = host.CreateImage(texture.width, texture.height, HostGpu::ImageKind::Rgba8);
-            if (!id) { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
-            drawResources.push_back(id);
-            if(graphics) for(auto& binding:plan.textures) if(binding.slot==texture.slot) binding.image=id;
-            if (!host.UploadRgba(id, texture.rgba))
-            { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
+            // ETC2 path (Android): re-encode the decoded RGBA8 texture to
+            // ETC2 (4 bit/texel instead of 32) when enabled and supported.
+            // Any failure falls back to the RGBA8 upload for this texture;
+            // a texture is never dropped because transcoding failed.
+            bool uploaded = false;
+            if (Config::TextureCompression != ETextureCompression::Off && host.SupportsEtc2() &&
+                texture.width >= 4 && texture.height >= 4)
+            {
+                const auto etcKind = GuestGpu::IsOpaque(texture.width, texture.height, texture.rgba)
+                    ? GuestGpu::Etc2Kind::Rgb : GuestGpu::Etc2Kind::Rgba;
+                const uint64_t key = GuestGpu::Etc2DiskCache::MakeKey(
+                    GuestGpu::TextureContentHash(texture.rgba), texture.width, texture.height, etcKind);
+                std::vector<uint8_t> etc2;
+                const auto cached = etc2MemoryCache.find(key);
+                if (cached != etc2MemoryCache.end())
+                    etc2 = cached->second;
+                else
+                {
+                    if (!etc2DiskCache)
+                        etc2DiskCache = std::make_unique<GuestGpu::Etc2DiskCache>(GetUserPath() / "texture-cache");
+                    if (!etc2DiskCache->Load(key, texture.width, texture.height, etcKind, etc2) &&
+                        GuestGpu::EncodeEtc2(texture.width, texture.height, texture.rgba, etcKind, etc2))
+                        etc2DiskCache->Store(key, texture.width, texture.height, etcKind, etc2);
+                    if (!etc2.empty() && etc2MemoryCache.size() < 256)
+                        etc2MemoryCache.emplace(key, etc2);
+                }
+                if (!etc2.empty())
+                {
+                    id = host.CreateImage(texture.width, texture.height,
+                        etcKind == GuestGpu::Etc2Kind::Rgba ? HostGpu::ImageKind::Etc2Rgba : HostGpu::ImageKind::Etc2Rgb);
+                    if (id && host.UploadEtc2(id, etc2))
+                    {
+                        drawResources.push_back(id);
+                        if(graphics) for(auto& binding:plan.textures) if(binding.slot==texture.slot) binding.image=id;
+                        uploaded = true;
+                    }
+                    else if (id)
+                    {
+                        host.Destroy(id);
+                        id = 0;
+                    }
+                }
+            }
+            if (!uploaded)
+            {
+                id = host.CreateImage(texture.width, texture.height, HostGpu::ImageKind::Rgba8);
+                if (!id) { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
+                drawResources.push_back(id);
+                if(graphics) for(auto& binding:plan.textures) if(binding.slot==texture.slot) binding.image=id;
+                if (!host.UploadRgba(id, texture.rgba))
+                { Fail(host.Error()); ReleaseDrawResources(); return GuestGpu::SubmissionResult::Incomplete; }
+            }
         }
         if(graphics)
         {
@@ -579,7 +627,9 @@ void VulkanBackend::Present()
     {
         if(frameImage)
         {
-            if(HasPresentationSurface() && !host.ResizeSwapchain(width,height)) { Fail(host.Error()); return; }
+            const uint32_t presentWidth = std::max(1u, uint32_t(width * presentScale));
+            const uint32_t presentHeight = std::max(1u, uint32_t(height * presentScale));
+            if(HasPresentationSurface() && !host.ResizeSwapchain(presentWidth, presentHeight)) { Fail(host.Error()); return; }
             resize=false;
         }
         else if(!RecreateTargets()) return;

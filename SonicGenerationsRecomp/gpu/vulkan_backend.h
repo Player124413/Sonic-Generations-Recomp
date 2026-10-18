@@ -4,7 +4,10 @@
 #include <gpu/shader_cache.h>
 #include <gpu/vulkan_host.h>
 #include <gpu/vulkan_state.h>
+#include <gpu/texture_transcode.h>
+#include <algorithm>
 #include <cstdio>
+#include <memory>
 #include <mutex>
 #include <map>
 
@@ -44,6 +47,7 @@ public:
     GuestGpu::SubmissionResult SubmitGuestBatch(const GuestGpu::NativeBatch& batch) override;
     void Present() override;
     void Resize(uint32_t width, uint32_t height) override;
+    void SetPresentScale(float scale) override { presentScale = std::clamp(scale, 0.25f, 1.0f); }
     HostGpu::VulkanStats GetHostStats() const;
     std::string GetLastError() const;
     // What the native replay did: guest targets drawn exactly or approximately,
@@ -97,6 +101,11 @@ private:
     GuestGpu::ShaderCache shaderCache;
     std::map<uint64_t, GuestGpu::ShaderModule> resolvedShaders;
     uint32_t width = 0, height = 0;
+    float presentScale = 1.0f;
+    // ETC2 transcode caches (Android texture path): encoded payloads keyed
+    // by texture content, in memory for this run and on disk across runs.
+    std::map<uint64_t, std::vector<uint8_t>> etc2MemoryCache;
+    std::unique_ptr<GuestGpu::Etc2DiskCache> etc2DiskCache;
     // Guest frontbuffer size of the frame in frameImage; the swapchain may be a
     // different size, so the presenter and the diagnostics need both.
     uint32_t frameWidth = 0, frameHeight = 0;

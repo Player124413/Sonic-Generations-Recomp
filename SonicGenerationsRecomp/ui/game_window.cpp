@@ -99,9 +99,20 @@ void GameWindow::Init(const char* sdlVideoDriver)
     s_height = Config::WindowHeight;
 
     uint32_t flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+#if defined(__ANDROID__)
+    // Phones are always fullscreen; the launcher owns window chrome.
+    flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
 #ifdef SONIC_GENERATIONS_ENABLE_VULKAN
+    // Create a Vulkan-capable window whenever the effective renderer wants
+    // Vulkan: env request, or Config RenderMode (Native by default). This
+    // mirrors the selection in Video::Init.
     const char* requested = std::getenv("SONIC_RENDER_BACKEND");
-    if (requested && std::strcmp(requested, "vulkan") == 0)
+    const bool envWantsVulkan = requested &&
+        (std::strcmp(requested, "vulkan") == 0 || std::strcmp(requested, "native") == 0 ||
+         std::strcmp(requested, "reference") == 0);
+    const bool configWantsVulkan = !requested && Config::RenderMode != ERenderMode::Null;
+    if (envWantsVulkan || configWantsVulkan)
         flags |= SDL_WINDOW_VULKAN;
 #endif
     if (Config::Fullscreen)

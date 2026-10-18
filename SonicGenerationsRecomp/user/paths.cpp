@@ -6,6 +6,8 @@
 #elif defined(__APPLE__)
 #include <CoreFoundation/CFBundle.h>
 #include <mach-o/dyld.h>
+#elif defined(__ANDROID__)
+#include <SDL_system.h>
 #endif
 
 std::filesystem::path g_executableRoot;
@@ -33,9 +35,20 @@ static std::filesystem::path GetExecutableRoot()
 
 std::filesystem::path BuildUserPath()
 {
+#if defined(__ANDROID__)
+    // Android apps have no writable executable directory. Game data,
+    // config.toml, saves and the ETC2 cache live in internal app storage
+    // under the same "assets" layout the desktop build uses beside the EXE.
+    // SDL must be initialised before this is called (it is: the guest only
+    // reaches paths through startup code that runs after SDL_Init).
+    if (const char* internal = SDL_AndroidGetInternalStoragePath())
+        return std::filesystem::path(internal) / "assets";
+    return std::filesystem::path("assets");
+#else
     // The entire installation travels with the runtime. Never depend on CWD,
     // a per-user storage directory, or the legacy portable.txt marker.
     return g_executableRoot / "assets";
+#endif
 }
 
 const std::filesystem::path& GetUserPath()

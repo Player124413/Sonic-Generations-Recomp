@@ -41,7 +41,23 @@ if (NOT MSVC)
 endif()
 
 # Vendored tools (XenonRecomp/XenosRecomp and their dependencies).
-add_subdirectory(${SONIC_GENERATIONS_TOOLS_ROOT}/XenonRecomp EXCLUDE_FROM_ALL)
+# On Android the host recompiler tools (XenonRecomp/XenonAnalyse binaries)
+# are never built, but the runtime still links XenonUtils and the shared
+# thirdparty targets (fmt, tomlplusplus, xxHash, disasm) that XenonRecomp's
+# root would normally provide. Configure exactly those, with the same
+# THIRDPARTY_ROOT variable XenonUtils' CMakeLists expects.
+if (ANDROID)
+    set(_xenon_root ${SONIC_GENERATIONS_TOOLS_ROOT}/XenonRecomp)
+    if (NOT EXISTS ${_xenon_root}/XenonUtils/CMakeLists.txt)
+        message(FATAL_ERROR "Android build needs tools/XenonRecomp (run: git submodule update --init --recursive)")
+    endif()
+    set(THIRDPARTY_ROOT ${_xenon_root}/thirdparty)
+    add_subdirectory(${THIRDPARTY_ROOT} ${CMAKE_BINARY_DIR}/xenon-thirdparty EXCLUDE_FROM_ALL)
+    add_subdirectory(${_xenon_root}/XenonUtils ${CMAKE_BINARY_DIR}/XenonUtils EXCLUDE_FROM_ALL)
+    unset(_xenon_root)
+else()
+    add_subdirectory(${SONIC_GENERATIONS_TOOLS_ROOT}/XenonRecomp EXCLUDE_FROM_ALL)
+endif()
 
 # Some fmt versions rely on transitive includes for malloc/free which newer
 # toolchains no longer provide.
@@ -49,8 +65,11 @@ if (TARGET fmt AND NOT MSVC)
     target_compile_options(fmt PRIVATE -include cstdlib)
 endif()
 
-# Host dependencies.
-find_package(SDL2 REQUIRED)
+# Host dependencies. The Android build provides SDL2::SDL2 via FetchContent
+# before this point, in which case no package lookup is needed.
+if (NOT TARGET SDL2::SDL2)
+    find_package(SDL2 REQUIRED)
+endif()
 
 # o1heap (guest heap allocator), vendiled from Unleashed Recompiled's copy.
 add_library(o1heap STATIC ${SONIC_GENERATIONS_TOOLS_ROOT}/o1heap/o1heap.c)
@@ -60,5 +79,7 @@ target_include_directories(o1heap PUBLIC ${SONIC_GENERATIONS_TOOLS_ROOT}/o1heap)
 add_subdirectory(SonicGenerationsRecompLib)
 add_subdirectory(SonicGenerationsRecomp)
 
-enable_testing()
-add_subdirectory(tests)
+if (NOT ANDROID)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

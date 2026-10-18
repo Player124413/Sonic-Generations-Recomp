@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sonic Generations Recomp</string>
+    <string name="settings_title">Настройки</string>
+    <string name="touch_editor_title">Редактор сенсорного управления</string>
+</resources>

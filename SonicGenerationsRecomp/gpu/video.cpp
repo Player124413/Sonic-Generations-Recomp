@@ -1,6 +1,7 @@
 #include <stdafx.h>
 #include <gpu/video.h>
 #include <gpu/guest_hooks.h>
+#include <user/config.h>
 #include <gpu/state_dispatch.h>
 #include <gpu/state_tables.h>
 #include <os/logger.h>
@@ -56,8 +57,47 @@ bool Video::Init()
 
     if (!g_backend)
     {
+        // Backend selection, highest priority first:
+        //   1. SONIC_RENDER_BACKEND env: vulkan | native | reference | null
+        //      ("vulkan" is the legacy spelling of the reference path and
+        //      keeps honouring SONIC_VULKAN_DIRECT_DRAW).
+        //   2. Config RenderMode (default Native): the project's own Vulkan
+        //      backend with direct guest draws. Reference selects the
+        //      capture/transfer path; Null submits no GPU work.
+        // Without a Vulkan build, a config-selected Vulkan mode falls back
+        // to NullBackend with a warning instead of failing startup; an
+        // explicitly env-requested Vulkan mode remains a hard error.
         const char* requested = std::getenv("SONIC_RENDER_BACKEND");
-        if (requested && std::strcmp(requested, "vulkan") == 0)
+        enum class Want { VulkanReference, VulkanNative, Null } want = Want::Null;
+        bool explicitRequest = requested != nullptr;
+        if (requested)
+        {
+            if (std::strcmp(requested, "vulkan") == 0 || std::strcmp(requested, "reference") == 0)
+                want = Want::VulkanReference;
+            else if (std::strcmp(requested, "native") == 0)
+                want = Want::VulkanNative;
+            else if (std::strcmp(requested, "null") == 0)
+                want = Want::Null;
+            else
+            {
+                LOGFN_ERROR("Unknown render backend: {}", requested);
+                return false;
+            }
+        }
+        else
+        {
+            switch (Config::RenderMode.Value)
+            {
+            case ERenderMode::Native: want = Want::VulkanNative; break;
+            case ERenderMode::Reference: want = Want::VulkanReference; break;
+            case ERenderMode::Null: want = Want::Null; break;
+            default: want = Want::VulkanNative; break;
+            }
+        }
+
+        if (want == Want::Null)
+            g_backend = std::make_unique<NullBackend>();
+        else
         {
 #ifdef SONIC_GENERATIONS_ENABLE_VULKAN
             if (!GameWindow::s_pWindow)
@@ -66,26 +106,27 @@ bool Video::Init()
                 return false;
             }
             const char* validation = std::getenv("SONIC_VULKAN_VALIDATION");
+            const bool directDraw = want == Want::VulkanNative ||
+                (std::getenv("SONIC_VULKAN_DIRECT_DRAW") && std::strcmp(std::getenv("SONIC_VULKAN_DIRECT_DRAW"), "1") == 0);
             g_backend = std::make_unique<VulkanBackend>(GameWindow::s_pWindow,
-                validation && std::strcmp(validation, "1") == 0,
-                std::getenv("SONIC_VULKAN_DIRECT_DRAW") && std::strcmp(std::getenv("SONIC_VULKAN_DIRECT_DRAW"), "1") == 0);
+                validation && std::strcmp(validation, "1") == 0, directDraw);
 #else
-            LOGN_ERROR("Vulkan requested but not built. Configure SONIC_GENERATIONS_ENABLE_VULKAN=ON.");
-            return false;
-#endif
-        }
-        else if (!requested || std::strcmp(requested, "null") == 0)
+            if (explicitRequest)
+            {
+                LOGN_ERROR("Vulkan requested but not built. Configure SONIC_GENERATIONS_ENABLE_VULKAN=ON.");
+                return false;
+            }
+            LOGN_WARNING("RenderMode selects Vulkan, but this build has no Vulkan backend; "
+                "falling back to the null backend. Rebuild with SONIC_GENERATIONS_ENABLE_VULKAN=ON.");
             g_backend = std::make_unique<NullBackend>();
-        else
-        {
-            LOGFN_ERROR("Unknown render backend: {}", requested);
-            return false;
+#endif
         }
     }
 
     s_viewportWidth = g_mode.width;
     s_viewportHeight = g_mode.height;
 
+    g_backend->SetPresentScale(float(Config::RenderScale));
     const bool initialized = g_backend->Init(g_mode);
     if (initialized && std::strcmp(g_backend->GetName(), "vulkan-transfer") == 0)
         GuestGpu::GetCommandStream().Enable(true, true);

@@ -17,6 +17,14 @@ add_executable(paths_tests "paths_tests.cpp" "../SonicGenerationsRecomp/user/pat
 target_compile_features(paths_tests PRIVATE cxx_std_17)
 add_test(NAME paths_tests COMMAND paths_tests)
 
+# ETC2 transcoder + touch pad: dependency-free modules, tested standalone.
+add_executable(texture_transcode_tests "texture_transcode_tests.cpp"
+    "../SonicGenerationsRecomp/gpu/texture_transcode.cpp"
+    "../SonicGenerationsRecomp/hid/touch_input.cpp")
+target_include_directories(texture_transcode_tests PRIVATE "../SonicGenerationsRecomp")
+target_compile_features(texture_transcode_tests PRIVATE cxx_std_20)
+add_test(NAME texture_transcode_tests COMMAND texture_transcode_tests)
+
 if (WIN32 AND SONIC_GENERATIONS_ENABLE_VULKAN)
     add_subdirectory(sdl_vulkan)
 endif()

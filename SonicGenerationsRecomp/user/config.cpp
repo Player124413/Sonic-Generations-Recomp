@@ -11,6 +11,14 @@ namespace Config
     ConfigValue<uint32_t> WindowWidth(1280);
     ConfigValue<uint32_t> WindowHeight(720);
     ConfigValue<bool> Fullscreen(false);
+    ConfigValue<ERenderMode> RenderMode(ERenderMode::Native);
+    ConfigValue<float> RenderScale(1.0f);
+    ConfigValue<ETextureCompression> TextureCompression(ETextureCompression::Auto);
+    ConfigValue<EQualityPreset> QualityPreset(EQualityPreset::Balanced);
+
+    ConfigValue<bool> TouchControls(true);
+    ConfigValue<float> TouchOpacity(0.65f);
+    ConfigValue<float> TouchScale(1.0f);
 
     ConfigValue<EChannelConfiguration> ChannelConfiguration(EChannelConfiguration::Stereo);
     ConfigValue<float> MasterVolume(1.0f);
@@ -121,6 +129,14 @@ namespace Config
             MakeEntry("Video", "WindowWidth", WindowWidth),
             MakeEntry("Video", "WindowHeight", WindowHeight),
             MakeEntry("Video", "Fullscreen", Fullscreen),
+            MakeEntry("Video", "RenderMode", RenderMode),
+            MakeEntry("Video", "RenderScale", RenderScale),
+            MakeEntry("Video", "TextureCompression", TextureCompression),
+            MakeEntry("Video", "QualityPreset", QualityPreset),
+
+            MakeEntry("Touch", "TouchControls", TouchControls),
+            MakeEntry("Touch", "TouchOpacity", TouchOpacity),
+            MakeEntry("Touch", "TouchScale", TouchScale),
 
             MakeEntry("Audio", "ChannelConfiguration", ChannelConfiguration),
             MakeEntry("Audio", "MasterVolume", MasterVolume),
@@ -216,6 +232,24 @@ namespace Config
         }
 
         // Sanity clamps.
+        if (uint32_t(RenderMode.Value) >= uint32_t(ERenderMode::Count))
+            RenderMode = RenderMode.Default;
+        if (uint32_t(TextureCompression.Value) >= uint32_t(ETextureCompression::Count))
+            TextureCompression = TextureCompression.Default;
+        if (uint32_t(QualityPreset.Value) >= uint32_t(EQualityPreset::Count))
+            QualityPreset = QualityPreset.Default;
+        if (RenderScale < 0.5f)
+            RenderScale = 0.5f;
+        if (RenderScale > 1.0f)
+            RenderScale = 1.0f;
+        if (TouchOpacity < 0.15f)
+            TouchOpacity = 0.15f;
+        if (TouchOpacity > 1.0f)
+            TouchOpacity = 1.0f;
+        if (TouchScale < 0.6f)
+            TouchScale = 0.6f;
+        if (TouchScale > 1.8f)
+            TouchScale = 1.8f;
         if (FPSLimit < FPS_MIN)
             FPSLimit = FPS_MIN;
         if (FPSLimit > FPS_MAX)

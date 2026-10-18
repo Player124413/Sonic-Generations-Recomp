@@ -31,3 +31,11 @@ compile_commands.json
 # Python tooling
 __pycache__/
 *.pyc
+
+# Android build artefacts
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+*.apk
+*.aab

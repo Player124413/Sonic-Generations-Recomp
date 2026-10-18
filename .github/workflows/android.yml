@@ -1,0 +1,79 @@
+name: Android APK
+
+on:
+  push:
+    paths:
+      - "android/**"
+      - "SonicGenerationsRecomp/**"
+      - "SonicGenerationsRecompLib/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - "SonicGenerationsRecomp/**"
+      - "SonicGenerationsRecompLib/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    name: Host module tests (ETC2, touch)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run dependency-free module tests
+        run: |
+          g++ -std=c++20 -Wall -Wextra -I SonicGenerationsRecomp \
+            tests/texture_transcode_tests.cpp \
+            SonicGenerationsRecomp/gpu/texture_transcode.cpp \
+            SonicGenerationsRecomp/hid/touch_input.cpp \
+            -o /tmp/texture_transcode_tests
+          /tmp/texture_transcode_tests
+
+  apk:
+    name: Build APK (arm64-v8a)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install NDK and CMake
+        run: |
+          sdkmanager "ndk;26.3.11579264" "cmake;3.22.1" "platforms;android-34" "build-tools;34.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle assembleDebug --stacktrace
+
+      - name: Build release APK
+        working-directory: android
+        run: gradle assembleRelease --stacktrace
+
+      - name: List APKs
+        run: find android/app/build/outputs/apk -name "*.apk" -exec ls -la {} +
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonic-generations-recomp-android
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

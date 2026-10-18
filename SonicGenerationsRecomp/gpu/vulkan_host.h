@@ -12,7 +12,7 @@
 namespace HostGpu
 {
     using Resource = uint64_t; // monotonically allocated, zero is invalid
-    enum class ImageKind { Rgba8, Depth32, Depth24Stencil8 };
+    enum class ImageKind { Rgba8, Depth32, Depth24Stencil8, Etc2Rgb, Etc2Rgba };
     // One RGBA8 target, D32/D24S8 depth and per-vertex streams. generationsAbi selects
     // the fork's BDA/push-constant + 2D image/sampler layout; otherwise this is
     // a descriptor-free fixture profile. No runtime fallback shaders.
@@ -90,6 +90,13 @@ namespace HostGpu
 
         Resource CreateBuffer(size_t bytes, VkBufferUsageFlags usage, bool hostVisible);
         Resource CreateImage(uint32_t width, uint32_t height, ImageKind kind);
+        // ETC2 (VK_FORMAT_ETC2_*_SRGB_BLOCK) sampled-image support. Probed at
+        // Init from format properties; Android Vulkan devices always have it,
+        // desktop GPUs typically do not.
+        bool SupportsEtc2() const;
+        // Uploads a tightly packed ETC2 payload (GuestGpu::Etc2DataSize bytes)
+        // into an Etc2Rgb/Etc2Rgba image created with CreateImage.
+        bool UploadEtc2(Resource image, std::span<const uint8_t> data);
         bool SupportsGenerationsAbi() const;
         Resource CreateGraphicsPipeline(const GraphicsPipelineInfo& info);
         bool DrawIndexed(Resource pipeline, Resource color, Resource depth,

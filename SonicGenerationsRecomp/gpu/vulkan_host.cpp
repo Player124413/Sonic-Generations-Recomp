@@ -1,5 +1,6 @@
 #include <gpu/vulkan_state.h>
 #include <gpu/vulkan_host.h>
+#include <gpu/texture_transcode.h>
 #include <gpu/shader_cache.h>
 #include <algorithm>
 #include <atomic>
@@ -17,9 +18,12 @@ VkFormat ImageFormat(ImageKind kind) {
     case ImageKind::Rgba8: return VK_FORMAT_R8G8B8A8_UNORM;
     case ImageKind::Depth32: return VK_FORMAT_D32_SFLOAT;
     case ImageKind::Depth24Stencil8: return VK_FORMAT_D24_UNORM_S8_UINT;
+    case ImageKind::Etc2Rgb: return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
+    case ImageKind::Etc2Rgba: return VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK;
     }
     return VK_FORMAT_UNDEFINED;
 }
+bool IsEtc2(ImageKind kind) { return kind == ImageKind::Etc2Rgb || kind == ImageKind::Etc2Rgba; }
 }
 struct VulkanHost::Impl
 {
@@ -46,7 +50,7 @@ struct VulkanHost::Impl
         uint32_t width{}, height{};
         ImageKind kind{};
         VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
-        VkImageAspectFlags Aspect() const { return kind == ImageKind::Rgba8 ? VK_IMAGE_ASPECT_COLOR_BIT : (kind == ImageKind::Depth24Stencil8 ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_DEPTH_BIT); }
+        VkImageAspectFlags Aspect() const { return (kind == ImageKind::Rgba8 || IsEtc2(kind)) ? VK_IMAGE_ASPECT_COLOR_BIT : (kind == ImageKind::Depth24Stencil8 ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_DEPTH_BIT); }
         ~Image() { if (view) vkDestroyImageView(device, view, nullptr); if (image) vkDestroyImage(device, image, nullptr); if (memory) vkFreeMemory(device, memory, nullptr); }
     };
     struct Pipeline
@@ -72,6 +76,7 @@ struct VulkanHost::Impl
     VkDebugUtilsMessengerEXT messenger{};
     VkInstance instance{};
     VkPhysicalDevice physical{};
+    bool etc2Supported = false;
     VkPhysicalDeviceMemoryProperties memoryProperties{};
     VkDevice device{};
     VkQueue queue{};
@@ -329,6 +334,13 @@ bool VulkanHost::Init(const VulkanConfig& config)
     if (!p.physical) return p.Fail("No graphics queue with required presentation support");
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(p.physical, &properties); p.adapter = properties.deviceName;
+    {
+        VkFormatProperties rgbProps{}, rgbaProps{};
+        vkGetPhysicalDeviceFormatProperties(p.physical, VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK, &rgbProps);
+        vkGetPhysicalDeviceFormatProperties(p.physical, VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK, &rgbaProps);
+        p.etc2Supported = (rgbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) &&
+            (rgbaProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+    }
     vkGetPhysicalDeviceMemoryProperties(p.physical, &p.memoryProperties);
     float priority = 1.0f;
     VkDeviceQueueCreateInfo queueInfo{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -408,13 +420,15 @@ Resource VulkanHost::CreateImage(uint32_t width, uint32_t height, ImageKind kind
     const auto format = ImageFormat(kind);
     VkFormatProperties features;
     vkGetPhysicalDeviceFormatProperties(p.physical, format, &features);
-    const VkFormatFeatureFlags required = kind == ImageKind::Rgba8 ? VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT : VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    const VkFormatFeatureFlags required = IsEtc2(kind) ? VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT :
+        (kind == ImageKind::Rgba8 ? VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT : VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
     if ((features.optimalTilingFeatures & required) != required) { p.Fail("Unsupported image format"); return 0; }
     VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     info.imageType = VK_IMAGE_TYPE_2D; info.format = format; info.extent = {width, height, 1};
     info.mipLevels = info.arrayLayers = 1; info.samples = VK_SAMPLE_COUNT_1_BIT; info.tiling = VK_IMAGE_TILING_OPTIMAL;
     info.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-        (kind == ImageKind::Rgba8 ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+        (IsEtc2(kind) ? VK_IMAGE_USAGE_SAMPLED_BIT :
+        (kind == ImageKind::Rgba8 ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT));
     info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     if (!p.Check(vkCreateImage(p.device, &info, nullptr, &image->image), "vkCreateImage")) return 0;
     VkMemoryRequirements requirements;
@@ -925,11 +939,35 @@ bool VulkanHost::UploadRgba(Resource id, std::span<const uint8_t> data)
     Destroy(staging);
     return ok;
 }
+bool VulkanHost::SupportsEtc2() const { return impl->etc2Supported; }
+bool VulkanHost::UploadEtc2(Resource id, std::span<const uint8_t> data)
+{
+    auto& p = *impl; auto* image = p.FindImage(id);
+    if (!image) return false;
+    if (!IsEtc2(image->kind) ||
+        data.size() != GuestGpu::Etc2DataSize(image->width, image->height,
+            image->kind == ImageKind::Etc2Rgba ? GuestGpu::Etc2Kind::Rgba : GuestGpu::Etc2Kind::Rgb))
+        return p.Fail("Invalid ETC2 upload size/format");
+    const auto staging = CreateBuffer(data.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+    if (!staging) return false;
+    bool ok = WriteBuffer(staging, data) && p.Begin();
+    if (ok)
+    {
+        p.Transition(*image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT);
+        VkBufferImageCopy copy{};
+        copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}; copy.imageExtent = {image->width, image->height, 1};
+        vkCmdCopyBufferToImage(p.command, p.FindBuffer(staging)->buffer, image->image, image->layout, 1, &copy);
+        ok = p.Submit();
+    }
+    Destroy(staging);
+    return ok;
+}
 bool VulkanHost::ReadImage(Resource id, std::vector<uint8_t>& out)
 {
     auto& p = *impl; auto* image = p.FindImage(id);
     if (!image) return false;
     if (image->kind == ImageKind::Depth24Stencil8) return p.Fail("Combined depth/stencil readback needs an explicit aspect");
+    if (IsEtc2(image->kind)) return p.Fail("ETC2 images are sampled-only and cannot be read back as RGBA");
     if (image->layout == VK_IMAGE_LAYOUT_UNDEFINED) return p.Fail("Cannot read an uninitialized image");
     std::vector<uint8_t> bytes(size_t(image->width) * image->height * 4);
     const auto staging = CreateBuffer(bytes.size(), VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
