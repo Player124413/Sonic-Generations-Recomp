@@ -48,10 +48,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
-
+      # The GitHub ubuntu image ships the Android SDK (cmdline tools,
+      # platform, build-tools). Installing the pinned NDK/CMake directly
+      # avoids an extra setup action and its version drift.
       - name: Install NDK and CMake
         run: |
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          sdkmanager --version
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "ndk;26.3.11579264" "cmake;3.22.1" "platforms;android-34" "build-tools;34.0.0"
 
       - uses: gradle/actions/setup-gradle@v4
