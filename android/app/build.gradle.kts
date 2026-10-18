@@ -53,7 +53,7 @@ android {
         jniLibs {
             // Keep .so files uncompressed and page-aligned for direct
             // loading (also required for 16 KiB pages).
-            useLegacyPackaging.set(false)
+            useLegacyPackaging = false
         }
     }
 }
