@@ -81,29 +81,12 @@ jobs:
           fi
           exit $code
 
-      - name: Build release APK
-        working-directory: android
-        run: |
-          set +e
-          gradle assembleRelease --stacktrace > /tmp/gradle-release.log 2>&1
-          code=$?
-          tail -n 40 /tmp/gradle-release.log
-          if [ $code -ne 0 ]; then
-            grep -E "error:|CMake Error|FAILED|What went wrong|Execution failed|Caused by:|^e: |Could not|failed|No target|Cannot find" /tmp/gradle-release.log | head -n 45 | while IFS= read -r line; do
-              esc=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r/%0D/g')
-              echo "::error::${esc}"
-            done
-          fi
-          exit $code
-
       - name: Upload build logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: gradle-build-logs
-          path: |
-            /tmp/gradle-debug.log
-            /tmp/gradle-release.log
+          path: /tmp/gradle-debug.log
           if-no-files-found: ignore
 
       - name: List APKs
@@ -123,7 +106,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sonic-generations-recomp-android
-          path: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error

@@ -62,6 +62,36 @@ object GameImporter {
         return source.absolutePath
     }
 
+    /**
+     * Source of an already copied game in the import folder (folder whose
+     * subtree contains default.xex, or a single .iso/.xiso), or null.
+     * Lets the launcher recover when pending_install.txt was lost (process
+     * death mid-import, manual copy into the import folder, ...).
+     */
+    fun findImportedSource(context: Context): File? {
+        val importDir = AppFiles.importDir(context)
+        val files = importDir.listFiles() ?: return null
+        for (file in files) {
+            if (file.isFile && (file.extension.equals("iso", true) || file.extension.equals("xiso", true)))
+                return file
+        }
+        for (file in files) {
+            if (file.isDirectory) {
+                val root = findXexRoot(file)
+                if (root != null) return root
+            }
+        }
+        return null
+    }
+
+    /** Writes pending_install.txt for an already copied game, if possible. */
+    fun ensurePendingInstall(context: Context): Boolean {
+        if (AppFiles.pendingInstallFile(context).isFile) return true
+        val source = findImportedSource(context) ?: return false
+        AppFiles.pendingInstallFile(context).writeText(source.absolutePath + "\n")
+        return true
+    }
+
     private fun findXexRoot(dir: File): File? {
         if (File(dir, "default.xex").isFile) return dir
         val children = dir.listFiles() ?: return null

@@ -56,7 +56,12 @@ class LauncherActivity : Activity() {
             text = "▶  Играть"
             textSize = 18f
             setOnClickListener {
-                if (AppFiles.isGameInstalled(this@LauncherActivity)) {
+                // Ready means: installed, or imported and waiting for the
+                // first-launch install the native side performs.
+                val ready = AppFiles.isGameInstalled(this@LauncherActivity) ||
+                    AppFiles.pendingInstallFile(this@LauncherActivity).isFile ||
+                    GameImporter.ensurePendingInstall(this@LauncherActivity)
+                if (ready) {
                     startActivity(Intent(this@LauncherActivity, GameActivity::class.java))
                 } else {
                     Toast.makeText(this@LauncherActivity, "Сначала импортируйте игру", Toast.LENGTH_LONG).show()
@@ -99,6 +104,11 @@ class LauncherActivity : Activity() {
 
     private fun refreshStatus() {
         val installed = AppFiles.isGameInstalled(this)
+        // Imported but not installed yet is a ready-to-play state: the
+        // native runtime installs the copy on first launch. Treating it
+        // as "not installed" dead-locked the Play button before.
+        val imported = !installed &&
+            (AppFiles.pendingInstallFile(this).isFile || GameImporter.findImportedSource(this) != null)
         val settings = Settings.load(this)
         val renderer = when (settings.renderMode) {
             Settings.RENDER_NATIVE -> "Нативный Vulkan"
@@ -107,7 +117,13 @@ class LauncherActivity : Activity() {
         }
         val sizeMb = AppFiles.directorySize(AppFiles.assetsDir(this)) / (1024 * 1024)
         statusView.text = buildString {
-            append(if (installed) "Игра установлена ✓" else "Игра не установлена")
+            append(
+                when {
+                    installed -> "Игра установлена ✓"
+                    imported -> "Игра импортирована ✓ — установка при первом запуске"
+                    else -> "Игра не установлена"
+                }
+            )
             append("\nРендер: ").append(renderer)
             append("\nМасштаб рендера: ").append((settings.renderScale * 100).toInt()).append('%')
             append("\nТекстуры: ").append(
@@ -120,7 +136,7 @@ class LauncherActivity : Activity() {
             append("\nСенсорное управление: ").append(if (settings.touchControls) "вкл" else "выкл")
             append("\nДанные игры: ").append(sizeMb).append(" МБ")
         }
-        playButton.isEnabled = installed
+        playButton.isEnabled = installed || imported
     }
 
     private fun pickFolder() {

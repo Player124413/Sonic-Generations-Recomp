@@ -142,7 +142,7 @@ cmake -S android/app/src/main/cpp -B build/android \
 cmake --build build/android -j
 ```
 
-CI: `.github/workflows/android.yml` собирает debug и release APK на
+CI: `.github/workflows/android.yml` собирает debug APK на
 каждый push в `android/**` и нативную часть.
 
 ## Файлы
