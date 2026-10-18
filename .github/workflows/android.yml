@@ -63,13 +63,48 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      # Build output is mirrored into check annotations on failure: the
+      # runner log archive is not always downloadable, while annotations
+      # stay readable through the API/UI.
       - name: Build debug APK
         working-directory: android
-        run: gradle assembleDebug --stacktrace
+        run: |
+          set +e
+          gradle assembleDebug --stacktrace > /tmp/gradle-debug.log 2>&1
+          code=$?
+          tail -n 40 /tmp/gradle-debug.log
+          if [ $code -ne 0 ]; then
+            grep -E "error:|FAILED|What went wrong|Execution failed|Caused by:|^e: |Could not|failed" /tmp/gradle-debug.log | head -n 45 | while IFS= read -r line; do
+              esc=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r/%0D/g')
+              echo "::error::${esc}"
+            done
+          fi
+          exit $code
 
       - name: Build release APK
         working-directory: android
-        run: gradle assembleRelease --stacktrace
+        run: |
+          set +e
+          gradle assembleRelease --stacktrace > /tmp/gradle-release.log 2>&1
+          code=$?
+          tail -n 40 /tmp/gradle-release.log
+          if [ $code -ne 0 ]; then
+            grep -E "error:|FAILED|What went wrong|Execution failed|Caused by:|^e: |Could not|failed" /tmp/gradle-release.log | head -n 45 | while IFS= read -r line; do
+              esc=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r/%0D/g')
+              echo "::error::${esc}"
+            done
+          fi
+          exit $code
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-logs
+          path: |
+            /tmp/gradle-debug.log
+            /tmp/gradle-release.log
+          if-no-files-found: ignore
 
       - name: List APKs
         run: find android/app/build/outputs/apk -name "*.apk" -exec ls -la {} +
