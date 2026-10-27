@@ -1,4 +1,10 @@
-# Windows: переход на ReXGlue + собственную графику
+# Windows: переход на ReXGlue
+
+> **Короткий путь к игре — [docs/REXGLUE_WINDOWS.md](../docs/REXGLUE_WINDOWS.md):** код игры
+> генерируется из вашего дампа (`sonicgenerations_manifest.toml`, `config/functions.toml`) и рисует
+> штатный GPU-плагин SDK. Собственный рендерер (NativeXRenderer) из репозитория удалён — разбор
+> вариантов в [docs/RUNTIME_OPTIONS.md](../docs/RUNTIME_OPTIONS.md). Всё, что ниже, — состояние
+> экспериментальных режимов этого host'а (`forward`/`native`/`translate`), они не нужны для игры.
 
 **Новая согласованная архитектура:** ReXGlue предоставляет ядро/XAM, XMA,
 ввод, VFS и гостевую память. Собственная реализация заменяет только GPU.

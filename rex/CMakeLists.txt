@@ -163,18 +163,12 @@ add_test(NAME rex_native_surface_policy COMMAND rex_native_surface_policy_tests)
 
 option(SONIC_REX_BUILD_GAME "Build the actual game host from external ReXGlue-generated PPC" OFF)
 set(SONIC_REX_GENERATED_DIR "" CACHE PATH "Directory containing sonicgenerations_init.h and sources.cmake")
+# The entry-recovery experiment replaces ReXGlue's generated registration sources with thunks recovered
+# from the legacy ppc/ tree. That was a workaround for building against code of a different ABI; with
+# real codegen from your own default.xex (docs/REXGLUE_WINDOWS.md) the generated sources are the
+# correct ones, so this stays off. Turn it on only to reproduce the old mismatched-ABI experiment.
+option(SONIC_REX_ENTRY_RECOVERY "Replace the generated registration sources with thunks recovered from ppc/" OFF)
 
-# NativeXRenderer (thirdparty/native_x_renderer): draws the game's XDK D3D calls on DiligentCore
-# (Vulkan) instead of replaying the console's command stream through the emulated Xenos. Off by
-# default, and additive: the Xenos path stays the reference and the fallback, and nothing changes for a
-# build that does not ask for it.
-#
-# It is not a drop-in for the installed SDK package: the library compiles the SDK's shader translator
-# and register code in process, so it needs the SDK as a source tree (REXSDK_DIR) on the recomp branch
-# of ElGuslml/rexglue-sdk, whose RECOMP.md lists the changes it relies on. See
-# docs/NATIVE_X_RENDERER.md for the whole path, and docs/native-x-renderer-sonic-generations.md for what
-# of Sonic Generations' D3D library is mapped so far.
-option(SONIC_REX_NATIVE_X_RENDERER "Draw the game with NativeXRenderer (Vulkan, DiligentCore)" OFF)
 if(SONIC_REX_BUILD_GAME)
     set(SONIC_VULKAN_HEADLESS ON CACHE BOOL "ReXGlue owns SDL3; native replay uses offscreen Vulkan" FORCE)
     include("${CMAKE_CURRENT_LIST_DIR}/../cmake/VulkanHost.cmake")
@@ -192,41 +186,43 @@ if(SONIC_REX_BUILD_GAME)
     if(NOT GENERATED_SOURCES)
         message(FATAL_ERROR "Empty generated source inventory")
     endif()
-    # Recover audited entry thunks, never the legacy runtime or arbitrary missing code.
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
-    set(ENTRY_RECOVERY_DIR "${CMAKE_CURRENT_BINARY_DIR}/entry-recovery")
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_LIST_DIR}/tools/recover_guest_entries.py")
-    execute_process(COMMAND "${Python3_EXECUTABLE}"
-        "${CMAKE_CURRENT_LIST_DIR}/tools/recover_guest_entries.py"
-        --legacy-root "${CMAKE_CURRENT_LIST_DIR}/../ppc"
-        --generated-dir "${SONIC_REX_GENERATED_DIR}"
-        --output-dir "${ENTRY_RECOVERY_DIR}"
-        RESULT_VARIABLE ENTRY_RECOVERY_RESULT)
-    if(NOT ENTRY_RECOVERY_RESULT EQUAL 0)
-        message(FATAL_ERROR "Guest entry inventory audit failed")
+    if(SONIC_REX_ENTRY_RECOVERY)
+        # Recover audited entry thunks, never the legacy runtime or arbitrary missing code.
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        set(ENTRY_RECOVERY_DIR "${CMAKE_CURRENT_BINARY_DIR}/entry-recovery")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+            "${CMAKE_CURRENT_LIST_DIR}/tools/recover_guest_entries.py")
+        execute_process(COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_LIST_DIR}/tools/recover_guest_entries.py"
+            --legacy-root "${CMAKE_CURRENT_LIST_DIR}/../ppc"
+            --generated-dir "${SONIC_REX_GENERATED_DIR}"
+            --output-dir "${ENTRY_RECOVERY_DIR}"
+            RESULT_VARIABLE ENTRY_RECOVERY_RESULT)
+        if(NOT ENTRY_RECOVERY_RESULT EQUAL 0)
+            message(FATAL_ERROR "Guest entry inventory audit failed")
+        endif()
+        list(LENGTH GENERATED_SOURCES ENTRY_SOURCE_COUNT_BEFORE)
+        list(REMOVE_ITEM GENERATED_SOURCES
+            "${SONIC_REX_GENERATED_DIR}/sonicgenerations_init.cpp"
+            "${SONIC_REX_GENERATED_DIR}/sonicgenerations_register.cpp")
+        list(LENGTH GENERATED_SOURCES ENTRY_SOURCE_COUNT_AFTER)
+        math(EXPR ENTRY_SOURCE_COUNT_EXPECTED "${ENTRY_SOURCE_COUNT_BEFORE} - 2")
+        if(NOT ENTRY_SOURCE_COUNT_AFTER EQUAL ENTRY_SOURCE_COUNT_EXPECTED)
+            message(FATAL_ERROR "Expected exactly two generated registration sources to replace")
+        endif()
+        list(APPEND GENERATED_SOURCES
+            "${ENTRY_RECOVERY_DIR}/sonicgenerations_init.cpp"
+            "${ENTRY_RECOVERY_DIR}/sonicgenerations_register.cpp"
+            "${ENTRY_RECOVERY_DIR}/guest_entry_recovery.cpp")
+        add_executable(rex_guest_entry_recovery_tests
+            "${ENTRY_RECOVERY_DIR}/guest_entry_recovery.cpp"
+            "${ENTRY_RECOVERY_DIR}/guest_entry_recovery_tests.cpp")
+        target_include_directories(rex_guest_entry_recovery_tests PRIVATE "${SONIC_REX_GENERATED_DIR}" "${ENTRY_RECOVERY_DIR}")
+        target_link_libraries(rex_guest_entry_recovery_tests PRIVATE rex::runtime)
+        rexglue_apply_target_settings(rex_guest_entry_recovery_tests)
+        add_dependencies(rex_guest_entry_recovery_tests rex_host_contract_tests)
+        add_test(NAME rex_guest_entry_recovery COMMAND rex_guest_entry_recovery_tests)
     endif()
-    list(LENGTH GENERATED_SOURCES ENTRY_SOURCE_COUNT_BEFORE)
-    list(REMOVE_ITEM GENERATED_SOURCES
-        "${SONIC_REX_GENERATED_DIR}/sonicgenerations_init.cpp"
-        "${SONIC_REX_GENERATED_DIR}/sonicgenerations_register.cpp")
-    list(LENGTH GENERATED_SOURCES ENTRY_SOURCE_COUNT_AFTER)
-    math(EXPR ENTRY_SOURCE_COUNT_EXPECTED "${ENTRY_SOURCE_COUNT_BEFORE} - 2")
-    if(NOT ENTRY_SOURCE_COUNT_AFTER EQUAL ENTRY_SOURCE_COUNT_EXPECTED)
-        message(FATAL_ERROR "Expected exactly two generated registration sources to replace")
-    endif()
-    list(APPEND GENERATED_SOURCES
-        "${ENTRY_RECOVERY_DIR}/sonicgenerations_init.cpp"
-        "${ENTRY_RECOVERY_DIR}/sonicgenerations_register.cpp"
-        "${ENTRY_RECOVERY_DIR}/guest_entry_recovery.cpp")
-    add_executable(rex_guest_entry_recovery_tests
-        "${ENTRY_RECOVERY_DIR}/guest_entry_recovery.cpp"
-        "${ENTRY_RECOVERY_DIR}/guest_entry_recovery_tests.cpp")
-    target_include_directories(rex_guest_entry_recovery_tests PRIVATE "${SONIC_REX_GENERATED_DIR}" "${ENTRY_RECOVERY_DIR}")
-    target_link_libraries(rex_guest_entry_recovery_tests PRIVATE rex::runtime)
-    rexglue_apply_target_settings(rex_guest_entry_recovery_tests)
-    add_dependencies(rex_guest_entry_recovery_tests rex_host_contract_tests)
-    add_test(NAME rex_guest_entry_recovery COMMAND rex_guest_entry_recovery_tests)
     # Fail quickly on host API / generated ABI mismatch, before the large PPC build.
     add_library(sonic_rex_api_probe OBJECT EXCLUDE_FROM_ALL
         src/main.cpp src/gpu_hooks.cpp "${SONIC_REX_GENERATED_DIR}/sonicgenerations_recomp.0.cpp")
@@ -240,7 +236,10 @@ if(SONIC_REX_BUILD_GAME)
         target_compile_options(sonic_rex_api_probe PRIVATE -fasync-exceptions)
     endif()
     add_library(sonic_rex_ppc OBJECT ${GENERATED_SOURCES})
-    target_include_directories(sonic_rex_ppc PRIVATE "${SONIC_REX_GENERATED_DIR}" "${ENTRY_RECOVERY_DIR}")
+    target_include_directories(sonic_rex_ppc PRIVATE "${SONIC_REX_GENERATED_DIR}")
+    if(SONIC_REX_ENTRY_RECOVERY)
+        target_include_directories(sonic_rex_ppc PRIVATE "${ENTRY_RECOVERY_DIR}")
+    endif()
     target_link_libraries(sonic_rex_ppc PRIVATE rex::runtime)
     rexglue_apply_target_settings(sonic_rex_ppc)
     # Generated dead labels / release-only lock counters are noisy, not errors.
@@ -255,44 +254,12 @@ if(SONIC_REX_BUILD_GAME)
     # the app attaches our presenter to the window while the SDK keeps running the
     # guest GPU device services.
     add_executable(SonicGenerationsRecomp-ReXGlue WIN32 src/main.cpp src/gpu_hooks.cpp
-        src/translate_presenter.cpp)
+        src/translate_presenter.cpp src/sg_frame_rate.cpp src/sg_spin_waits.cpp)
     target_include_directories(SonicGenerationsRecomp-ReXGlue PRIVATE src "${SONIC_REX_GENERATED_DIR}")
     target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_ppc sonic_rex_math sonic_rex_capture sonic_rex_pm4 sonic_rex_host_policy rex::runtime)
     target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_RENDERER=1)
     target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_native)
     rexglue_configure_target(SonicGenerationsRecomp-ReXGlue GPU_PLUGINS ${SONIC_REX_GPU_PLUGINS})
 
-    if(SONIC_REX_NATIVE_X_RENDERER)
-        set(SONIC_NXR_DIR "${CMAKE_CURRENT_LIST_DIR}/../thirdparty/native_x_renderer" CACHE PATH
-            "NativeXRenderer source tree (a git submodule of this repository)")
-        if(NOT EXISTS "${SONIC_NXR_DIR}/CMakeLists.txt")
-            message(FATAL_ERROR
-                "NativeXRenderer is not checked out: git submodule update --init "
-                "thirdparty/native_x_renderer (and its own DiligentCore submodule: "
-                "git submodule update --init --recursive).")
-        endif()
-        if(NOT DEFINED REXSDK_DIR OR NOT EXISTS "${REXSDK_DIR}/RECOMP.md")
-            message(FATAL_ERROR
-                "NativeXRenderer needs the ReXGlue SDK as a source tree on the recomp branch of "
-                "ElGuslml/rexglue-sdk (-DREXSDK_DIR=<tree>, RECOMP.md present). The installed SDK "
-                "package does not carry the graphics sources it compiles in process. "
-                "See docs/NATIVE_X_RENDERER.md.")
-        endif()
-        # NXR compiles the SDK's shader translator in process and links the SDK's own glslang; only a
-        # source build of the SDK defines these targets.
-        if(NOT TARGET glslang::SPIRV)
-            message(FATAL_ERROR
-                "NativeXRenderer links glslang::SPIRV from the SDK source build, and this configure "
-                "does not have it: build the whole project against the recomp SDK tree (the SDK's "
-                "generated/rexglue.cmake), not against the installed package. See docs/NATIVE_X_RENDERER.md.")
-        endif()
-        # The game side (hooks, profile) is compiled into the executable, never into an archive: the
-        # generated functions are weak and a strong definition in an archive member may not be pulled in.
-        target_sources(SonicGenerationsRecomp-ReXGlue PRIVATE src/native_x/sonic_generations_nxr.cpp)
-        target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_X_RENDERER=1)
-        add_subdirectory("${SONIC_NXR_DIR}" "${CMAKE_BINARY_DIR}/native_x_renderer")
-        target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE native_x_renderer)
-        # NVIDIA's DLSS runtime next to the executable, when the SDK provides the DLSS targets.
-        native_x_renderer_copy_runtime(SonicGenerationsRecomp-ReXGlue)
-    endif()
+
 endif()

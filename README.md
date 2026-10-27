@@ -30,7 +30,7 @@
 
 | Путь | Где | Что это |
 |---|---|---|
-| **ReXGlue-host** (целевой) | `rex/` | ядро/XAM/XMA/ввод/VFS берутся у SDK ReXGlue, графика — сначала эталонный Xenos, а поверх него [NativeXRenderer](docs/NATIVE_X_RENDERER.md): перехват D3D-вызовов игры и рисование напрямую на Vulkan |
+| **ReXGlue-host** (целевой, через него можно играть) | `rex/` | ядро/XAM/XMA/ввод/VFS и графика — SDK ReXGlue (GPU-плагин Xenos на Vulkan). Код игры генерируется из **вашего** дампа: [docs/REXGLUE_WINDOWS.md](docs/REXGLUE_WINDOWS.md) |
 | **Собственный runtime** (прежний) | `SonicGenerationsRecomp/` | самостоятельно написанные ядро, XMA, ввод, установщик из ISO и свой Vulkan-бэкенд; остаётся рабочим материалом и справочником |
 
 Рекомпилированный код игры лежит в `ppc/` (вывод старого XenonRecomp, ~154 тысячи функций). Для
@@ -55,16 +55,18 @@ cmake --build build -j$(nproc)
 Нужны CMake ≥ 3.20, **Clang** (GCC/MSVC не умеют использующиеся Xbox-ABI агрегаты) и SDL2.
 Диагностика: [docs/TESTING_RUNTIME.md](docs/TESTING_RUNTIME.md).
 
-## Нативный рендерер (NativeXRenderer)
+## ## Как запустить игру (путь ReXGlue)
 
-Целевая графика — Vulkan, и не через эмуляцию Xenos, а через перехват D3D-библиотеки игры:
+Пошагово: [docs/REXGLUE_WINDOWS.md](docs/REXGLUE_WINDOWS.md). Коротко:
 
-- как это работает, что уже вшито и что нужно включить — [docs/NATIVE_X_RENDERER.md](docs/NATIVE_X_RENDERER.md);
-- карта D3D-слоя Sonic Generations с адресами и уликами — [docs/native-x-renderer-sonic-generations.md](docs/native-x-renderer-sonic-generations.md);
-- инструменты разбора нашего кода — [tools/nxr/README.md](tools/nxr/README.md).
+1. собрать ReXGlue SDK из исходников с Vulkan;
+2. `rexglue codegen rex/sonicgenerations_manifest.toml` — генерация кода **из вашего** `default.xex`
+   (манифест и `config/functions.toml` перенесены из рабочего порта этой же игры);
+3. собрать `rex/` с `-DSONIC_REX_BUILD_GAME=ON`;
+4. положить данные игры в `assets/` рядом с EXE и запустить.
 
-Пока рендерер не подтверждён на игре, по умолчанию рисует эталонный путь Xenos — он не ломается и
-не ускоряется от этой интеграции.
+Рисует штатный GPU-плагин SDK. Разбор альтернатив (ReGPU, plume, native renderer) и почему выбран
+этот путь — [docs/RUNTIME_OPTIONS.md](docs/RUNTIME_OPTIONS.md).
 
 ## Структура
 
@@ -73,9 +75,10 @@ cmake --build build -j$(nproc)
 ├── SonicGenerationsRecompLib/# статическая библиотека из ppc/ + шов шейдеров
 ├── SonicGenerationsRecomp/   # прежний runtime: ядро, GPU, APU, HID, установщик, os/user/ui
 ├── rex/                      # host на ReXGlue (ядро/XAM/XMA/ввод/VFS от SDK) + интеграция NXR
-│   └── src/native_x/         # профиль D3D-устройства и хуки для Sonic Generations
-├── thirdparty/native_x_renderer/  # сабмодуль: сам рендерер
-├── tools/                    # XenonRecomp, XenosRecomp, o1heap, nxr (разбор кода)
+│   ├── config/functions.toml # границы функций для кодогенерации
+│   ├── sonicgenerations_manifest.toml  # вход rexglue codegen
+│   └── src/sg_*.cpp          # игровые хуки: 60 FPS, spin-wait
+├── tools/                    # XenonRecomp, XenosRecomp, o1heap
 ├── tests/                    # смоук-тесты ядра, GPU, аудио, полноты импортов
 └── docs/                     # архитектура, сборка, GPU, аудио, тестирование, планы
 ```
@@ -87,8 +90,8 @@ cmake --build build -j$(nproc)
 | [STATUS.md](STATUS.md) | что проверено, чем и что нет — единственный источник правды о готовности |
 | [docs/BUILDING.md](docs/BUILDING.md) | сборка, тулчейн, генерация кода |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | как устроены рантайм и host |
-| [docs/NATIVE_X_RENDERER.md](docs/NATIVE_X_RENDERER.md) | нативный рендерер: включение и чек-лист доведения |
-| [docs/native-x-renderer-sonic-generations.md](docs/native-x-renderer-sonic-generations.md) | карта D3D-слоя игры |
+| [docs/REXGLUE_WINDOWS.md](docs/REXGLUE_WINDOWS.md) | как собрать и запустить игру на ПК |
+| [docs/RUNTIME_OPTIONS.md](docs/RUNTIME_OPTIONS.md) | чем рисовать: ReXGlue Xenos, ReGPU, plume, native renderer |
 | [docs/VULKAN.md](docs/VULKAN.md), [docs/GPU.md](docs/GPU.md) | собственный Vulkan-бэкенд (прежний путь) |
 | [docs/AUDIO.md](docs/AUDIO.md) | XMA-декодер и вывод звука |
 | [docs/TESTING_WINDOWS.md](docs/TESTING_WINDOWS.md), [docs/TESTING_RUNTIME.md](docs/TESTING_RUNTIME.md) | проверки |
@@ -102,13 +105,12 @@ cmake --build build -j$(nproc)
 
 Код рантайма происходит от [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp)
 (GPLv3), поэтому проект распространяется по **GPLv3** — см. `COPYING` и `THIRD_PARTY.md`.
-XenonRecomp/XenosRecomp — MIT, NativeXRenderer — MIT (см. `THIRD_PARTY_NOTICES.md` в его дереве).
+XenonRecomp/XenosRecomp — MIT; ReXGlue SDK — BSD-3-Clause.
 Файлы игры не распространяются.
 
 ## Кредиты
 
 - [hedge-dev](https://github.com/hedge-dev) — XenonRecomp, XenosRecomp, Unleashed Recompiled
   (архитектура рантайма, ядро, установщик)
-- [ElGuslml](https://github.com/ElGuslml) — NativeXRenderer и ветка `recomp` SDK ReXGlue
 - [Xenia Project](https://xenia.jp) — исследование Xbox 360 (таблицы экспорта, XISO, структуры)
 - N64: Recompiled — вдохновение для XenonRecomp

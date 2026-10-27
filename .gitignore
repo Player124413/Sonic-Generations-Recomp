@@ -31,3 +31,6 @@ compile_commands.json
 # Python tooling
 __pycache__/
 *.pyc
+
+# ReXGlue code generation (produced from your own default.xex)
+rex/generated/

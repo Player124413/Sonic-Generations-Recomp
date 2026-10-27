@@ -2,12 +2,11 @@
 
 Порядок работ после текущего состояния.
 
-> **Главный путь изменился.** Целевая графика — не собственный Vulkan-бэкенд этого runtime, а
-> [NativeXRenderer](NATIVE_X_RENDERER.md): перехват D3D-вызовов игры и рисование на DiligentCore/Vulkan,
-> поверх host'а ReXGlue. Чек-лист доведения до первого кадра — в [NATIVE_X_RENDERER.md](NATIVE_X_RENDERER.md),
-> карта D3D-слоя игры — в [native-x-renderer-sonic-generations.md](native-x-renderer-sonic-generations.md).
-> Разделы ниже про собственный бэкенд остаются в силе как справочник и как запасной путь, но приоритет
-> у них ниже. Единственный источник правды о готовности — [../STATUS.md](../STATUS.md).
+> **Главный путь — SDK ReXGlue с его GPU-плагином Xenos** (`rex/`): код игры генерируется из
+> вашего дампа, рисует штатный Vulkan-плагин SDK. Пошагово — [REXGLUE_WINDOWS.md](REXGLUE_WINDOWS.md),
+> разбор вариантов — [RUNTIME_OPTIONS.md](RUNTIME_OPTIONS.md). Разделы ниже описывают **прежний**
+> собственный runtime и остаются как справочник/запасной путь. Источник правды о готовности —
+> [../STATUS.md](../STATUS.md).
 
 ## 1. Шейдеры (ваш приоритет)
 

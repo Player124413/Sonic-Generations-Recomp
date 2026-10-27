@@ -1,0 +1,48 @@
+# Sonic Generations (Xbox 360) — code generation for ReXGlue.
+#
+# Run from the rex/ folder, with ReXGlue's code generator built from the SDK:
+#
+#   rexglue codegen sonicgenerations_manifest.toml
+#
+# It reads assets/default.xex (your own dump; git ignores it) and writes generated/default/,
+# which the game host compiles (rex/CMakeLists.txt, -DSONIC_REX_BUILD_GAME=ON with
+# -DSONIC_REX_GENERATED_DIR=<this folder>/generated/default). See docs/REXGLUE_WINDOWS.md.
+#
+# This manifest is the one that makes the game run: the same file builds the working iOS port
+# (Player124413/SonicGenerations-iOS, ios/sonicgenerations/sonicgenerations_manifest.toml).
+
+[project]
+name = "sonicgenerations"
+sdk_version = "0.10.0"
+game_root = "../assets"
+
+[entrypoint]
+file_path = "../assets/default.xex"
+out_directory_path = "generated/default"
+
+# The CRT's setjmp/longjmp, as upstream found them: listing them makes the codegen emit
+# ppc_setjmp/ppc_longjmp instead of plain calls.
+setjmp_address = 0x833A59C0
+longjmp_address = 0x833A5590
+
+# Function boundaries the analyzer misses (68 KB of them, from the working port).
+includes = ["config/functions.toml"]
+
+# "li r11,2" picks two vblanks per frame for the game's presentation interval 2 (the console's
+# 30 FPS). The hook can make it one vblank (60 FPS) or none; see src/sg_frame_rate.cpp and the
+# cvar sg_frame_rate. Same instruction the Xenia "60 FPS" patch for 53450848 writes.
+[[entrypoint.midasm_hook]]
+address = 0x82DC44E0
+name = "SgPresentationInterval"
+registers = ["r11"]
+after_instruction = true
+
+# Busy-wait loops that give the core away while they wait (src/sg_spin_waits.cpp): Havok's wait
+# for its worker threads, and the poll of the D3D calls in every loop that waits for the GPU.
+[[entrypoint.midasm_hook]]
+address = 0x83362D84
+name = "SgHavokJobWait"
+
+[[entrypoint.midasm_hook]]
+address = 0x82DB0A34
+name = "SgGpuWaitPoll"

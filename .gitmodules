@@ -7,10 +7,3 @@
 [submodule "tools/ffmpeg-xma"]
 	path = tools/ffmpeg-xma
 	url = https://github.com/xenia-project/FFmpeg.git
-[submodule "thirdparty/native_x_renderer"]
-	path = thirdparty/native_x_renderer
-	url = https://github.com/ElGuslml/NativeXRenderer.git
-	# The renderer's own DiligentCore submodule (thirdparty/diligent-core) is not pinned here: its
-	# CMake applies diligent_patches/ to whatever it finds, and the version it expects is recorded in
-	# its README (docs/integrating-a-game.md). Fetch it with:
-	#   git -C thirdparty/native_x_renderer submodule update --init --recursive
