@@ -30,8 +30,8 @@ Android» — неправильная постановка: делается о
 | Код игры и карта D3D-слоя | ✅ [D3D_LAYER_MAP.md](D3D_LAYER_MAP.md): найден главный draw-путь `sub_82DC85F0`, resolve/tiling/query-кандидаты, смещения устройства |
 | Инструменты разбора | ✅ `tools/d3dmap/` (индекс `ppc/` и ReXGlue-кода, скан PM4, тест) |
 | Host и сборка Windows | ✅ `rex/` (ReXGlue) + [REXGLUE_WINDOWS.md](REXGLUE_WINDOWS.md) |
-| Сборка Android | ⚠️ рецепт известен (ваш репозиторий android-and-pc-edition), в этом репозитории не перенесён — см. [ANDROID.md](ANDROID.md) |
-| RHI-слой (device/pipelines/RT/шейдеры) | ❌ его и нужно написать |
+| Сборка Android | ⚠️ дерево импортировано (`android/`, `android_sdk.sh`, 9 патчей SDK), не собиралось — см. [ANDROID.md](ANDROID.md) |
+| RHI-слой | ⚠️ выбран plume, есть seam и probe устройства (`rex/src/native/`); pipelines/RT/шейдеров ещё нет |
 | Профиль устройства D3D (смещения) | ⚠️ есть улики, нет подтверждения на кадре |
 
 ## Чем рисовать: сравнение RHI
@@ -45,10 +45,52 @@ Android» — неправильная постановка: делается о
 | Готовые примеры нативной графики | Xerenge (GPL-3.0, `rexglue/src/plume_renderer/`), daytona, rr6, naruto-rise | NativeXRenderer (MIT, POTCAWE/GRAW/Kameo) |
 | Шейдеры | SPIR-V из SDK-транслятора (Xenos → SPIR-V), пайплайн кэшируется | то же |
 
-**Вывод:** для двух платформ сразу реалистичен **plume**: он не тянет за собой вторую ветку SDK, у него
-есть Vulkan и проверенный Android-путь. Diligent/NXR-путь означает отказ от ваших Android-патчей SDK —
-то есть Android делается заново. Если Android не важен — NXR быстрее (код рендера уже написан и покрыт
-тестами на трёх играх).
+**Решение (зафиксировано): plume.** Причины: он не тянет вторую ветку SDK, поэтому живёт вместе с
+вашими Android-патчами v0.10.0; у него один Vulkan-бэкенд на обе платформы — Win32 `HWND` и Android
+`ANativeWindow*` (проверено по `plume_render_interface_types.h` и путям создания поверхности в
+`plume_vulkan.cpp`); MIT. Diligent/NXR-путь отброшен: он требует ветку `recomp` SDK и означает, что
+Android придётся делать заново.
+
+### Что уже в коде
+
+| Файл | Что |
+|---|---|
+| `thirdparty/plume` | сабмодуль, закреплён на коммите (см. `rex/dependencies.json`), MIT |
+| `rex/src/native/renderer.h` | seam: `Renderer` (Initialize/BeginFrame/Present/Shutdown) и `CreateRenderer()` |
+| `rex/src/native/plume_renderer.cpp` | plume-бэкенд: создаёт Vulkan-интерфейс, выбирает устройство, пишет его описание в лог |
+| `rex/src/native/native_renderer.cpp` | cvar `sg_native_renderer` (по умолчанию **выключен**) и безопасный запуск: нет драйвера — предупреждение и путь Xenos |
+| `rex/CMakeLists.txt` | `-DSONIC_REX_NATIVE_RENDERER_PLUME=ON` собирает бэкенд; без флага код не существует |
+
+Это **этап 3, шаг 1**: устройство поднимается и проверяется, рисование ещё не начато, Xenos ничего не
+отдаёт. Следующий шаг — surface/swapchain из окна ReXGlue (Windows) и из `ANativeWindow` (Android),
+затем первый очищенный кадр.
+
+Как проверить probe на своей машине (Windows; ничего не рисует и ничего не ломает):
+
+```bash
+cmake -S rex -B build -DSONIC_REX_BUILD_GAME=ON -DSONIC_REX_NATIVE_RENDERER_PLUME=ON \
+      -DSONIC_REX_GENERATED_DIR=<путь к сгенерированному коду> …
+build/SonicGenerationsRecomp-ReXGlue.exe --sg_native_renderer=true
+```
+
+В логе будет либо `[native] plume device: <имя> (N MiB of dedicated video memory)`, либо
+`[native] plume/vulkan is not available: …` и игра продолжится на Xenos. Никакого падения и никакого
+изменения картинки в обоих случаях.
+
+### Два пути устройства, пока рендерер не переехал
+
+В репозитории уже был **Windows-only транслятор на «сыром» Vulkan**: `SonicGenerationsRecomp/gpu/`
+(`vulkan_backend`, `vulkan_host`, `native_commands`, `shader_cache`, …) и его host-обвязка
+`rex/src/native_gpu.cpp`, включаемая через `SONIC_REX_NATIVE_RENDERER` / `SONIC_REX_BUILD_NATIVE_PLUGIN`.
+Он остаётся как есть: это единственный код с настоящим рендерером (шейдерный кэш, состояния,
+ресурсы), даже если его WSI-тест в CI пока падает, — и ломать его ради архитектуры нельзя. Пока
+plume-бэкенд — отдельный probe рядом с ним, а не его замена.
+
+Переезд делается по частям и по мере того, как у plume появляются нужные вещи (swapchain, пайплайны,
+render targets): тогда `vulkan_backend` перестаёт знать про `VkDevice`, а состояние draw из
+`native_commands`/`state_dispatch` уходит в общий код `rex/src/native/`. Пока в дереве два пути —
+так и написано в [STATUS.md](../STATUS.md), и это не «почти готово», а «два устройства, один из них умеет
+рисовать».
 
 ## План работ (одинаковый для обеих платформ)
 

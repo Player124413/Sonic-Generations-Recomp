@@ -169,6 +169,13 @@ set(SONIC_REX_GENERATED_DIR "" CACHE PATH "Directory containing sonicgenerations
 # correct ones, so this stays off. Turn it on only to reproduce the old mismatched-ABI experiment.
 option(SONIC_REX_ENTRY_RECOVERY "Replace the generated registration sources with thunks recovered from ppc/" OFF)
 
+# The native renderer's backend (docs/NATIVE_RENDERING.md): plume (MIT), one Vulkan backend for Windows
+# (HWND) and Android (ANativeWindow*), D3D12 and Metal unused. Its first stage is a device probe: it
+# brings the device up and says what it found; the game keeps drawing through Xenos until the renderer
+# has a frame to show. Needs the submodule and its own submodules:
+#   git submodule update --init --recursive thirdparty/plume
+option(SONIC_REX_NATIVE_RENDERER_PLUME "Build the plume native renderer backend (device probe)" OFF)
+
 if(SONIC_REX_BUILD_GAME)
     set(SONIC_VULKAN_HEADLESS ON CACHE BOOL "ReXGlue owns SDL3; native replay uses offscreen Vulkan" FORCE)
     include("${CMAKE_CURRENT_LIST_DIR}/../cmake/VulkanHost.cmake")
@@ -260,6 +267,22 @@ if(SONIC_REX_BUILD_GAME)
     target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_RENDERER=1)
     target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_native)
     rexglue_configure_target(SonicGenerationsRecomp-ReXGlue GPU_PLUGINS ${SONIC_REX_GPU_PLUGINS})
+
+    if(SONIC_REX_NATIVE_RENDERER_PLUME)
+        set(SONIC_PLUME_DIR "${CMAKE_CURRENT_LIST_DIR}/../thirdparty/plume" CACHE PATH
+            "plume source tree (a submodule of this repository)")
+        if(NOT EXISTS "${SONIC_PLUME_DIR}/plume_render_interface.h")
+            message(FATAL_ERROR
+                "plume is not checked out: git submodule update --init --recursive thirdparty/plume")
+        endif()
+        add_subdirectory("${SONIC_PLUME_DIR}" "${CMAKE_BINARY_DIR}/plume")
+        target_sources(SonicGenerationsRecomp-ReXGlue PRIVATE
+            src/native/plume_renderer.cpp
+            src/native/native_renderer.cpp)
+        target_include_directories(SonicGenerationsRecomp-ReXGlue PRIVATE src/native "${SONIC_PLUME_DIR}")
+        target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE plume)
+        target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_RENDERER_PLUME=1)
+    endif()
 
 
 endif()

@@ -11,6 +11,9 @@
 #include "gpu_capture.h"
 #include "sg_frame_rate.h"
 #include "sg_android.h"
+#ifdef SONIC_REX_NATIVE_RENDERER_PLUME
+#include "native/native_renderer.h"
+#endif
 #ifdef SONIC_REX_NATIVE_RENDERER
 #include "native_gpu.h"
 #endif
@@ -78,10 +81,20 @@ public:
         // Intentionally leave audio_factory, input_factory, kernel_init and
         // tool_mode untouched. ReXApp configures those to the SDK defaults.
     }
+    void OnShutdown() override {
 #ifdef SONIC_REX_NATIVE_RENDERER
-    void OnShutdown() override { ShutdownNativeGpu(); }
+        ShutdownNativeGpu();
 #endif
+#ifdef SONIC_REX_NATIVE_RENDERER_PLUME
+        native_renderer::Stop();
+#endif
+    }
     void OnPreLaunchModule() override {
+#ifdef SONIC_REX_NATIVE_RENDERER_PLUME
+        // Before the guest starts: bring the native renderer's device up, if the player asked for it
+        // (sg_native_renderer). Never fatal: no driver means a warning and the Xenos path.
+        native_renderer::Start(BuildPaths(rex::filesystem::GetExecutableFolder()).cache);
+#endif
         // Before the guest starts: which presentation interval the game's hooked instruction at
         // 0x82DC44E0 writes (sg_frame_rate, src/sg_frame_rate.cpp).
         ConfigureFrameRate();

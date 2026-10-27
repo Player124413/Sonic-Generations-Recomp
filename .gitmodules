@@ -7,3 +7,6 @@
 [submodule "tools/ffmpeg-xma"]
 	path = tools/ffmpeg-xma
 	url = https://github.com/xenia-project/FFmpeg.git
+[submodule "thirdparty/plume"]
+	path = thirdparty/plume
+	url = https://github.com/renderbag/plume

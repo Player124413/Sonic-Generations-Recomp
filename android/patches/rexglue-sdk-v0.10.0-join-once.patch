@@ -1,0 +1,36 @@
+diff --git a/src/core/threading_posix.cpp b/src/core/threading_posix.cpp
+index 6a1bc3a..4868f61 100644
+--- a/src/core/threading_posix.cpp
++++ b/src/core/threading_posix.cpp
+@@ -1018,18 +1018,24 @@ class PosixCondition<Thread> : public PosixConditionBase {
+   static void* ThreadStartRoutine(void* parameter);
+   inline bool signaled() const override { return signaled_; }
+   inline void post_execution() override {
+-    if (thread_) {
++    // A thread handle stays signaled forever, and guests wait on it as often
++    // as they like (WaitForSingleObject twice on a finished thread is legal
++    // on Windows). Joining twice is not legal here: bionic aborts the whole
++    // process with "invalid pthread_t passed to pthread_join" (targetSdk >=
++    // 26), glibc returns ESRCH at best. Join exactly once.
++    if (thread_ && !joined_.exchange(true)) {
+       pthread_join(thread_, nullptr);
+-    }
+ #if defined(__APPLE__)
+-    if (suspend_sem_ != SEM_FAILED) {
+-      sem_close(suspend_sem_);
+-      suspend_sem_ = SEM_FAILED;
+-    }
++      if (suspend_sem_ != SEM_FAILED) {
++        sem_close(suspend_sem_);
++        suspend_sem_ = SEM_FAILED;
++      }
+ #else
+-    sem_destroy(&suspend_sem_);
++      sem_destroy(&suspend_sem_);
+ #endif
++    }
+   }
++  std::atomic<bool> joined_{false};
+   pthread_t thread_;
+   bool signaled_;
+   int exit_code_;

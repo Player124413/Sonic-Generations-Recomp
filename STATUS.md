@@ -33,8 +33,8 @@
 | Длительная сессия (час и больше) | ❌ |
 | **Прохождение от начала до конца** | ❌ |
 | Путь ReXGlue (Xenos Vulkan): меню, уровень, геймплей на Windows | ❌ не собрано и не запускалось здесь |
-| Android APK из этого репозитория | ❌ рецепт собран в [docs/ANDROID.md](docs/ANDROID.md), сборка не прогонялась |
-| Нативный рендерер (D3D → Vulkan), Windows и Android | ❌ не начат: есть карта D3D-слоя и план ([docs/NATIVE_RENDERING.md](docs/NATIVE_RENDERING.md)) |
+| Android APK из этого репозитория | ❌ дерево Android и 9 патчей SDK перенесены ([docs/ANDROID.md](docs/ANDROID.md)), но ни Gradle, ни NDK здесь не запускались |
+| Нативный рендерер (D3D → Vulkan), Windows и Android | ⚠️ только device probe на plume: `rex/src/native/`, включается `-DSONIC_REX_NATIVE_RENDERER_PLUME=ON` + `--sg_native_renderer=true`; **ни одного кадра не рисует**. Рядом остаётся старый Windows-only транслятор на сыром Vulkan (`rex/src/native_gpu.cpp` + `SonicGenerationsRecomp/gpu/`), его WSI-тест в CI падает — [docs/NATIVE_RENDERING.md](docs/NATIVE_RENDERING.md) |
 
 ## Что нужно, чтобы закрыть строку
 

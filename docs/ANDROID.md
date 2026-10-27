@@ -6,25 +6,28 @@ Android-порт — тот же host ReXGlue, что и Windows, с Vulkan на
 и там же записана известная проблема: **лагает и есть графические артефакты**. Этот документ — про то,
 как собрать и как лечить производительность, не переписывая рендерер.
 
-## Что нужно (и чего в этом репозитории нет)
+## Что уже лежит в этом репозитории
 
-| Нужно | Где взять |
+| Что | Где |
 |---|---|
-| ReXGlue SDK **v0.10.0 + набор Android-патчей** (9 патчей: Android, perf, custom Vulkan, fps cap, tolerant dispatch, signal chain, join once, quiet) | `android/patches/` вашего android-репозитория, накатываются скриптом `android_sdk.sh` |
-| libadrenotools (BSD-2) + liblinkernsbypass | тот же скрипт, закреплённые ревизии |
-| Gradle-проект лаунчера (`android/app`), Java-обвязка SDL3 | `android/` вашего android-репозитория |
-| Android SDK/NDK (r29 для libc++ `std::atomic_ref`/`jthread`) | Android Studio / sdkmanager |
-| `port/` — сгенерированный код + `src/` + `.toml` | в этом репозитории это `rex/` + `rex/generated/default` |
+| Gradle-лаунчер (Activity, импорт ISO/STFS, экранный геймпад, настройки графики и GPU-драйвера) | `android/app` |
+| Java-обвязка SDL3 | `android/app/src/main/java/org/libsdl/app` |
+| **9 патчей SDK v0.10.0**: Android, perf, custom Vulkan, fps cap, tolerant dispatch, signal chain, join once, quiet | `android/patches/` (~256 КБ) |
+| Скрипт подготовки SDK: клонирует v0.10.0, накатывает патчи, тянет libadrenotools и liblinkernsbypass (закреплённые ревизии), копирует Java-обвязку | `android_sdk.sh` в корне |
+| Нативный код приложения (JNI/`android_main`, геймпад) | `android/app/src/main/cpp` |
+| Порт игры | `rex/` + `rex/generated/default` (код из вашего дампа) |
 
-Девять патчей — это не мелочь: без них SDK не собирается под Android и не грузит кастомный Vulkan-драйвер.
-Поэтому пока используется **их** дерево; перенос в этот репозиторий — отдельная задача (скопировать
-`android/`, `android_sdk.sh`, `android/patches/` и поправить `-PrexPortDir` на `rex/`).
+Подробности по каждому каталогу, списку патчей и сборке — [android/README.md](../android/README.md).
+
+Источник — ваш рабочий порт `Sonic-Generations-recomp-android-and-pc-edition`. Android SDK/NDK ставится
+отдельно (нужен NDK r29: libc++ `std::atomic_ref`/`jthread`); в `.gitignore` уже исключены `android/sdk/`,
+`android/.gradle/`, `android/build/`, `android/app/build/`, `*.apk`.
 
 ## Сборка (рецепт вашего рабочего порта)
 
 ```bash
 # 1. SDK + патчи + libadrenotools + Java-обвязка SDL3
-bash android_sdk.sh                       # по умолчанию: android/sdk/rexglue-sdk
+bash android_sdk.sh                       # клонирует v0.10.0 в android/sdk/rexglue-sdk и накатывает android/patches/*
 
 # 2. Код игры из вашего дампа (тот же манифест, что и для Windows)
 cd rex && rexglue codegen sonicgenerations_manifest.toml && cd ..
@@ -36,8 +39,9 @@ cd android && ./gradlew assembleRelease \
   -PrexSdkDir=$PWD/sdk/rexglue-sdk
 ```
 
-(В вашем android-репозитории третий шаг работает с `port/`; здесь указан `rex/` — разница только в
-каталоге проекта.)
+Третий шаг ждёт от проекта `generated/default/sources.cmake` — его создаёт шаг 2. JNI-CMake
+(`android/app/src/main/cpp/CMakeLists.txt`) собирает SDK, libadrenotools и сгенерированный код игры;
+порт передаётся через `-PrexPortDir`.
 
 ## Производительность
 

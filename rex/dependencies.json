@@ -23,5 +23,14 @@
     "sdk_version": "0.10.0",
     "origin": "the working iOS port of this same game (Player124413/SonicGenerations-iOS): same manifest, same setjmp/longjmp addresses, same midasm hooks",
     "how": "rexglue codegen sonicgenerations_manifest.toml, run from rex/ (docs/REXGLUE_WINDOWS.md)"
+  },
+  "plume": {
+    "repository": "renderbag/plume",
+    "commit": "0ce184b19270e49236afbb74052a6b267494b86b",
+    "path": "thirdparty/plume",
+    "license": "MIT",
+    "why": "the native renderer's RHI (docs/NATIVE_RENDERING.md): one Vulkan backend for a Win32 HWND and an Android ANativeWindow*, so the renderer is written once for both ports",
+    "how": "git submodule update --init --recursive thirdparty/plume (its contrib/volk, Vulkan-Headers and VulkanMemoryAllocator are needed)",
+    "built_by": "rex/CMakeLists.txt -DSONIC_REX_NATIVE_RENDERER_PLUME=ON (Windows); android/app/src/main/cpp/CMakeLists.txt -DREX_NATIVE_RENDERER=ON (Android)"
   }
 }

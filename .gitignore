@@ -34,3 +34,12 @@ __pycache__/
 
 # ReXGlue code generation (produced from your own default.xex)
 rex/generated/
+
+# Android build (the APK and the SDK checkout are produced, never committed)
+android/sdk/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/jniLibs/
+*.apk
