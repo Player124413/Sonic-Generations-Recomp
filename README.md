@@ -68,6 +68,11 @@ cmake --build build -j$(nproc)
 Рисует штатный GPU-плагин SDK. Разбор альтернатив (ReGPU, plume, native renderer) и почему выбран
 этот путь — [docs/RUNTIME_OPTIONS.md](docs/RUNTIME_OPTIONS.md).
 
+**Android** — тот же host, Vulkan на телефоне: сборка и настройки производительности
+([docs/ANDROID.md](docs/ANDROID.md)). **Нативный рендеринг** (перехват D3D-вызовов игры, общий код для
+Windows и Android) — план, карта D3D-слоя и оценка: [docs/NATIVE_RENDERING.md](docs/NATIVE_RENDERING.md),
+[docs/D3D_LAYER_MAP.md](docs/D3D_LAYER_MAP.md), инструменты в `tools/d3dmap/`.
+
 ## Структура
 
 ```
@@ -78,7 +83,7 @@ cmake --build build -j$(nproc)
 │   ├── config/functions.toml # границы функций для кодогенерации
 │   ├── sonicgenerations_manifest.toml  # вход rexglue codegen
 │   └── src/sg_*.cpp          # игровые хуки: 60 FPS, spin-wait
-├── tools/                    # XenonRecomp, XenosRecomp, o1heap
+├── tools/                    # XenonRecomp, XenosRecomp, o1heap, d3dmap (разбор D3D-слоя)
 ├── tests/                    # смоук-тесты ядра, GPU, аудио, полноты импортов
 └── docs/                     # архитектура, сборка, GPU, аудио, тестирование, планы
 ```
@@ -92,6 +97,9 @@ cmake --build build -j$(nproc)
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | как устроены рантайм и host |
 | [docs/REXGLUE_WINDOWS.md](docs/REXGLUE_WINDOWS.md) | как собрать и запустить игру на ПК |
 | [docs/RUNTIME_OPTIONS.md](docs/RUNTIME_OPTIONS.md) | чем рисовать: ReXGlue Xenos, ReGPU, plume, native renderer |
+| [docs/NATIVE_RENDERING.md](docs/NATIVE_RENDERING.md) | нативный рендеринг для Windows и Android: план и оценка |
+| [docs/D3D_LAYER_MAP.md](docs/D3D_LAYER_MAP.md) | карта D3D-слоя игры (адреса, улики) |
+| [docs/ANDROID.md](docs/ANDROID.md) | Android: сборка и производительность |
 | [docs/VULKAN.md](docs/VULKAN.md), [docs/GPU.md](docs/GPU.md) | собственный Vulkan-бэкенд (прежний путь) |
 | [docs/AUDIO.md](docs/AUDIO.md) | XMA-декодер и вывод звука |
 | [docs/TESTING_WINDOWS.md](docs/TESTING_WINDOWS.md), [docs/TESTING_RUNTIME.md](docs/TESTING_RUNTIME.md) | проверки |

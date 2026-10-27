@@ -10,6 +10,7 @@
 #include "input_defaults.h"
 #include "gpu_capture.h"
 #include "sg_frame_rate.h"
+#include "sg_android.h"
 #ifdef SONIC_REX_NATIVE_RENDERER
 #include "native_gpu.h"
 #endif
@@ -55,6 +56,9 @@ public:
                 "SONIC_REX_GPU_DUMP=1 to record the command stream for renderer work.\n",
                 stderr);
         }
+        // The plugin has registered its cvars by now: on Android this is the moment to pick the cheap
+        // end of them (docs/ANDROID.md). A no-op elsewhere.
+        ConfigureAndroidGpuDefaults();
         config.gpu_plugin.clear();
         if (mode == GraphicsMode::Forward) {
             config.graphics = std::make_unique<GraphicsBridge>(std::move(original));

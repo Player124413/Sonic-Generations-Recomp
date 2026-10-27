@@ -254,7 +254,7 @@ if(SONIC_REX_BUILD_GAME)
     # the app attaches our presenter to the window while the SDK keeps running the
     # guest GPU device services.
     add_executable(SonicGenerationsRecomp-ReXGlue WIN32 src/main.cpp src/gpu_hooks.cpp
-        src/translate_presenter.cpp src/sg_frame_rate.cpp src/sg_spin_waits.cpp)
+        src/translate_presenter.cpp src/sg_frame_rate.cpp src/sg_spin_waits.cpp src/sg_android.cpp)
     target_include_directories(SonicGenerationsRecomp-ReXGlue PRIVATE src "${SONIC_REX_GENERATED_DIR}")
     target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_ppc sonic_rex_math sonic_rex_capture sonic_rex_pm4 sonic_rex_host_policy rex::runtime)
     target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_RENDERER=1)

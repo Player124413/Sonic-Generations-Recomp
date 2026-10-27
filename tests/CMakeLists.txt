@@ -31,3 +31,8 @@ add_test(NAME reference_title_metadata COMMAND "${Python3_EXECUTABLE}"
 
 add_test(NAME observed_title_import_metadata COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/test_observed_title_imports.py")
+
+# The D3D-layer tools (tools/d3dmap/): they must read both codegen formats, and decode the PM4 headers
+# a native renderer is brought up from.
+add_test(NAME d3dmap_tools COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_d3dmap_tools.py")
