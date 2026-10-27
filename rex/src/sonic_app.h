@@ -12,6 +12,9 @@
 #ifdef SONIC_REX_NATIVE_RENDERER
 #include "native_gpu.h"
 #endif
+#ifdef SONIC_REX_NATIVE_X_RENDERER
+#include <native_x/sonic_generations_nxr.h>
+#endif
 
 namespace sonic::rex_host {
 class SonicApp final : public rex::ReXApp {
@@ -75,6 +78,16 @@ public:
     }
 #ifdef SONIC_REX_NATIVE_RENDERER
     void OnShutdown() override { ShutdownNativeGpu(); }
+#endif
+#ifdef SONIC_REX_NATIVE_X_RENDERER
+    void OnPostSetup() override {
+        // Once, after the runtime's systems exist and before the guest starts: the place NativeXRenderer
+        // asks for (native_x_renderer.h, Initialize). The library reads its cvars here, so with none of
+        // them set nothing changes and the Xenos path draws. The graphics system stays the SDK's: the
+        // Xenos plugin keeps running the device services the game waits on (fences, interrupts, swap),
+        // and only the drawing moves to the host renderer.
+        native_x::Initialize(runtime()->graphics_system(), window(), runtime()->cache_root());
+    }
 #endif
     void OnConfigurePaths(rex::PathConfig& paths) override {
         const auto local = BuildPaths(rex::filesystem::GetExecutableFolder());

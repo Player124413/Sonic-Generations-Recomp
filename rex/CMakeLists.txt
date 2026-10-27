@@ -163,6 +163,18 @@ add_test(NAME rex_native_surface_policy COMMAND rex_native_surface_policy_tests)
 
 option(SONIC_REX_BUILD_GAME "Build the actual game host from external ReXGlue-generated PPC" OFF)
 set(SONIC_REX_GENERATED_DIR "" CACHE PATH "Directory containing sonicgenerations_init.h and sources.cmake")
+
+# NativeXRenderer (thirdparty/native_x_renderer): draws the game's XDK D3D calls on DiligentCore
+# (Vulkan) instead of replaying the console's command stream through the emulated Xenos. Off by
+# default, and additive: the Xenos path stays the reference and the fallback, and nothing changes for a
+# build that does not ask for it.
+#
+# It is not a drop-in for the installed SDK package: the library compiles the SDK's shader translator
+# and register code in process, so it needs the SDK as a source tree (REXSDK_DIR) on the recomp branch
+# of ElGuslml/rexglue-sdk, whose RECOMP.md lists the changes it relies on. See
+# docs/NATIVE_X_RENDERER.md for the whole path, and docs/native-x-renderer-sonic-generations.md for what
+# of Sonic Generations' D3D library is mapped so far.
+option(SONIC_REX_NATIVE_X_RENDERER "Draw the game with NativeXRenderer (Vulkan, DiligentCore)" OFF)
 if(SONIC_REX_BUILD_GAME)
     set(SONIC_VULKAN_HEADLESS ON CACHE BOOL "ReXGlue owns SDL3; native replay uses offscreen Vulkan" FORCE)
     include("${CMAKE_CURRENT_LIST_DIR}/../cmake/VulkanHost.cmake")
@@ -249,4 +261,38 @@ if(SONIC_REX_BUILD_GAME)
     target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_RENDERER=1)
     target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE sonic_rex_native)
     rexglue_configure_target(SonicGenerationsRecomp-ReXGlue GPU_PLUGINS ${SONIC_REX_GPU_PLUGINS})
+
+    if(SONIC_REX_NATIVE_X_RENDERER)
+        set(SONIC_NXR_DIR "${CMAKE_CURRENT_LIST_DIR}/../thirdparty/native_x_renderer" CACHE PATH
+            "NativeXRenderer source tree (a git submodule of this repository)")
+        if(NOT EXISTS "${SONIC_NXR_DIR}/CMakeLists.txt")
+            message(FATAL_ERROR
+                "NativeXRenderer is not checked out: git submodule update --init "
+                "thirdparty/native_x_renderer (and its own DiligentCore submodule: "
+                "git submodule update --init --recursive).")
+        endif()
+        if(NOT DEFINED REXSDK_DIR OR NOT EXISTS "${REXSDK_DIR}/RECOMP.md")
+            message(FATAL_ERROR
+                "NativeXRenderer needs the ReXGlue SDK as a source tree on the recomp branch of "
+                "ElGuslml/rexglue-sdk (-DREXSDK_DIR=<tree>, RECOMP.md present). The installed SDK "
+                "package does not carry the graphics sources it compiles in process. "
+                "See docs/NATIVE_X_RENDERER.md.")
+        endif()
+        # NXR compiles the SDK's shader translator in process and links the SDK's own glslang; only a
+        # source build of the SDK defines these targets.
+        if(NOT TARGET glslang::SPIRV)
+            message(FATAL_ERROR
+                "NativeXRenderer links glslang::SPIRV from the SDK source build, and this configure "
+                "does not have it: build the whole project against the recomp SDK tree (the SDK's "
+                "generated/rexglue.cmake), not against the installed package. See docs/NATIVE_X_RENDERER.md.")
+        endif()
+        # The game side (hooks, profile) is compiled into the executable, never into an archive: the
+        # generated functions are weak and a strong definition in an archive member may not be pulled in.
+        target_sources(SonicGenerationsRecomp-ReXGlue PRIVATE src/native_x/sonic_generations_nxr.cpp)
+        target_compile_definitions(SonicGenerationsRecomp-ReXGlue PRIVATE SONIC_REX_NATIVE_X_RENDERER=1)
+        add_subdirectory("${SONIC_NXR_DIR}" "${CMAKE_BINARY_DIR}/native_x_renderer")
+        target_link_libraries(SonicGenerationsRecomp-ReXGlue PRIVATE native_x_renderer)
+        # NVIDIA's DLSS runtime next to the executable, when the SDK provides the DLSS targets.
+        native_x_renderer_copy_runtime(SonicGenerationsRecomp-ReXGlue)
+    endif()
 endif()
